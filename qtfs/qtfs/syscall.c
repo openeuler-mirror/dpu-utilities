@@ -9,9 +9,21 @@
 #include "conn.h"
 #include "qtfs-mod.h"
 
+
 static long qtfs_remote_mount(char __user *dev_name, char __user *dir_name, char __user *type,
 		unsigned long flags, void __user *data);
 static int qtfs_remote_umount(char __user *name, int flags);
+
+#ifdef __aarch64__
+static struct kprobe kp = {
+    .symbol_name = "kallsyms_lookup_name"
+};
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+extern unsigned long kallsyms_lookup_name(const char *name);
+void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
+unsigned long start_rodata, end_rodata;
+#define section_size  (end_rodata - start_rodata)
+#endif
 
 static char *qtfs_copy_mount_string(const void __user *data)
 {
@@ -260,18 +272,29 @@ __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 // make the page writable
 int make_rw(unsigned long address)
 {
+#ifdef __x86_64__
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
 	pte->pte |= _PAGE_RW;
+#endif
+#ifdef __aarch64__
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
+#endif
 
 	return 0;
 }
 // make the page write protected
 int make_ro(unsigned long address)
 {
+#ifdef __x86_64__
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
 	pte->pte &= ~_PAGE_RW;
+#endif
+
+#ifdef __aarch64__
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
+#endif
 	return 0;
 }
 
@@ -486,6 +509,9 @@ static unsigned long *qtfs_oldsyscall_epoll_ctl = NULL;
 
 int qtfs_syscall_init(void)
 {
+#ifdef __aarch64__
+	kallsyms_lookup_name_t kallsyms_lookup_name;
+#endif
 	qtfs_debug("qtfs use my_mount instead of mount:0x%lx umount:0x%lx\n",
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount], (unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2]);
 	qtfs_debug("qtfs use my_epoll_ctl instead of epoll_ctl:0x%lx\n",
@@ -500,6 +526,13 @@ int qtfs_syscall_init(void)
 	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)__x64_sys_qtfs_epoll_ctl;
 #endif
 #ifdef __aarch64__
+        register_kprobe(&kp);
+        kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
+        unregister_kprobe(&kp);
+	update_mapping_prot = (void *)kallsyms_lookup_name("update_mapping_prot");
+        start_rodata = (unsigned long)kallsyms_lookup_name("__start_rodata");
+	end_rodata= (unsigned long)kallsyms_lookup_name("__end_rodata");
+
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)__arm64_sys_qtfs_mount;
 	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)__arm64_sys_qtfs_umount;
 	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)__arm64_sys_qtfs_epoll_ctl;
