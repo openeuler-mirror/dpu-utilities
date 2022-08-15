@@ -1,5 +1,5 @@
 ccflags-y += -I$(src)/../ -I$(src) -DQTFS_SERVER
-KBUILD=/lib/modules/$(shell uname -r)/build/
+KBUILD=/lib/modules/5.10*/build/
 
 obj-m:=qtfs_server.o
 qtfs_server-objs:=../conn.o fsops.o qtfs-server.o ../misc.o
