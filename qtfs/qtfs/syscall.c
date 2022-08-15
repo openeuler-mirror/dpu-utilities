@@ -300,15 +300,18 @@ int make_ro(unsigned long address)
 
 int qtfs_dir_to_qtdir(char *dir, char *qtdir)
 {
-	int ret;
+	int ret = 0;
 	struct path path;
 	ret = kern_path(dir, LOOKUP_FOLLOW, &path);
 	if (ret) {
-		qtfs_err("qtfs dir to qtdir failed, ret: %d\n", ret);
-		return ret;
+		strcpy(qtdir, dir);
+		return 0;
 	}
-
-	ret = qtfs_fullname(qtdir, path.dentry);
+	if (strcmp(path.mnt->mnt_sb->s_type->name, QTFS_FSTYPE_NAME)) {
+		strcpy(qtdir, dir);
+	} else {
+		ret = qtfs_fullname(qtdir, path.dentry);
+	}
 	path_put(&path);
 	return ret;
 }
