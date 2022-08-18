@@ -22,7 +22,7 @@ cp -rf kiwi/minios/cfg_dpuos /opt/imageTailor/kiwi/minios/cfg_dpuos
 进入到`conf/aarch64`子目录下，修改下面3个文件的密码，详见openEuler手册
 1. `custom/cfg_dpuos/usr_file/etc/default/grub`
 2. `custom/cfg_dpuos/rpm.conf`
-3. `kiwi/minios/cfg_minios/rpm.conf`
+3. `kiwi/minios/cfg_dpuos/rpm.conf`
 
 ## 执行裁剪命令
 执行下面的命令进行裁剪，最后裁剪出来的iso在路径`/opt/imageTailor/result`路径下
