@@ -337,6 +337,10 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 	ssize_t ret;
 	struct file *filp;
 
+	if (len <= 0) {
+		return len;
+	}
+
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var.");
 		return -EINVAL;
