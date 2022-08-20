@@ -298,6 +298,21 @@ void qtinfo_opt_t(int fd)
 	return;
 }
 
+void qtinfo_opt_p(int fd, char *support)
+{
+	int ret;
+	int sup = atoi(support);
+
+	ret = ioctl(fd, QTFS_IOCTL_EPOLL_SUPPORT, sup);
+	if (ret != 0) {
+		qtinfo_out("Set qtfs epoll support to:%s failed.", (sup == 1) ? "any file" : "fifo file");
+		return;
+	}
+	qtinfo_out("Set qtfs epoll support to %s success.", (sup == 1) ? "any file" : "fifo file");
+	return;
+}
+
+
 static void qtinfo_help(char *exec)
 {
 	qtinfo_out("Usage: %s [OPTION].", exec);
@@ -306,6 +321,7 @@ static void qtinfo_help(char *exec)
 	qtinfo_out("  -c, Clear all diag info.");
 	qtinfo_out("  -l, Set log level(valid param: \"NONE\", \"ERROR\", \"WARN\", \"INFO\", \"DEBUG\").");
 	qtinfo_out("  -t, For test informations.");
+	qtinfo_out("  -p, Epoll support file mode(1: any files; 0: only fifo).");
 }
 
 int main(int argc, char *argv[])
@@ -318,7 +334,7 @@ int main(int argc, char *argv[])
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
 		return 0;
 	}
-	while ((ch = getopt(argc, argv, "acl:t")) != -1) {
+	while ((ch = getopt(argc, argv, "acl:tp:")) != -1) {
 		switch (ch) {
 			case 'a':
 				qtinfo_opt_a(fd);
@@ -331,6 +347,9 @@ int main(int argc, char *argv[])
 				break;
 			case 't':
 				qtinfo_opt_t(fd);
+				break;
+			case 'p':
+				qtinfo_opt_p(fd, optarg);
 				break;
 			default:
 				qtinfo_help(argv[0]);

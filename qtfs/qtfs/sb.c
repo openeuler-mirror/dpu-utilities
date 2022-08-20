@@ -393,7 +393,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		leftlen -= wrbuflen;
 	} while (leftlen);
 
-	if (S_ISFIFO(kio->ki_filp->f_inode->i_mode)) {
+	if (qtfs_support_epoll(kio->ki_filp->f_inode->i_mode)) {
 		struct inode *inode = kio->ki_filp->f_inode;
 		struct qtfs_inode_priv *priv = inode->i_private;
 		wake_up_interruptible_sync_poll(&priv->readq, EPOLLIN | EPOLLRDNORM);
@@ -533,17 +533,6 @@ long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 }
 
-static struct file_operations qtfs_file_ops = {
-	.read_iter = qtfs_readiter,
-	.write_iter = qtfs_writeiter,
-	.open = qtfs_open,
-	.release = qtfs_release,
-	.mmap = qtfs_mmap,
-	.llseek = qtfs_llseek,
-	.fsync = qtfs_fsync,
-	.unlocked_ioctl = qtfs_ioctl,
-};
-
 loff_t qtfs_dir_file_llseek(struct file *file, loff_t offset, int whence)
 {
 	qtfs_info("qtfs generic file llseek: %s.", file->f_path.dentry->d_iname);
@@ -618,6 +607,19 @@ struct file_operations qtfsfifo_ops = {
 	.llseek = no_llseek,
 	.poll = qtfsfifo_poll,
 };
+
+static struct file_operations qtfs_file_ops = {
+	.read_iter = qtfs_readiter,
+	.write_iter = qtfs_writeiter,
+	.open = qtfs_open,
+	.release = qtfs_release,
+	.mmap = qtfs_mmap,
+	.llseek = qtfs_llseek,
+	.fsync = qtfs_fsync,
+	.unlocked_ioctl = qtfs_ioctl,
+	.poll = qtfsfifo_poll,
+};
+
 
 static int qtfs_readpage(struct file *file, struct page *page)
 {

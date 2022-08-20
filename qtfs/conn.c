@@ -18,6 +18,7 @@ int log_level = LOG_ERROR;
 int qtfs_server_port = 12345;
 int qtfs_sock_max_conn = QTFS_MAX_THREADS;
 struct qtinfo *qtfs_diag_info = NULL;
+bool qtfs_epoll_mode = true; // true: support any mode; false: only support fifo
 
 static atomic_t g_qtfs_conn_num;
 static struct list_head g_vld_lst;
