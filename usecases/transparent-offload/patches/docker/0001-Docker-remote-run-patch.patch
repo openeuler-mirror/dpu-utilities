@@ -1,0 +1,214 @@
+From 7703dea6c5fa16498f625a98d6c0bd2b40f409fd Mon Sep 17 00:00:00 2001
+From: Deng Guangxing <dengguangxing@huawei.com>
+Date: Mon, 22 Aug 2022 16:48:16 +0800
+Subject: [PATCH] Docker remote run patch
+
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+---
+ daemon/oci_linux.go                           |  2 +
+ internal/procfs/procfs_linux.go               |  4 +-
+ .../libnetwork/sandbox_externalkey_unix.go    | 98 +++++++++++++------
+ 3 files changed, 72 insertions(+), 32 deletions(-)
+
+diff --git a/daemon/oci_linux.go b/daemon/oci_linux.go
+index 7611fc054d..3630fded2c 100644
+--- a/daemon/oci_linux.go
++++ b/daemon/oci_linux.go
+@@ -804,6 +804,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (retSpec *specs.Spec, e
+ 
+ 	for _, ns := range s.Linux.Namespaces {
+ 		if ns.Type == "network" && ns.Path == "" && !c.Config.NetworkDisabled {
++			/*
+ 			target := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "exe")
+ 			s.Hooks = &specs.Hooks{
+ 				Prestart: []specs.Hook{{
+@@ -811,6 +812,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (retSpec *specs.Spec, e
+ 					Args: []string{"libnetwork-setkey", c.ID, daemon.netController.ID()},
+ 				}},
+ 			}
++			*/
+ 		}
+ 	}
+ 
+diff --git a/internal/procfs/procfs_linux.go b/internal/procfs/procfs_linux.go
+index 8a68110878..82d8d8cbd0 100644
+--- a/internal/procfs/procfs_linux.go
++++ b/internal/procfs/procfs_linux.go
+@@ -47,7 +47,7 @@ func PidOf(name string) ([]int, error) {
+ func getPids(re *regexp.Regexp) []int {
+ 	pids := []int{}
+ 
+-	dirFD, err := os.Open("/proc")
++	dirFD, err := os.Open("/local_proc")
+ 	if err != nil {
+ 		return nil
+ 	}
+@@ -75,7 +75,7 @@ func getPids(re *regexp.Regexp) []int {
+ 				continue
+ 			}
+ 
+-			cmdline, err := ioutil.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
++			cmdline, err := ioutil.ReadFile(filepath.Join("/local_proc", entry.Name(), "cmdline"))
+ 			if err != nil {
+ 				logrus.Infof("Error reading file %s: %+v", filepath.Join("/proc", entry.Name(), "cmdline"), err)
+ 				continue
+diff --git a/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go b/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go
+index f4c4276848..80e2492e7a 100644
+--- a/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go
++++ b/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go
+@@ -4,11 +4,14 @@ package libnetwork
+ 
+ import (
+ 	"encoding/json"
++	"hash/crc32"
++	"strconv"
++	"io/ioutil"
+ 	"fmt"
+ 	"io"
+-	"io/ioutil"
+ 	"net"
+ 	"os"
++	"log"
+ 
+ 	"github.com/docker/libnetwork/types"
+ 	"github.com/opencontainers/runc/libcontainer/configs"
+@@ -56,23 +59,40 @@ func processSetKeyReexec() {
+ 
+ // SetExternalKey provides a convenient way to set an External key to a sandbox
+ func SetExternalKey(controllerID string, containerID string, key string) error {
++	shimHost := os.Getenv("CONTROLLER_HOST")
++	log.Println("SetExternalKey key", key)
+ 	keyData := setKeyData{
+ 		ContainerID: containerID,
+ 		Key:         key}
++	if shimHost != "" {
++		port := (crc32.ChecksumIEEE([]byte(controllerID)))%10000 + 40000
++		address := shimHost + ":" + strconv.Itoa(int(port))
++		c, err := net.Dial("tcp", address)
++		if err != nil {
++			return err
++		}
++		defer c.Close()
+ 
+-	c, err := net.Dial("unix", udsBase+controllerID+".sock")
+-	if err != nil {
+-		return err
+-	}
+-	defer c.Close()
++		if err := sendKey(c, keyData); err != nil {
++			return fmt.Errorf("sendKey failed with : %v", err)
++		}
++		return processReturn(c)
++	} else {
++		c, err := net.Dial("unix", udsBase+controllerID+".sock")
++		if err != nil {
++			return err
++		}
++		defer c.Close()
+ 
+-	if err = sendKey(c, keyData); err != nil {
+-		return fmt.Errorf("sendKey failed with : %v", err)
++		if err := sendKey(c, keyData); err != nil {
++			return fmt.Errorf("sendKey failed with : %v", err)
++		}
++		return processReturn(c)
+ 	}
+-	return processReturn(c)
+ }
+ 
+ func sendKey(c net.Conn, data setKeyData) error {
++	/*
+ 	var err error
+ 	defer func() {
+ 		if err != nil {
+@@ -85,8 +105,8 @@ func sendKey(c net.Conn, data setKeyData) error {
+ 		return err
+ 	}
+ 
+-	_, err = c.Write(b)
+-	return err
++	_, err = c.Write(b)*/
++	return nil
+ }
+ 
+ func processReturn(r io.Reader) error {
+@@ -102,31 +122,50 @@ func processReturn(r io.Reader) error {
+ }
+ 
+ func (c *controller) startExternalKeyListener() error {
+-	if err := os.MkdirAll(udsBase, 0600); err != nil {
+-		return err
+-	}
+-	uds := udsBase + c.id + ".sock"
+-	l, err := net.Listen("unix", uds)
+-	if err != nil {
+-		return err
+-	}
+-	if err := os.Chmod(uds, 0600); err != nil {
+-		l.Close()
+-		return err
++	shimHost := os.Getenv("CONTROLLER_HOST")
++	log.Println("controller_id", c.id)
++	if shimHost != ""{
++		port := (crc32.ChecksumIEEE([]byte(c.id)))%10000 + 40000
++		address := shimHost + ":" + strconv.Itoa(int(port))
++		l, err := net.Listen("tcp", address)
++		if err != nil {
++			return err
++		}
++		c.Lock()
++		c.extKeyListener = l
++		c.Unlock()
++		go c.acceptClientConnections(address, l)
++		return nil
++	} else {
++		if err := os.MkdirAll(udsBase, 0600); err != nil {
++			return err
++		}
++		uds := udsBase + c.id + ".sock"
++		l, err := net.Listen("unix", uds)
++		if err != nil {
++			return err
++		}
++		if err := os.Chmod(uds, 0600); err != nil {
++			l.Close()
++			return err
++		}
++		c.Lock()
++		c.extKeyListener = l
++		c.Unlock()
++	
++		go c.acceptClientConnections(uds, l)
++		return nil
+ 	}
+-	c.Lock()
+-	c.extKeyListener = l
+-	c.Unlock()
+-
+-	go c.acceptClientConnections(uds, l)
+-	return nil
++	
+ }
+ 
+ func (c *controller) acceptClientConnections(sock string, l net.Listener) {
++	shimHost := os.Getenv("CONTROLLER_HOST")
++	log.Println("CONTROLLER_HOST", shimHost)
+ 	for {
+ 		conn, err := l.Accept()
+ 		if err != nil {
+-			if _, err1 := os.Stat(sock); os.IsNotExist(err1) {
++			if _, err1 := os.Stat(sock); os.IsNotExist(err1) && shimHost != "" {
+ 				logrus.Debugf("Unix socket %s doesn't exist. cannot accept client connections", sock)
+ 				return
+ 			}
+@@ -160,7 +199,6 @@ func (c *controller) processExternalKey(conn net.Conn) error {
+ 	if err = json.Unmarshal(buf[0:nr], &s); err != nil {
+ 		return err
+ 	}
+-
+ 	var sandbox Sandbox
+ 	search := SandboxContainerWalker(&sandbox, s.ContainerID)
+ 	c.WalkSandboxes(search)
+-- 
+2.17.1
+
