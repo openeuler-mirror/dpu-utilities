@@ -146,7 +146,7 @@ connecting:
 			}
 			inode = file->f_inode;
 			// 暂时只支持fifo文件的epoll
-			if (inode == NULL || !S_ISFIFO(inode->i_mode)) {
+			if (inode == NULL || !qtfs_support_epoll(inode->i_mode)) {
 				qtfs_err("epoll thread event file:%lx not a fifo.", (unsigned long)file);
 				continue;
 			}

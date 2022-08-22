@@ -27,10 +27,11 @@ int single_read(int argc, char *argv[])
 	return 0;
 }
 
+#define MAX_READ_LEN 65536
 int my_epoll_read(int argc, char *argv[])
 {
-	char buf[BUF_MAX];
 	int *fd = (int *)malloc((argc - 1) * sizeof(int));
+	char *buf = (char *)malloc(MAX_READ_LEN);
 
 	for (int i = 1; i < argc; i++) {
 		fd[i-1] = open(argv[i], O_RDONLY|O_NONBLOCK);
@@ -58,28 +59,31 @@ int my_epoll_read(int argc, char *argv[])
 		}
 		printf("my epoll read epoll ctl fd:%d events:%x success.\n", fd[i], evt.events);
 	}
-
 	evts = calloc(64, sizeof(evt));
-
 	while (1) {
 		int n = epoll_wait(epfd, evts, 64, -1);
 		printf("epoll wait get new %d events.\n", n);
 		for (int i = 0; i < n; i++) {
 			int ret;
+			FILE *fp;
 			printf(" > epoll wait new events, cur:%d key:%x data:%lx n:%d.\n", i, evts[i].events, evts[i].data, n);
-			memset(buf, 0, sizeof(buf));
+			memset(buf, 0, MAX_READ_LEN);
 			if (evts[i].events & EPOLLHUP) {
 				epoll_ctl(epfd, EPOLL_CTL_DEL, evts[i].data.fd, NULL);
 				continue;
 			}
-			ret = read(evts[i].data.fd, buf, sizeof(buf));
+			fp = fdopen(evts[i].data.fd, "r");
+			fseek(fp, 0, SEEK_SET);
+			ret = read(evts[i].data.fd, buf, MAX_READ_LEN);
 			if (ret <= 0) {
 				printf(" >read fd:%d ret:%d data error.\n", evts[i].data.fd, ret);
+				goto end;
 			} else {
 				printf(" >read fd:%d ret:%d data:%s.\n", evts[i].data.fd, ret, buf);
 			}
 		}
 	}
+end:
 	close(epfd);
 	for (int i = 0; i < argc-1; i++) {
 		close(fd[i]);

@@ -149,6 +149,15 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			ret = (long)qtfs_log_init(level_str);
 			break;
 		}
+		case QTFS_IOCTL_EPOLL_SUPPORT:
+		{
+			if (arg == 0) {
+				qtfs_epoll_mode = false;
+			} else {
+				qtfs_epoll_mode = true;
+			}
+			break;
+		}
 	}
 	return ret;
 }

@@ -25,6 +25,7 @@ extern struct qtfs_sock_var_s *qtfs_epoll_var;
 extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
 extern int log_level;
 extern struct qtinfo *qtfs_diag_info;
+extern bool qtfs_epoll_mode;
 
 #define qtfs_conn_get_param(void) _qtfs_conn_get_param(__func__)
 
@@ -36,6 +37,11 @@ static inline bool err_ptr(void *ptr)
 		return true;
 	
 	return false;
+}
+
+static inline bool qtfs_support_epoll(umode_t mode)
+{
+	return (qtfs_epoll_mode || S_ISFIFO(mode));
 }
 
 #define QTFS_SOCK_RCVTIMEO 1

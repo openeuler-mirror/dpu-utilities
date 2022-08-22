@@ -157,7 +157,7 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 		ret = 0;
 		goto end;
 	}
-	if (!S_ISFIFO(file->f_inode->i_mode)) {
+	if (!qtfs_support_epoll(file->f_inode->i_mode)) {
 		char *fullname = (char *)kmalloc(MAX_PATH_LEN, GFP_KERNEL);
 		memset(fullname, 0, MAX_PATH_LEN);
 		if (qtfs_fullname(fullname, file->f_path.dentry) < 0) {
@@ -179,7 +179,8 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 		goto end;
 	}
 
-	qtfs_info("qtfs qtfs remote epoll file:%s mode:%x.", file->f_path.dentry->d_iname, file->f_inode->i_mode);
+	qtfs_info("qtfs qtfs remote epoll file:%s mode:%x file can poll:%lx.",
+				file->f_path.dentry->d_iname, file->f_inode->i_mode, (unsigned long)file->f_op->poll);
 	do_epoll_ctl_remote(op, event, file);
 
 end:
