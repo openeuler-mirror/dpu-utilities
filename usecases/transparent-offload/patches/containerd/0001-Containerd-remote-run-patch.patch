@@ -1,0 +1,373 @@
+From 0bba130e3626384b1673b74a2e5ed36a538d654a Mon Sep 17 00:00:00 2001
+From: Deng Guangxing <dengguangxing@huawei.com>
+Date: Fri, 1 Apr 2022 21:55:52 +0800
+Subject: [PATCH] Containerd remote run patch.
+
+Signed-off-by: Guangxing <dengguangxing@huawei.com>
+---
+ cmd/containerd-shim/main_unix.go              | 10 ++-
+ cmd/containerd-shim/shim_linux.go             |  3 +-
+ cmd/containerd-shim/shim_unix.go              |  3 +-
+ cmd/containerd/main.go                        |  2 +-
+ plugin/context.go                             |  1 -
+ runtime/v1/linux/proc/io.go                   |  1 +
+ runtime/v1/shim/client/client.go              | 75 ++++++++++++++-----
+ runtime/v1/shim/service.go                    |  3 +-
+ runtime/v1/shim/service_linux.go              |  6 +-
+ sys/oom_unix.go                               |  2 +-
+ .../github.com/containerd/cgroups/memory.go   |  1 +
+ vendor/github.com/containerd/cgroups/utils.go |  2 +-
+ vendor/google.golang.org/grpc/clientconn.go   |  1 -
+ 13 files changed, 76 insertions(+), 34 deletions(-)
+
+diff --git a/cmd/containerd-shim/main_unix.go b/cmd/containerd-shim/main_unix.go
+index ca0a90ad0..74c577f8b 100644
+--- a/cmd/containerd-shim/main_unix.go
++++ b/cmd/containerd-shim/main_unix.go
+@@ -70,7 +70,7 @@ func init() {
+ 	flag.BoolVar(&systemdCgroupFlag, "systemd-cgroup", false, "set runtime to use systemd-cgroup")
+ 	// currently, the `containerd publish` utility is embedded in the daemon binary.
+ 	// The daemon invokes `containerd-shim -containerd-binary ...` with its own os.Executable() path.
+-	flag.StringVar(&containerdBinaryFlag, "containerd-binary", "containerd", "path to containerd binary (used for `containerd publish`)")
++	flag.StringVar(&containerdBinaryFlag, "containerd-binary", "/usr/bin/containerd", "path to containerd binary (used for `containerd publish`)")
+ 	flag.Parse()
+ }
+ 
+@@ -105,6 +105,7 @@ func executeShim() error {
+ 	if err != nil {
+ 		return err
+ 	}
++
+ 	dump := make(chan os.Signal, 32)
+ 	signal.Notify(dump, syscall.SIGUSR1)
+ 
+@@ -164,7 +165,8 @@ func serve(ctx context.Context, server *ttrpc.Server, path string) error {
+ 		if len(path) > 106 {
+ 			return errors.Errorf("%q: unix socket path too long (> 106)", path)
+ 		}
+-		l, err = net.Listen("unix", "\x00"+path)
++		path = strings.TrimPrefix(path, "tcp://")
++		l, err = net.Listen("tcp", path)
+ 	}
+ 	if err != nil {
+ 		return err
+@@ -245,7 +247,7 @@ func (l *remoteEventsPublisher) Publish(ctx context.Context, topic string, event
+ 	if err != nil {
+ 		return err
+ 	}
+-	cmd := exec.CommandContext(ctx, containerdBinaryFlag, "--address", l.address, "publish", "--topic", topic, "--namespace", ns)
++	cmd := exec.CommandContext(ctx, "/usr/bin/containerd", "--address", l.address, "publish", "--topic", topic, "--namespace", ns)
+ 	cmd.Stdin = bytes.NewReader(data)
+ 	c, err := shim.Default.Start(cmd)
+ 	if err != nil {
+@@ -259,4 +261,4 @@ func (l *remoteEventsPublisher) Publish(ctx context.Context, topic string, event
+ 		return errors.New("failed to publish event")
+ 	}
+ 	return nil
+-}
++}
+\ No newline at end of file
+diff --git a/cmd/containerd-shim/shim_linux.go b/cmd/containerd-shim/shim_linux.go
+index d55646977..8c6ca5859 100644
+--- a/cmd/containerd-shim/shim_linux.go
++++ b/cmd/containerd-shim/shim_linux.go
+@@ -43,5 +43,6 @@ func setupSignals() (chan os.Signal, error) {
+ }
+ 
+ func newServer() (*ttrpc.Server, error) {
+-	return ttrpc.NewServer(ttrpc.WithServerHandshaker(ttrpc.UnixSocketRequireSameUser()))
++	// return ttrpc.NewServer(ttrpc.WithServerHandshaker(ttrpc.UnixSocketRequireSameUser()))
++	return ttrpc.NewServer([]ttrpc.ServerOpt{}...)
+ }
+diff --git a/cmd/containerd-shim/shim_unix.go b/cmd/containerd-shim/shim_unix.go
+index 88cd5387c..04ffb2b9f 100644
+--- a/cmd/containerd-shim/shim_unix.go
++++ b/cmd/containerd-shim/shim_unix.go
+@@ -39,5 +39,6 @@ func setupSignals() (chan os.Signal, error) {
+ }
+ 
+ func newServer() (*ttrpc.Server, error) {
+-	return ttrpc.NewServer(ttrpc.WithServerHandshaker(ttrpc.UnixSocketRequireSameUser()))
++	// return ttrpc.NewServer(ttrpc.WithServerHandshaker(ttrpc.UnixSocketRequireSameUser()))
++	return ttrpc.NewServer([]ttrpc.ServerOpt{}...)
+ }
+diff --git a/cmd/containerd/main.go b/cmd/containerd/main.go
+index 10bde45bd..cb1aa3e01 100644
+--- a/cmd/containerd/main.go
++++ b/cmd/containerd/main.go
+@@ -34,4 +34,4 @@ func main() {
+ 		fmt.Fprintf(os.Stderr, "containerd: %s\n", err)
+ 		os.Exit(1)
+ 	}
+-}
++}
+\ No newline at end of file
+diff --git a/plugin/context.go b/plugin/context.go
+index 1211c907e..dc5736201 100644
+--- a/plugin/context.go
++++ b/plugin/context.go
+@@ -140,6 +140,5 @@ func (i *InitContext) GetByType(t Type) (map[string]*Plugin, error) {
+ 	if !ok {
+ 		return nil, errors.Wrapf(errdefs.ErrNotFound, "no plugins registered for %s", t)
+ 	}
+-
+ 	return p, nil
+ }
+diff --git a/runtime/v1/linux/proc/io.go b/runtime/v1/linux/proc/io.go
+index 71f6ee1bb..cddcd4b1c 100644
+--- a/runtime/v1/linux/proc/io.go
++++ b/runtime/v1/linux/proc/io.go
+@@ -107,6 +107,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
+ 			}
+ 		}
+ 		i.dest(fw, fr)
++
+ 	}
+ 	if stdin == "" {
+ 		return nil
+diff --git a/runtime/v1/shim/client/client.go b/runtime/v1/shim/client/client.go
+index 015d88c2d..82a2eee82 100644
+--- a/runtime/v1/shim/client/client.go
++++ b/runtime/v1/shim/client/client.go
+@@ -20,14 +20,17 @@ package client
+ 
+ import (
+ 	"context"
++	"hash/crc32"
+ 	"io"
+ 	"net"
+ 	"os"
+ 	"os/exec"
++	"strconv"
+ 	"strings"
+ 	"sync"
+ 	"syscall"
+ 	"time"
++	"fmt"
+ 
+ 	"golang.org/x/sys/unix"
+ 
+@@ -51,18 +54,26 @@ type Opt func(context.Context, shim.Config) (shimapi.ShimService, io.Closer, err
+ // WithStart executes a new shim process
+ func WithStart(binary, address, daemonAddress, cgroup string, debug bool, exitHandler func()) Opt {
+ 	return func(ctx context.Context, config shim.Config) (_ shimapi.ShimService, _ io.Closer, err error) {
+-		socket, err := newSocket(address)
+-		if err != nil {
+-			return nil, nil, err
+-		}
+-		defer socket.Close()
+-		f, err := socket.File()
+-		if err != nil {
+-			return nil, nil, errors.Wrapf(err, "failed to get fd for socket %s", address)
++		shimHost := os.Getenv("SHIM_HOST")
++		var f *os.File = nil
++		if shimHost != "" {
++			// just construct a random port that won't collide with system port: 3xxxx
++			port := (crc32.ChecksumIEEE([]byte(address)))%10000 + 30000
++			address = "tcp://" + shimHost + ":" + strconv.Itoa(int(port))
++		} else {
++			socket, err := newSocket(address)
++			if err != nil {
++				return nil, nil, err
++			}
++			defer socket.Close()
++			f, err = socket.File()
++			if err != nil {
++				return nil, nil, errors.Wrapf(err, "failed to get fd for socket %s", address)
++			}
++			defer f.Close()
+ 		}
+-		defer f.Close()
+ 
+-		cmd, err := newCommand(binary, daemonAddress, debug, config, f)
++		cmd, err := newCommand(binary, daemonAddress, debug, config, f, address)
+ 		if err != nil {
+ 			return nil, nil, err
+ 		}
+@@ -93,6 +104,7 @@ func WithStart(binary, address, daemonAddress, cgroup string, debug bool, exitHa
+ 				"address": address,
+ 			}).Infof("shim placed in cgroup %s", cgroup)
+ 		}
++		//time.Sleep(1 * time.Second)
+ 		if err = sys.SetOOMScore(cmd.Process.Pid, sys.OOMScoreMaxKillable); err != nil {
+ 			return nil, nil, errors.Wrap(err, "failed to set OOM Score on shim")
+ 		}
+@@ -104,16 +116,15 @@ func WithStart(binary, address, daemonAddress, cgroup string, debug bool, exitHa
+ 	}
+ }
+ 
+-func newCommand(binary, daemonAddress string, debug bool, config shim.Config, socket *os.File) (*exec.Cmd, error) {
+-	selfExe, err := os.Executable()
+-	if err != nil {
+-		return nil, err
+-	}
++func newCommand(binary, daemonAddress string, debug bool, config shim.Config, socket *os.File, address string) (*exec.Cmd, error) {
+ 	args := []string{
+ 		"-namespace", config.Namespace,
+ 		"-workdir", config.WorkDir,
+ 		"-address", daemonAddress,
+-		"-containerd-binary", selfExe,
++		"-containerd-binary", "containerd",
++	}
++	if socket == nil {
++		args = append(args, "-socket", address)
+ 	}
+ 
+ 	if config.Criu != "" {
+@@ -135,7 +146,9 @@ func newCommand(binary, daemonAddress string, debug bool, config shim.Config, so
+ 	// and is cloned in a new mount namespace because the overlay/filesystems
+ 	// will be mounted by the shim
+ 	cmd.SysProcAttr = getSysProcAttr()
+-	cmd.ExtraFiles = append(cmd.ExtraFiles, socket)
++	if socket != nil {
++		cmd.ExtraFiles = append(cmd.ExtraFiles, socket)
++	}
+ 	cmd.Env = append(os.Environ(), "GOMAXPROCS=2")
+ 	if debug {
+ 		cmd.Stdout = os.Stdout
+@@ -161,8 +174,22 @@ func connect(address string, d func(string, time.Duration) (net.Conn, error)) (n
+ }
+ 
+ func annonDialer(address string, timeout time.Duration) (net.Conn, error) {
+-	address = strings.TrimPrefix(address, "unix://")
+-	return net.DialTimeout("unix", "\x00"+address, timeout)
++	if strings.HasPrefix(address, "tcp://") {
++		address = strings.TrimPrefix(address, "tcp://")
++		var conn net.Conn
++		var err error
++		for i := 0; i < 100; i++ {
++			conn, err = net.DialTimeout("tcp", address, timeout)
++			if err == nil {
++				return conn, err
++			}
++			time.Sleep(100 * time.Millisecond)
++		}
++		return conn, err
++	} else {
++		address = strings.TrimPrefix(address, "unix://")
++		return net.DialTimeout("unix", "\x00"+address, timeout)
++	}
+ }
+ 
+ // WithConnect connects to an existing shim
+@@ -251,9 +278,19 @@ func (c *Client) signalShim(ctx context.Context, sig syscall.Signal) error {
+ 	if os.Getpid() == pid {
+ 		return nil
+ 	}
++	KillSignal := fmt.Sprintf("-%d", sig)
++	Pid := fmt.Sprintf("%d", pid)
++
++	cmd := exec.Command("/usr/bin/remote_kill", KillSignal, Pid)
++	if err = cmd.Run(); err != nil {
++		return err
++	}
++
++	/*
+ 	if err := unix.Kill(pid, sig); err != nil && err != unix.ESRCH {
+ 		return err
+ 	}
++	*/
+ 	// wait for shim to die after being signaled
+ 	select {
+ 	case <-ctx.Done():
+diff --git a/runtime/v1/shim/service.go b/runtime/v1/shim/service.go
+index d76d5803d..96c61fc82 100644
+--- a/runtime/v1/shim/service.go
++++ b/runtime/v1/shim/service.go
+@@ -93,6 +93,7 @@ func NewService(config Config, publisher events.Publisher) (*Service, error) {
+ 		return nil, errors.Wrap(err, "failed to initialized platform behavior")
+ 	}
+ 	go s.forward(publisher)
++
+ 	return s, nil
+ }
+ 
+@@ -160,7 +161,7 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
+ 	}
+ 	process, err := newInit(
+ 		ctx,
+-		s.config.Path,
++		r.Bundle, //Here used to be s.config.Path, but the value of s.config.Path is "root", caused rootfs wrong path.
+ 		s.config.WorkDir,
+ 		s.config.RuntimeRoot,
+ 		s.config.Namespace,
+diff --git a/runtime/v1/shim/service_linux.go b/runtime/v1/shim/service_linux.go
+index 18ae6503b..781d387c9 100644
+--- a/runtime/v1/shim/service_linux.go
++++ b/runtime/v1/shim/service_linux.go
+@@ -42,7 +42,7 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
+ 	}
+ 
+ 	if stdin != "" {
+-		in, err := fifo.OpenFifo(ctx, stdin, syscall.O_RDONLY, 0)
++		in, err := fifo.OpenFifo(ctx, stdin, syscall.O_RDONLY | syscall.O_NONBLOCK, 0)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -55,11 +55,11 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
+ 		}()
+ 	}
+ 
+-	outw, err := fifo.OpenFifo(ctx, stdout, syscall.O_WRONLY, 0)
++	outw, err := fifo.OpenFifo(ctx, stdout, syscall.O_WRONLY | syscall.O_NONBLOCK, 0)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	outr, err := fifo.OpenFifo(ctx, stdout, syscall.O_RDONLY, 0)
++	outr, err := fifo.OpenFifo(ctx, stdout, syscall.O_RDONLY | syscall.O_NONBLOCK, 0)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/sys/oom_unix.go b/sys/oom_unix.go
+index 7192efec1..f07a59ac1 100644
+--- a/sys/oom_unix.go
++++ b/sys/oom_unix.go
+@@ -31,7 +31,7 @@ const OOMScoreMaxKillable = -999
+ 
+ // SetOOMScore sets the oom score for the provided pid
+ func SetOOMScore(pid, score int) error {
+-	path := fmt.Sprintf("/proc/%d/oom_score_adj", pid)
++	path := fmt.Sprintf("/local_proc/%d/oom_score_adj", pid)
+ 	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+ 	if err != nil {
+ 		return err
+diff --git a/vendor/github.com/containerd/cgroups/memory.go b/vendor/github.com/containerd/cgroups/memory.go
+index ce15ca2b9..ee7a29168 100644
+--- a/vendor/github.com/containerd/cgroups/memory.go
++++ b/vendor/github.com/containerd/cgroups/memory.go
+@@ -188,6 +188,7 @@ func (m *memoryController) OOMEventFD(path string) (uintptr, error) {
+ }
+ 
+ func writeEventFD(root string, cfd, efd uintptr) error {
++	return nil //tmp
+ 	f, err := os.OpenFile(filepath.Join(root, "cgroup.event_control"), os.O_WRONLY, 0)
+ 	if err != nil {
+ 		return err
+diff --git a/vendor/github.com/containerd/cgroups/utils.go b/vendor/github.com/containerd/cgroups/utils.go
+index 345be4e46..c0a954def 100644
+--- a/vendor/github.com/containerd/cgroups/utils.go
++++ b/vendor/github.com/containerd/cgroups/utils.go
+@@ -233,7 +233,7 @@ func parseCgroupFromReader(r io.Reader) (map[string]string, error) {
+ }
+ 
+ func getCgroupDestination(subsystem string) (string, error) {
+-	f, err := os.Open("/proc/self/mountinfo")
++	f, err := os.Open("/proc/1/mountinfo")
+ 	if err != nil {
+ 		return "", err
+ 	}
+diff --git a/vendor/google.golang.org/grpc/clientconn.go b/vendor/google.golang.org/grpc/clientconn.go
+index e8d95b43b..f13386d07 100644
+--- a/vendor/google.golang.org/grpc/clientconn.go
++++ b/vendor/google.golang.org/grpc/clientconn.go
+@@ -456,7 +456,6 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
+ 		blockingpicker: newPickerWrapper(),
+ 	}
+ 	cc.ctx, cc.cancel = context.WithCancel(context.Background())
+-
+ 	for _, opt := range opts {
+ 		opt(&cc.dopts)
+ 	}
+-- 
+2.30.0
+

@@ -1,0 +1,24 @@
+From aea4dc47f7e91c5c7cdf9146b733ffdfc7681112 Mon Sep 17 00:00:00 2001
+From: Deng Guangxing <dengguangxing@huawei.com>
+Date: Mon, 22 Aug 2022 11:43:30 +0800
+Subject: [PATCH] ignore qos cgroup error
+
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+
+diff --git a/pkg/kubelet/cm/qos_container_manager_linux.go b/pkg/kubelet/cm/qos_container_manager_linux.go
+index eb8fc7d3da3..360db8743e2 100644
+--- a/pkg/kubelet/cm/qos_container_manager_linux.go
++++ b/pkg/kubelet/cm/qos_container_manager_linux.go
+@@ -117,7 +117,8 @@ func (m *qosContainerManagerImpl) Start(getNodeAllocatable func() v1.ResourceLis
+ 		} else {
+ 			// to ensure we actually have the right state, we update the config on startup
+ 			if err := cm.Update(containerConfig); err != nil {
+-				return fmt.Errorf("failed to update top level %v QOS cgroup : %v", qosClass, err)
++				klog.Errorf("failed to update top level %v QOS cgroup : %v", qosClass, err)
++				return nil
+ 			}
+ 		}
+ 	}
+-- 
+2.23.0
+
