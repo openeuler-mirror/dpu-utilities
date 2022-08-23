@@ -105,7 +105,7 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 	pid = is_local_process(cpath);
 	if (pid > 0) {
 		sscanf(cpath, "/proc/%s", tmp);
-		sprintf(local_path, "/test_proc/%s", tmp);
+		sprintf(local_path, "/local_proc/%s", tmp);
 		qtfs_debug("[%s]: get path:%s from local: %s\n", __func__, cpath, local_path);
 		ret = kern_path(local_path, 0, &spath);
 		if(ret) {
@@ -156,7 +156,7 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 	}
 
 	if (!strncmp(path, "/proc/self", 11)) {
-		sprintf(link, "/test_proc/%d", (int)current->pid);
+		sprintf(link, "/local_proc/%d", (int)current->pid);
 		qtfs_info("[%s] success: %s getlink: %s", __func__, path, link);
 		return link;
 	}
@@ -170,7 +170,7 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 	pid = is_local_process(path);
 	if (pid > 0) {
 		sscanf(path, "/proc/%s", tmp);
-		sprintf(link, "/test_proc/%s", tmp);
+		sprintf(link, "/local_proc/%s", tmp);
 		qtfs_info("[%s] success: %s getlink: %s", __func__, path, link);
 		return link;
 	}
@@ -198,7 +198,7 @@ int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask,
 	pid = is_local_process(cpath);
 	if (pid > 0) {
 		sscanf(cpath, "/proc/%s", tmp);
-		sprintf(local_path, "/test_proc/%s", tmp);
+		sprintf(local_path, "/local_proc/%s", tmp);
 		ret = kern_path(local_path, 0, &spath);
 		if (ret) {
 			qtfs_err("[%s]: kern_path(%s) failed: %d", __func__, local_path, ret);
