@@ -1041,7 +1041,7 @@ int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar)
 			totalproc++;
 			qtinfo_recvinc(req->type);
 		}
-		if (rsp->len >= QTFS_REQ_MAX_LEN) {
+		if (rsp->len > QTFS_REQ_MAX_LEN) {
 			qtfs_err("handle rsp len error type:%d len:%lu", rsp->type, rsp->len);
 			WARN_ON(1);
 			continue;
