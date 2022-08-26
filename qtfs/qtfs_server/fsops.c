@@ -173,6 +173,7 @@ int handle_open(struct qtserver_arg *arg)
 	if (ret) {
 		qtfs_err("handle open copy to user failed, ret:%d userp:%lx path:%s", ret, (unsigned long)userp->userp, req->path);
 		rsp->ret = QTFS_ERR;
+		rsp->fd = -EFAULT;
 		return sizeof(struct qtrsp_open);
 	}
 	fd = qtfs_kern_syms.do_sys_open(AT_FDCWD, (char *)userp->userp, req->flags, req->mode);
