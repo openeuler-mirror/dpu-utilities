@@ -52,6 +52,19 @@ index 8a68110878..82d8d8cbd0 100644
  			if err != nil {
  				logrus.Infof("Error reading file %s: %+v", filepath.Join("/proc", entry.Name(), "cmdline"), err)
  				continue
+diff --git a/pkg/mount/mounter_linux.go b/pkg/mount/mounter_linux.go
+index 631daf10a5..eafa67548a 100644
+--- a/pkg/mount/mounter_linux.go
++++ b/pkg/mount/mounter_linux.go
+@@ -40,7 +40,7 @@ func mount(device, target, mType string, flags uintptr, data string) error {
+        if flags&ptypes != 0 {
+                // Change the propagation type.
+                if err := unix.Mount("", target, "", flags&pflags, ""); err != nil {
+-                       return err
++                       //return err
+                }
+        }
+
 diff --git a/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go b/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go
 index f4c4276848..80e2492e7a 100644
 --- a/vendor/github.com/docker/libnetwork/sandbox_externalkey_unix.go
