@@ -337,13 +337,13 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 	ssize_t ret;
 	struct file *filp;
 
-	if (len <= 0) {
-		return len;
-	}
-
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var.");
 		return -EINVAL;
+	}
+	if (len <= 0) {
+		qtfs_conn_put_param(pvar);
+		return len;
 	}
 
 	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
@@ -805,11 +805,6 @@ int qtfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev
 	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
 	QTFS_FULLNAME(req->path, dentry);
 
-	if (S_ISSOCK(mode)) {
-		qtfs_conn_put_param(pvar);
-		return -ENOTSUPP;
-	}
-
 	req->mode = mode;
 	req->dev = dev;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_MKNOD, sizeof(struct qtreq_mknod) - sizeof(req->path) + strlen(req->path));
@@ -877,6 +872,8 @@ static void qtfs_init_inode(struct super_block *sb, struct inode *inode, struct 
 		inode->i_fop = &qtfs_file_ops;
 	} else if (S_ISFIFO(ii->mode)) {
 		inode->i_fop = &qtfsfifo_ops;
+	} else {
+		inode->i_fop = &qtfs_file_ops;
 	}
 	qtfs_inode_priv_alloc(inode);
 	return;

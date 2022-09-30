@@ -15,11 +15,6 @@ static long qtfs_remote_mount(char __user *dev_name, char __user *dir_name, char
 static int qtfs_remote_umount(char __user *name, int flags);
 
 #ifdef __aarch64__
-static struct kprobe kp = {
-    .symbol_name = "kallsyms_lookup_name"
-};
-typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
-extern unsigned long kallsyms_lookup_name(const char *name);
 void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
 unsigned long start_rodata, end_rodata;
 #define section_size  (end_rodata - start_rodata)
@@ -513,9 +508,6 @@ static unsigned long *qtfs_oldsyscall_epoll_ctl = NULL;
 
 int qtfs_syscall_init(void)
 {
-#ifdef __aarch64__
-	kallsyms_lookup_name_t kallsyms_lookup_name;
-#endif
 	qtfs_debug("qtfs use my_mount instead of mount:0x%lx umount:0x%lx\n",
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount], (unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2]);
 	qtfs_debug("qtfs use my_epoll_ctl instead of epoll_ctl:0x%lx\n",
@@ -523,25 +515,26 @@ int qtfs_syscall_init(void)
 	qtfs_oldsyscall_mount = qtfs_kern_syms.sys_call_table[__NR_mount];
 	qtfs_oldsyscall_umount = qtfs_kern_syms.sys_call_table[__NR_umount2];
 	qtfs_oldsyscall_epoll_ctl = qtfs_kern_syms.sys_call_table[__NR_epoll_ctl];
-	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
 #ifdef __x86_64__
+	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)__x64_sys_qtfs_mount;
 	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)__x64_sys_qtfs_umount;
 	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)__x64_sys_qtfs_epoll_ctl;
+	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
 #endif
 #ifdef __aarch64__
-        register_kprobe(&kp);
-        kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
-        unregister_kprobe(&kp);
-	update_mapping_prot = (void *)kallsyms_lookup_name("update_mapping_prot");
-        start_rodata = (unsigned long)kallsyms_lookup_name("__start_rodata");
-	end_rodata= (unsigned long)kallsyms_lookup_name("__end_rodata");
+	update_mapping_prot = (void *)qtfs_kallsyms_lookup_name("update_mapping_prot");
+	start_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__start_rodata");
+	end_rodata= (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
 
+	// disable write protection
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)__arm64_sys_qtfs_mount;
 	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)__arm64_sys_qtfs_umount;
 	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)__arm64_sys_qtfs_epoll_ctl;
+	// enable write protection
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
-	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
 	qtfs_debug("qtfs use my_mount:0x%lx, my_umount:0x%lx, my_epoll_ctl:0x%lx\n",
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount],
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2],
@@ -552,12 +545,22 @@ int qtfs_syscall_init(void)
 int qtfs_syscall_fini(void)
 {
 	qtfs_info("qtfs mount resume to 0x%lx.\n", (unsigned long)qtfs_oldsyscall_mount);
-
+#ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)qtfs_oldsyscall_mount;
 	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)qtfs_oldsyscall_umount;
 	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)qtfs_oldsyscall_epoll_ctl;
 	/*set mkdir syscall to the original one */
 	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
+#endif
+#ifdef __aarch64__
+	// disable write protection
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
+	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)qtfs_oldsyscall_mount;
+	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)qtfs_oldsyscall_umount;
+	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)qtfs_oldsyscall_epoll_ctl;
+	// enable write protection
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
+#endif
 	return 0;
 }
