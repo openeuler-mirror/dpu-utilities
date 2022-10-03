@@ -26,6 +26,7 @@ bool is_sb_proc(struct super_block *sb)
 }
 
 const char *match_str[] = {
+	// k8s isula and docker
 	"bash",
 	"isula",
 	"isulad",
@@ -35,7 +36,11 @@ const char *match_str[] = {
 	"dockerd",
 	"dockerd-real",
 	"containerd",
-	"containerd-real"
+	"containerd-real",
+	// Virtualization scene
+	"libvirtd",
+	"virsh",
+	"rpc-worker",
 };
 
 int is_local_process(const char *path)

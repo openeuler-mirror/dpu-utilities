@@ -846,17 +846,15 @@ void qtfs_conn_list_cnt(void)
 }
 
 #define KSYMS(sym, type) \
-				qtfs_kern_syms.sym = (type) kallsyms_lookup_name(#sym);\
+				qtfs_kern_syms.sym = (type) qtfs_kallsyms_lookup_name(#sym);\
 				qtfs_info("qtfs kallsyms get %s:0x%lx.", #sym, (unsigned long)qtfs_kern_syms.sym);
 
 struct qtfs_kallsyms qtfs_kern_syms;
-extern unsigned long kallsyms_lookup_name(const char *name);
+kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
 void qtfs_kallsyms_hack_init(void)
 {
-	typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
-	kallsyms_lookup_name_t kallsyms_lookup_name;
 	register_kprobe(&kp);
-	kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
+	qtfs_kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
 	unregister_kprobe(&kp);
 
 	KSYMS(sys_call_table, unsigned long **);

@@ -97,6 +97,9 @@ struct qtfs_conn_var_s {
 	int len_send;
 };
 
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+extern kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
+
 struct qtfs_kallsyms {
 	/* global vars define */
 	unsigned long **sys_call_table;
