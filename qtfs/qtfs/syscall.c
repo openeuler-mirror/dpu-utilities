@@ -298,7 +298,7 @@ int qtfs_dir_to_qtdir(char *dir, char *qtdir)
 {
 	int ret = 0;
 	struct path path;
-	ret = kern_path(dir, LOOKUP_FOLLOW, &path);
+	ret = kern_path(dir, 0, &path);
 	if (ret) {
 		strcpy(qtdir, dir);
 		return 0;
@@ -424,7 +424,7 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		req->d.dev_len = 0;
 	}
 
-	strcpy(&req->buf[req->d.dev_len], kernel_dir);
+	//strcpy(&req->buf[req->d.dev_len], kernel_dir);
 	qtfs_dir_to_qtdir(kernel_dir, &req->buf[req->d.dev_len]);
 	req->d.dir_len = strlen(&req->buf[req->d.dev_len]) + 1;
 	if (type != NULL) {

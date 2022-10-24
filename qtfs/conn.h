@@ -129,6 +129,7 @@ struct qtfs_kallsyms {
 	int (*do_linkat)(int, const char __user *, int, const char __user *, int);
 	int (*mnt_get_count)(void *);
 	long (*do_mknodat)(int, const char __user *, umode_t, unsigned int);
+	off_t (*ksys_lseek)(unsigned int, off_t, unsigned int);
 };
 
 extern struct qtfs_kallsyms qtfs_kern_syms;

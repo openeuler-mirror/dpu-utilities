@@ -9,6 +9,8 @@
 #include <linux/security.h>
 #include <linux/poll.h>
 #include <linux/fs_struct.h>
+#include <asm-generic/ioctls.h>
+#include <asm-generic/termbits.h>
 
 #include "conn.h"
 #include "qtfs-server.h"
@@ -96,6 +98,49 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("fssetxattr ioctl failed with %d\n", iret);
+			rsp->errno = iret;
+			goto err;
+		}
+		rsp->ret = QTFS_OK;
+		rsp->errno = iret;
+		rsp->size = 0;
+		filp_close(file, NULL);
+		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
+	case TCGETS:
+		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		if (iret) {
+			qtfs_err("ioctl TCGETS failed with %d\n", iret);
+			rsp->errno = iret;
+			goto err;
+		}
+		qtfs_info("ioctl TCGETS ret:%d", iret);
+		
+		ret = copy_from_user(rsp->buf, userp->userp, sizeof(struct ktermios));
+		if (ret) {
+			qtfs_err("fsgetxattr copy_from_user failed with %d\n", ret);
+			rsp->errno = ret;
+			goto err;
+		}
+		rsp->ret = QTFS_OK;
+		rsp->errno = iret;
+		rsp->size = sizeof(struct ktermios);
+		filp_close(file, NULL);
+		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + sizeof(struct ktermios);
+	case TCSETS:
+		if (req->d.size <= 0) {
+			rsp->errno = -EINVAL;
+			goto err;
+		}
+		ret = copy_to_user(userp->userp, req->path+req->d.offset, req->d.size);
+		if (ret) {
+			qtfs_err("tcsets copy_to_user failed with %d\n", ret);
+			rsp->errno = ret;
+			goto err;
+		}
+		qtfs_err("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
+		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		if (iret) {
+			qtfs_err("tcsets ioctl failed with %d\n", iret);
 			rsp->errno = iret;
 			goto err;
 		}
@@ -428,7 +473,7 @@ static int handle_mkdir(struct qtserver_arg *arg)
 	}
 	rsp->errno = qtfs_kern_syms.do_mkdirat(AT_FDCWD, userp->userp, req->mode);
 	if (rsp->errno < 0) {
-		qtfs_err("handle mkdir failed with ret:%d.", rsp->errno);
+		qtfs_err("handle mkdir path:%s failed with ret:%d.", req->path, rsp->errno);
 		goto err;
 	}
 	ret = kern_path(req->path, 0, &path);
@@ -899,9 +944,21 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	struct file *filp = NULL;
 	unsigned int head, tail;
 	struct pipe_inode_info *pipe;
+	struct inode *inode;
 	__poll_t mask;
+	struct poll_wqueues table;
+	poll_table *pt;
 
 	filp = (struct file *)req->file;
+	inode = filp->f_inode;
+	if (!S_ISFIFO(inode->i_mode)) {
+		msleep(1);
+		poll_initwait(&table);
+		pt = &table.pt;
+		mask = vfs_poll(filp, pt);
+		poll_freewait(&table);
+		goto end;
+	}
 	pipe = filp->private_data;
 	if (pipe == NULL) {
 		qtfs_err("file :%s pipe data is NULL.", filp->f_path.dentry->d_iname);
@@ -924,10 +981,12 @@ int handle_fifopoll(struct qtserver_arg *arg)
 		if (!pipe->readers)
 			mask |= EPOLLERR;
 	}
+end:
 	rsp->mask = mask;
 	rsp->ret = QTFS_OK;
 
-	qtfs_info("handle fifo poll f_mode:%o: %s get poll 0x%x\n", filp->f_mode, filp->f_path.dentry->d_iname, rsp->ret);
+	qtfs_info("handle fifo poll f_mode:%o: %s get poll mask 0x%x poll:%lx\n",
+			filp->f_mode, filp->f_path.dentry->d_iname, rsp->mask, (unsigned long)filp->f_op->poll);
 	return sizeof(struct qtrsp_poll);
 }
 
@@ -952,6 +1011,24 @@ int handle_epollctl(struct qtserver_arg *arg)
 			req->fd, (unsigned long)req->file, req->op, req->event.data, (unsigned)req->event.events);
 
 	return sizeof(struct qtrsp_epollctl);
+}
+
+int handle_llseek(struct qtserver_arg *arg)
+{
+	struct qtreq_llseek *req = (struct qtreq_llseek *)REQ(arg);
+	struct qtrsp_llseek *rsp = (struct qtrsp_llseek *)RSP(arg);
+
+	qtfs_info("llseek get req fd:%d, off:%lld whence:%d.", req->fd, req->off, req->whence);
+	rsp->off = qtfs_kern_syms.ksys_lseek(req->fd, req->off, req->whence);
+	if (rsp->off < 0) {
+		qtfs_err("llseek ksys lseek return :%lld failed, req fd:%d off:%lld whence:%d.",
+					rsp->off, req->fd, req->off, req->whence);
+		rsp->ret = QTFS_ERR;
+		goto end;
+	}
+	rsp->ret = QTFS_OK;
+end:
+	return sizeof(struct qtrsp_llseek);
 }
 
 int handle_exit(struct qtserver_arg *arg)
@@ -1001,6 +1078,8 @@ static struct qtserver_ops qtfs_server_handles[] = {
 
 	{QTFS_REQ_EPOLL_CTL,	handle_epollctl,	"epollctl"},
 	{QTFS_REQ_EPOLL_EVENT,	NULL,			"epollevent"},
+
+	{QTFS_REQ_LLSEEK,		handle_llseek,		"llseek"},
 
 	{QTFS_REQ_EXIT,			handle_exit,	"exit"}, // keep this handle at the end
 };

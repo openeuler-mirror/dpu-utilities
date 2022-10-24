@@ -4,6 +4,9 @@
 #include <linux/pagemap.h>
 #include <linux/mpage.h>
 #include <linux/wait.h>
+#include <asm-generic/ioctls.h>
+#include <asm-generic/termbits.h>
+
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -393,12 +396,18 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		leftlen -= wrbuflen;
 	} while (leftlen);
 
-	if (qtfs_support_epoll(kio->ki_filp->f_inode->i_mode)) {
+	//if (qtfs_support_epoll(kio->ki_filp->f_inode->i_mode) || ) {
+	do {
 		struct inode *inode = kio->ki_filp->f_inode;
 		struct qtfs_inode_priv *priv = inode->i_private;
-		wake_up_interruptible_sync_poll(&priv->readq, EPOLLIN | EPOLLRDNORM);
-		qtfs_info("qtfs write iter fifo %s sync poll.", filp->f_path.dentry->d_iname);
-	}
+		if (S_ISFIFO(inode->i_mode))
+			wake_up_interruptible_sync_poll(&priv->readq, EPOLLIN | EPOLLRDNORM);
+		if (S_ISCHR(inode->i_mode)) {
+			wake_up_interruptible_poll(&priv->readq, EPOLLIN);
+			qtfs_err("writeiter file:%s char:<%s> wakup poll.", filp->f_path.dentry->d_iname, req->path_buf);
+		}
+		//qtfs_info("qtfs write iter fifo %s sync poll.", filp->f_path.dentry->d_iname);
+	} while (0);
 	qtfs_info("qtfs write %s over, leftlen:%lu.", filp->f_path.dentry->d_iname, leftlen);
 	qtfs_conn_put_param(pvar);
 	return len - leftlen;
@@ -406,8 +415,38 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 
 loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 {
+	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtreq_llseek *req;
+	struct qtrsp_llseek *rsp;
+	loff_t ret;
+	struct private_data *priv = NULL;
+	
 	qtfs_info("qtfs llseek off:%lld, whence:%d.", off, whence);
-	return 0;
+	if (!pvar) {
+		qtfs_err("Failed to get qtfs sock var.");
+		return -EINVAL;
+	}
+	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+
+	priv = (struct private_data *)file->private_data;
+	req->off = off;
+	req->whence = whence;
+	req->fd = priv->fd;
+	rsp = qtfs_remote_run(pvar, QTFS_REQ_LLSEEK, sizeof(struct qtreq_llseek));
+	if (IS_ERR(rsp) || rsp == NULL) {
+		qtfs_conn_put_param(pvar);
+		qtfs_err("Failed to remote run llseek.");
+		return PTR_ERR(rsp);
+	}
+	if (rsp->ret != QTFS_OK) {
+		qtfs_conn_put_param(pvar);
+		return rsp->off;
+	}
+	file->f_pos = rsp->off;
+	ret = rsp->off;
+	qtfs_conn_put_param(pvar);
+	qtfs_info("qtfs llseek successed, cur seek pos:%lld.", ret);
+	return ret;
 }
 
 static void qtfs_vma_close(struct vm_area_struct *vma)
@@ -496,6 +535,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 			goto out;
 		}
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + req->d.offset + size;
+		req->d.size = size;
 	} else {
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + strlen(req->path) + 1;
 	}
@@ -506,16 +546,16 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 		return PTR_ERR(rsp);
 	}
 	if (rsp->ret == QTFS_ERR) {
-		qtfs_err("qtfs ioctl failed. %d", rsp->errno);
+		qtfs_err("qtfs ioctl cmd:0x%x failed. %d", cmd, rsp->errno);
 		ret = rsp->errno;
 		qtfs_conn_put_param(pvar);
 		return ret;
 	}
 
-	qtfs_info("qtfs do ioctl success, path: %s", req->path);
+	qtfs_info("qtfs do ioctl cmd:0x%x success, path: %s size:%u, rsp size:%u", cmd, req->path, size, rsp->size);
 	ret = rsp->errno;
 	if (rsp->size > 0)
-		ret = copy_to_user((char __user *)arg, rsp->buf, rsp->size);
+		ret = copy_to_user((char __user *)arg, rsp->buf, size);
 out:
 	qtfs_conn_put_param(pvar);
 	return (long)ret;
@@ -523,12 +563,18 @@ out:
 
 long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+	char fullname[64] = {0};
 	switch(cmd) {
 		case FS_IOC_FSGETXATTR:
+		case TCGETS:
 			return qtfs_do_ioctl(filp, cmd, arg, 0);
 		case FS_IOC_FSSETXATTR:
 			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct fsxattr));
+		case TCSETS:
+			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct ktermios));
 		default:
+			qtfs_fullname(fullname, filp->f_path.dentry);
+			qtfs_err("qtfs ioctl get not support cmd:%d file:%s TCGETS:%d", cmd, fullname, TCGETS);
 			return -EOPNOTSUPP;
 	}
 }
@@ -569,8 +615,6 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 	poll_wait(filp, &priv->readq, wait);
 
 	p = &priv->readq.head;
-	qtfs_debug("fifo poll readq,qproc:%lx key:%x head:%lx next:%lx pre:%lx",
-			(unsigned long)wait->_qproc, (unsigned)wait->_key, (unsigned long)p, (unsigned long)p->next, (unsigned long)p->prev);
 
 	if (IS_ERR((void *)fpriv->file) || (void *)fpriv->file == NULL) {
 		qtfs_err("fifo poll priv file invalid.");
@@ -594,7 +638,10 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 		return 0;
 	}
 	mask = rsp->mask;
-	qtfs_info("fifo poll success, mask:%x.", mask);
+
+	qtfs_info("fifo poll success mask:%x, qproc:%lx key:%x head:%lx next:%lx pre:%lx",
+			mask, (unsigned long)wait->_qproc, (unsigned)wait->_key, (unsigned long)p,
+			(unsigned long)p->next, (unsigned long)p->prev);
 	qtfs_conn_put_param(pvar);
 	return mask;
 }
