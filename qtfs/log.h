@@ -66,7 +66,7 @@ static inline int qtfs_log_init(char *level) {
 (								\
 {								\
 	if (unlikely(log_level >= LOG_DEBUG)) {	\
-		pr_debug("[%s::%s:%4d] " fmt, \
+		pr_info("[%s::%s:%4d] " fmt, \
 			KBUILD_MODNAME, kbasename(__FILE__), __LINE__, ##__VA_ARGS__);	\
 	}							\
 }								\

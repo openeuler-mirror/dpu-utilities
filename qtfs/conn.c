@@ -885,6 +885,7 @@ void qtfs_kallsyms_hack_init(void)
 	KSYMS(do_linkat, int (*)(int, const char __user *, int, const char __user *, int));
 	KSYMS(mnt_get_count, int (*)(void *));
 	KSYMS(do_mknodat, long (*)(int, const char __user *, umode_t, unsigned int));
+	KSYMS(ksys_lseek, off_t (*)(unsigned int, off_t, unsigned int));
 	return;
 }
 

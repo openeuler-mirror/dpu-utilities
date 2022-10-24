@@ -44,6 +44,8 @@ enum qtreq_type {
 
 	QTFS_REQ_EPOLL_EVENT,
 
+	QTFS_REQ_LLSEEK,
+
 	QTFS_REQ_EXIT, // exit server thread
 	QTFS_REQ_INV,
 };
@@ -58,6 +60,7 @@ enum qtreq_ret {
 enum qtfs_type {
 	QTFS_NORMAL,
 	QTFS_PROC,
+	QTFS_SYS, // for sysfs
 };
 
 struct qtfs_dirent64 {
@@ -515,5 +518,16 @@ struct qtreq_epollevt {
 
 struct qtrsp_epollevt {
 	int ret;
+};
+
+struct qtreq_llseek {
+	loff_t off;
+	int whence;
+	int fd;
+};
+
+struct qtrsp_llseek {
+	int ret;
+	loff_t off;
 };
 #endif

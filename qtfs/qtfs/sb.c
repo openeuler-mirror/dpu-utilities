@@ -415,8 +415,38 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 
 loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 {
+	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtreq_llseek *req;
+	struct qtrsp_llseek *rsp;
+	loff_t ret;
+	struct private_data *priv = NULL;
+	
 	qtfs_info("qtfs llseek off:%lld, whence:%d.", off, whence);
-	return 0;
+	if (!pvar) {
+		qtfs_err("Failed to get qtfs sock var.");
+		return -EINVAL;
+	}
+	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+
+	priv = (struct private_data *)file->private_data;
+	req->off = off;
+	req->whence = whence;
+	req->fd = priv->fd;
+	rsp = qtfs_remote_run(pvar, QTFS_REQ_LLSEEK, sizeof(struct qtreq_llseek));
+	if (IS_ERR(rsp) || rsp == NULL) {
+		qtfs_conn_put_param(pvar);
+		qtfs_err("Failed to remote run llseek.");
+		return PTR_ERR(rsp);
+	}
+	if (rsp->ret != QTFS_OK) {
+		qtfs_conn_put_param(pvar);
+		return rsp->off;
+	}
+	file->f_pos = rsp->off;
+	ret = rsp->off;
+	qtfs_conn_put_param(pvar);
+	qtfs_info("qtfs llseek successed, cur seek pos:%lld.", ret);
+	return ret;
 }
 
 static void qtfs_vma_close(struct vm_area_struct *vma)

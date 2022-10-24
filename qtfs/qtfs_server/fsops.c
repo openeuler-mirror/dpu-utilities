@@ -473,7 +473,7 @@ static int handle_mkdir(struct qtserver_arg *arg)
 	}
 	rsp->errno = qtfs_kern_syms.do_mkdirat(AT_FDCWD, userp->userp, req->mode);
 	if (rsp->errno < 0) {
-		qtfs_err("handle mkdir failed with ret:%d.", rsp->errno);
+		qtfs_err("handle mkdir path:%s failed with ret:%d.", req->path, rsp->errno);
 		goto err;
 	}
 	ret = kern_path(req->path, 0, &path);
@@ -952,6 +952,7 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	filp = (struct file *)req->file;
 	inode = filp->f_inode;
 	if (!S_ISFIFO(inode->i_mode)) {
+		msleep(1);
 		poll_initwait(&table);
 		pt = &table.pt;
 		mask = vfs_poll(filp, pt);
@@ -1012,6 +1013,24 @@ int handle_epollctl(struct qtserver_arg *arg)
 	return sizeof(struct qtrsp_epollctl);
 }
 
+int handle_llseek(struct qtserver_arg *arg)
+{
+	struct qtreq_llseek *req = (struct qtreq_llseek *)REQ(arg);
+	struct qtrsp_llseek *rsp = (struct qtrsp_llseek *)RSP(arg);
+
+	qtfs_info("llseek get req fd:%d, off:%lld whence:%d.", req->fd, req->off, req->whence);
+	rsp->off = qtfs_kern_syms.ksys_lseek(req->fd, req->off, req->whence);
+	if (rsp->off < 0) {
+		qtfs_err("llseek ksys lseek return :%lld failed, req fd:%d off:%lld whence:%d.",
+					rsp->off, req->fd, req->off, req->whence);
+		rsp->ret = QTFS_ERR;
+		goto end;
+	}
+	rsp->ret = QTFS_OK;
+end:
+	return sizeof(struct qtrsp_llseek);
+}
+
 int handle_exit(struct qtserver_arg *arg)
 {
 	return 4;
@@ -1059,6 +1078,8 @@ static struct qtserver_ops qtfs_server_handles[] = {
 
 	{QTFS_REQ_EPOLL_CTL,	handle_epollctl,	"epollctl"},
 	{QTFS_REQ_EPOLL_EVENT,	NULL,			"epollevent"},
+
+	{QTFS_REQ_LLSEEK,		handle_llseek,		"llseek"},
 
 	{QTFS_REQ_EXIT,			handle_exit,	"exit"}, // keep this handle at the end
 };
