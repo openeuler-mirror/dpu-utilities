@@ -566,6 +566,25 @@ static int handle_setattr(struct qtserver_arg *arg)
 		return sizeof(struct qtrsp_setattr);
 	}
 	inode = path.dentry->d_inode;
+	if (req->attr.ia_valid & (ATTR_KILL_SUID | ATTR_KILL_SGID)) {
+		req->attr.ia_valid &= ~(ATTR_KILL_SUID | ATTR_KILL_SGID |
+				ATTR_MODE);
+		req->attr.ia_mode = inode->i_mode;
+		if (inode->i_mode & S_ISUID) {
+			req->attr.ia_valid |= ATTR_MODE;
+			req->attr.ia_mode &= ~S_ISUID;
+		}
+		if ((inode->i_mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) {
+			req->attr.ia_valid |= ATTR_MODE;
+			req->attr.ia_mode &= ~S_ISGID;
+		}
+	}
+	if (!req->attr.ia_valid) {
+		rsp->ret = QTFS_OK;
+		path_put(&path);
+		return sizeof(struct qtrsp_setattr);
+	}
+
 	inode_lock(inode);
 	rsp->errno = notify_change(path.dentry, &req->attr, NULL);
 	if (rsp->errno < 0) {
