@@ -459,6 +459,23 @@ struct qtrsp_xattrget {
 	}d;
 	char buf[QTFS_TAIL_LEN(struct qtrsp_xattrget_len)];
 };
+
+struct qtreq_xattrset {
+	struct qtreq_xattrset_len {
+		size_t size;
+		int flags;
+		int pathlen;
+		int namelen;
+		int valuelen;
+	} d;
+	/* buf: file path + name + value */
+	char buf[QTFS_TAIL_LEN(struct qtreq_xattrset_len)];
+};
+
+struct qtrsp_xattrset {
+	int ret;
+	int errno;
+};
 // xattr end
 
 struct qtreq_sysmount {

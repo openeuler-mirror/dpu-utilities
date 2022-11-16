@@ -304,7 +304,8 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 			return PTR_ERR(rsp);
 		}
 		if (rsp->d.ret == QTFS_ERR || rsp->d.len <= 0) {
-			qtfs_info("qtfs readiter error.");
+			if (rsp->d.len != 0)
+				qtfs_info("qtfs readiter error.");
 			ret = (ssize_t)rsp->d.len;
 			qtfs_conn_put_param(pvar);
 			return ret;
