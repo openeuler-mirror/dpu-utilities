@@ -1,0 +1,7 @@
+github.com/dmcgowan/msgpack v2.1.2-0.20160909235050-7b62bc929e75+incompatible h1:DfqHqBe0SpWXzIiCxcUNQL8s0ccvArEC6Vm81QlVPFw=
+github.com/dmcgowan/msgpack v2.1.2-0.20160909235050-7b62bc929e75+incompatible/go.mod h1:7zK4HzNJUGyHrmkGzcW2KFYGoEWSFWL5C2p7UgnNiV4=
+github.com/docker/libchan v0.1.1-0.20160512182933-0328dcec840a h1:MMLHPqABVdoQUXN+af+ffFCYQNchEvrgXgp4W8nbkRE=
+github.com/docker/libchan v0.1.1-0.20160512182933-0328dcec840a/go.mod h1:TY48k44whoD/PH7SC/wUPbmxXjUe7/asZi3Bq5maRMA=
+github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/moby/spdystream v0.2.0 h1:cjW1zVyyoiM0T7b6UoySUFqzXMoqRckQtXwGPiBhOM8=
+github.com/moby/spdystream v0.2.0/go.mod h1:f7i0iNDQJ059oMTcWxx8MA/zKFIuD/lY+0GqbN2Wy8c=
