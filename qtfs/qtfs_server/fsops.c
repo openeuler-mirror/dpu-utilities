@@ -822,6 +822,31 @@ err_handle:
 	return sizeof(struct qtrsp_xattrlist);
 }
 
+int handle_xattrset(struct qtserver_arg *arg)
+{
+	struct qtreq_xattrset *req = (struct qtreq_xattrset *)REQ(arg);
+	struct qtrsp_xattrset *rsp = (struct qtrsp_xattrset *)RSP(arg);
+	struct path path;
+	int ret = 0;
+
+	ret = kern_path(req->buf, 0, &path);
+	if (ret) {
+		qtfs_err("handle xattrset path error, file:%s.\n", req->buf);
+		rsp->errno = -ENOENT;
+		rsp->ret = QTFS_ERR;
+		goto err_handle;
+	}
+
+	rsp->errno = vfs_setxattr(path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.size, req->d.flags);
+	qtfs_info("handle xattrset path:%s name:%s value:%s ret:%d size:%lu flags:%d", req->buf,
+					&req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], rsp->errno,
+					req->d.size, req->d.flags);
+	return sizeof(struct qtrsp_xattrset);
+
+err_handle:
+	return sizeof(struct qtrsp_xattrset);
+}
+
 int handle_xattrget(struct qtserver_arg *arg)
 {
 	struct qtreq_xattrget *req = (struct qtreq_xattrget *)REQ(arg);
@@ -839,15 +864,17 @@ int handle_xattrget(struct qtserver_arg *arg)
 		goto err_handle;
 	}
 
-	if (req->d.size > XATTR_SIZE_MAX)
-		req->d.size = XATTR_SIZE_MAX;
-	kvalue = (char *)kvzalloc(req->d.size, GFP_KERNEL);
-	if (!kvalue) {
-		qtfs_err("handle xattrget kvzalloc failed, size:%d.\n", req->d.size);
-		rsp->d.ret = QTFS_ERR;
-		rsp->d.errno = -ENOMEM;
-		path_put(&path);
-		goto err_handle;
+	if (req->d.size != 0) {
+		if (req->d.size > XATTR_SIZE_MAX)
+			req->d.size = XATTR_SIZE_MAX;
+		kvalue = (char *)kvzalloc(req->d.size, GFP_KERNEL);
+		if (!kvalue) {
+			qtfs_err("handle xattrget kvzalloc failed, size:%d.\n", req->d.size);
+			rsp->d.ret = QTFS_ERR;
+			rsp->d.errno = -ENOMEM;
+			path_put(&path);
+			goto err_handle;
+		}
 	}
 
 	error = vfs_getxattr(path.dentry, req->d.prefix_name, kvalue, req->d.size);
@@ -860,9 +887,11 @@ int handle_xattrget(struct qtserver_arg *arg)
 		}
 		qtfs_info("handle getxattr: path:%s prefix name:%s : (%s - 0x%llx), size:%ld, reqpos:%d\n", req->path, req->d.prefix_name, kvalue, (__u64)kvalue, error, req->d.pos);
 		len = (error - req->d.pos)>sizeof(rsp->buf)? sizeof(rsp->buf):(error - req->d.pos);
-		memcpy(rsp->buf, &kvalue[req->d.pos], len);
+		if (req->d.size > 0) {
+			memcpy(rsp->buf, &kvalue[req->d.pos], len);
+			rsp->d.size = len;
+		}
 		rsp->d.pos = req->d.pos + len;
-		rsp->d.size = len;
 	} else {
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = error;
@@ -870,17 +899,14 @@ int handle_xattrget(struct qtserver_arg *arg)
 		goto err_handle;
 	}
 end:
+	qtfs_info("handle getxattr successed file:%s result:%s", req->path, rsp->buf);
 	kvfree(kvalue);
 	rsp->d.ret = QTFS_OK;
 	return sizeof(struct qtrsp_xattrget) - sizeof(rsp->buf) + len;
 
 err_handle:
+	qtfs_err("handle getxattr failed, file:%s", req->path);
 	return sizeof(struct qtrsp_xattrget) - sizeof(rsp->buf);
-}
-
-int handle_xattrset(struct qtserver_arg *arg)
-{
-	return 0;
 }
 
 long qtfs_do_mount(const char *dev_name, const char *dir_name,
@@ -1141,9 +1167,10 @@ int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar)
 			qtinfo_recvinc(req->type);
 		}
 		if (rsp->len > QTFS_REQ_MAX_LEN) {
-			qtfs_err("handle rsp len error type:%d len:%lu", rsp->type, rsp->len);
+			qtfs_crit("handle rsp len error type:%d len:%lu", rsp->type, rsp->len);
 			WARN_ON(1);
-			continue;
+			rsp->len = QTFS_REQ_MAX_LEN - 1;
+			rsp->err = QTFS_ERR;
 		}
 		rsp->seq_num = req->seq_num;
 		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + rsp->len;

@@ -13,6 +13,12 @@ enum level {
 
 extern int log_level;
 
+#define qtfs_crit(fmt, ...) \
+	{\
+		pr_crit("[%s::%s:%4d] " fmt,\
+			KBUILD_MODNAME, kbasename(__FILE__), __LINE__, ##__VA_ARGS__);\
+	}
+
 #define qtfs_err(fmt, ...) 	\
 (								\
 	{							\
