@@ -639,6 +639,7 @@ retry:
 	dent = kern_path_create(AT_FDCWD, req->path, &path, flags);
 	if (err_ptr(dent)) {
 		rsp->ret = QTFS_ERR;
+		rsp->errno = PTR_ERR(dent);
 		qtfs_info("handle mknod path:<%s>, mode:%o in kern_path_create with ret:%ld\n", req->path, req->mode, PTR_ERR(dent));
 		return sizeof(struct qtrsp_mknod);
 	}
