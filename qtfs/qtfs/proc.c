@@ -41,6 +41,7 @@ const char *match_str[] = {
 	"libvirtd",
 	"virsh",
 	"rpc-worker",
+	"rexec",
 };
 
 int is_local_process(const char *path)
