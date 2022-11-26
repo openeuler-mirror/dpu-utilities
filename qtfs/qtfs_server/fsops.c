@@ -385,6 +385,7 @@ static int handle_lookup(struct qtserver_arg *arg)
 	ret = kern_path(req->fullname, 0, &path);
 	if (ret) {
 		qtfs_info("qtfs handle lookup(%s) not exist, ret%d.\n", req->fullname, ret);
+		rsp->errno = (ret == -ENOENT ? 0 : ret);
 		rsp->ret = QTFS_ERR;
 	} else {
 		inode = path.dentry->d_inode;

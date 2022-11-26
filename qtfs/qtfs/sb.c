@@ -965,7 +965,9 @@ struct dentry *qtfs_lookup(struct inode *parent_inode, struct dentry *child_dent
 	}
 	if (rsp->ret != QTFS_OK) {
 		qtfs_info("qtfs fs lookup failed, path:<%s> not exist at peer.\n", req->fullname);
-		goto err_end;
+		d = ERR_PTR(rsp->errno);
+		qtfs_conn_put_param(pvar);
+		return d;
 	}
 	inode = qtfs_iget(parent_inode->i_sb, &(rsp->inode_info));
 	if (inode == NULL)

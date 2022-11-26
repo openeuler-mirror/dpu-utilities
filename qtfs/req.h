@@ -270,6 +270,7 @@ struct inode_info {
 
 struct qtrsp_lookup {
 	int ret;
+	int errno;
 	struct inode_info inode_info;
 };
 
