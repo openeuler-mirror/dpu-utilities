@@ -9,3 +9,6 @@ github.com/docker/libchan/spdy
 ## explicit; go 1.13
 github.com/moby/spdystream
 github.com/moby/spdystream/spdy
+# golang.org/x/sys v0.2.0
+## explicit; go 1.17
+golang.org/x/sys/unix
