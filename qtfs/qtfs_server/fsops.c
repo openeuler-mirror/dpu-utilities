@@ -843,6 +843,7 @@ int handle_xattrset(struct qtserver_arg *arg)
 	qtfs_info("handle xattrset path:%s name:%s value:%s ret:%d size:%lu flags:%d", req->buf,
 					&req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], rsp->errno,
 					req->d.size, req->d.flags);
+	path_put(&path);
 	return sizeof(struct qtrsp_xattrset);
 
 err_handle:
