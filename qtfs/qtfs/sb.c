@@ -989,6 +989,7 @@ int qtfs_rmdir(struct inode *dir, struct dentry *dentry)
 	struct qtreq_rmdir *req;
 	struct qtrsp_rmdir *rsp;
 	int ret;
+	struct inode *inode = d_inode(dentry);
 
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var\n");
@@ -1012,6 +1013,9 @@ int qtfs_rmdir(struct inode *dir, struct dentry *dentry)
 	}
 	qtfs_info("qtfs rmdir success:<%s>.\n", req->path);
 	qtfs_conn_put_param(pvar);
+	if (inode->i_nlink > 0)
+                drop_nlink(inode);
+        d_invalidate(dentry);
 	return 0;
 }
 
@@ -1046,6 +1050,9 @@ int qtfs_unlink(struct inode *dir, struct dentry *dentry)
 	}
 	ret = rsp->errno;
 	qtfs_conn_put_param(pvar);
+	if (inode->i_nlink > 0)
+                drop_nlink(inode);
+        d_invalidate(dentry);
 	return ret;
 }
 
