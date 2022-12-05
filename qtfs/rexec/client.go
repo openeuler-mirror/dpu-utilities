@@ -18,6 +18,7 @@ import (
 
 const (
 	rexecPidDir = "/var/run/rexec/pids"
+	role = "client"
 )
 
 var pidPath string
@@ -111,7 +112,7 @@ func main() {
 	if err := SetParentDeathSignal(uintptr(syscall.SIGHUP)); err != nil {
 		log.Printf("Failed to set Parent Death Signal:%s", err.Error())
 	}
-	na, err := parseNetAddr()
+	na, err := parseNetAddr(role)
 	if err != nil {
 		log.Fatal(err)
 	}
