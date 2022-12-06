@@ -8,8 +8,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"io/ioutil"
+	"encoding/json"
 
 	"github.com/docker/libchan"
+)
+
+const (
+	configDir = "/etc/rexec"
 )
 
 // RemoteCommand is the run parameters to be executed remotely
@@ -82,12 +88,35 @@ func parseUnixAddr(inAddr string) (NetAddr, error) {
 	}, nil
 }
 
-func parseNetAddr() (NetAddr, error) {
+func readAddrFromFile(role string) (string) {
+	fileName := fmt.Sprintf("%s/%s.json", configDir, role)
+	file, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		fmt.Printf("read %s failed: %s", fileName, err)
+		return ""
+	}
+	var netAddr struct {
+		Protocol string `json:"Protocol"`
+		Ipaddr string	`json:"Ipaddr"`
+		Port string		`json:"Port"`
+	}
+	err = json.Unmarshal([]byte(file), &netAddr)
+	if err != nil {
+		fmt.Printf("can not unmarshal %s:%s", fileName, err)
+		return ""
+	}
+	return fmt.Sprintf("%s://%s:%s", netAddr.Protocol, netAddr.Ipaddr, netAddr.Port)
+}
+
+func parseNetAddr(role string) (NetAddr, error) {
 	cna := os.Getenv("CMD_NET_ADDR")
 
 	// default netAddr: tcp://127.0.0.1:9323
 	if strings.TrimSpace(cna) == "" {
-		return NetAddr{}, fmt.Errorf("need CMD_NET_ADDR")
+		cna = readAddrFromFile(role)
+		if cna == "" {
+			return NetAddr{}, fmt.Errorf("please set enviroment variable CMD_NET_ADDR or set Config file %s/%s.json", configDir, role)
+		}
 	}
 
 	parts := strings.SplitN(cna, "://", 2)

@@ -15,6 +15,10 @@ import (
 	"github.com/docker/libchan/spdy"
 )
 
+const (
+	role = "server"
+)
+
 func getHost(addr string) string {
 	return strings.Split(addr, ":")[0]
 }
@@ -24,7 +28,7 @@ func main() {
 	key := os.Getenv("TLS_KEY")
 
 	var listener net.Listener
-	na, err := parseNetAddr()
+	na, err := parseNetAddr(role)
 	if err != nil {
 		log.Fatal(err)
 	}
