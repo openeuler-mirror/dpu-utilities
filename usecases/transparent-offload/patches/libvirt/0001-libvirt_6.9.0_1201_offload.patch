@@ -1,0 +1,732 @@
+diff -uprN libvirt_6.9.0/meson.build libvirt_6.9.0_offload/meson.build
+--- libvirt_6.9.0/meson.build	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/meson.build	2022-09-15 11:24:44.465904300 +0800
+@@ -367,6 +367,7 @@ cc_flags += [
+   '-Wvla',
+   '-Wvolatile-register-var',
+   '-Wwrite-strings',
++  '-DDPU_OFFLOAD',
+ ]
+ 
+ # gcc --help=warnings outputs
+diff -uprN libvirt_6.9.0/src/libvirt_private.syms libvirt_6.9.0_offload/src/libvirt_private.syms
+--- libvirt_6.9.0/src/libvirt_private.syms	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/libvirt_private.syms	2022-12-02 19:23:18.868704800 +0800
+@@ -2929,6 +2929,9 @@ virProcessSetScheduler;
+ virProcessSetupPrivateMountNS;
+ virProcessTranslateStatus;
+ virProcessWait;
++qemuGetHostAddr;
++qemuGetQmpPort;
++qemuGetRexecPort;
+ 
+ 
+ # util/virqemu.h
+diff -uprN libvirt_6.9.0/src/qemu/qemu_agent.c libvirt_6.9.0_offload/src/qemu/qemu_agent.c
+--- libvirt_6.9.0/src/qemu/qemu_agent.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/qemu/qemu_agent.c	2022-11-30 20:40:08.132717900 +0800
+@@ -667,6 +667,11 @@ qemuAgentIO(GSocket *socket G_GNUC_UNUSE
+     return G_SOURCE_REMOVE;
+ }
+ 
++extern int
++qemuMonitorOpenTCP(const char *host,
++                   const char *port,
++                   pid_t cpid, bool retry,
++                   unsigned long long timeout);
+ 
+ qemuAgentPtr
+ qemuAgentOpen(virDomainObjPtr vm,
+@@ -675,9 +680,18 @@ qemuAgentOpen(virDomainObjPtr vm,
+               qemuAgentCallbacksPtr cb,
+               bool singleSync)
+ {
++	char *port = "32325";
++	char *hostaddr;
++	char hostport[8];
++	char calcport[8] = {0};
++	char *name = NULL;
++	unsigned short md5port = 0xffff;
++
+     qemuAgentPtr agent;
+     g_autoptr(GError) gerr = NULL;
+ 
++	virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("QEMU agent open enter"));
+     if (!cb || !cb->eofNotify) {
+         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                        _("EOF notify callback must be supplied"));
+@@ -709,7 +723,26 @@ qemuAgentOpen(virDomainObjPtr vm,
+         goto cleanup;
+     }
+ 
+-    agent->fd = qemuAgentOpenUnix(config->data.nix.path);
++#ifdef DPU_OFFLOAD
++	//if (qemuGetHostInfoFromFile(HOSTADDR_FILE, hostaddr) == -1) {
++	if ((hostaddr = qemuGetHostAddr()) == NULL) {
++		goto cleanup;
++	}
++	if (vm != NULL && vm->def != NULL) {
++		name = vm->def->name;
++		if (name != NULL) {
++			md5port = qemuMd5CalcportByDomainName(name);
++			if (md5port == 0xffff)
++				goto cleanup;
++			sprintf(calcport, "%u", md5port + QEMU_PORT_MASK + 1);
++		}
++	}
++    agent->fd = qemuMonitorOpenTCP(hostaddr,   calcport, vm->pid, 0, 0);
++	virReportSystemError(errno, _("QEMU agent name:%s md5sum:%x calcport:%s want open unix path:%s,but for dpu open tcp sock<%s:%s> tcpsock return:%d"),
++				(name == NULL) ? "<NULL>" : name, md5port, calcport, config->data.nix.path, hostaddr, calcport, agent->fd);
++#else
++	agent->fd = qemuAgentOpenUnix(config->data.nix.path);
++#endif
+     if (agent->fd == -1)
+         goto cleanup;
+ 
+diff -uprN libvirt_6.9.0/src/qemu/qemu_command.c libvirt_6.9.0_offload/src/qemu/qemu_command.c
+--- libvirt_6.9.0/src/qemu/qemu_command.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/qemu/qemu_command.c	2022-12-02 14:23:44.548163400 +0800
+@@ -30,6 +30,7 @@
+ #include "qemu_security.h"
+ #include "qemu_slirp.h"
+ #include "qemu_block.h"
++#include "qemu_monitor.h"
+ #include "cpu/cpu.h"
+ #include "viralloc.h"
+ #include "virlog.h"
+@@ -66,6 +67,7 @@
+ #include "logging/log_manager.h"
+ #include "logging/log_protocol.h"
+ #include "virutil.h"
++#include "vircrypto.h"
+ 
+ #include <sys/stat.h>
+ #include <fcntl.h>
+@@ -4820,6 +4822,8 @@ qemuBuildChrChardevStr(virLogManagerPtr
+             (flags & QEMU_BUILD_CHARDEV_UNIX_FD_PASS) &&
+             virQEMUCapsGet(qemuCaps, QEMU_CAPS_CHARDEV_FD_PASS)) {
+             int fd;
++			unsigned short calcport;
++			char *hostaddr = NULL;
+ 
+             if (qemuSecuritySetSocketLabel(secManager, (virDomainDefPtr)def) < 0)
+                 return NULL;
+@@ -4830,8 +4834,24 @@ qemuBuildChrChardevStr(virLogManagerPtr
+             }
+             if (fd < 0)
+                 return NULL;
+-
+-            virBufferAsprintf(&buf, ",fd=%d", fd);
++			if ((hostaddr = qemuGetHostAddr()) == NULL) {
++				VIR_ERROR("get host addr from file failed.");
++				return NULL;
++			}
++			if (def->name != NULL) {
++				
++				calcport = qemuMd5CalcportByDomainName(def->name);
++				if (strcmp(charAlias, "charmonitor")) {
++					calcport += QEMU_PORT_MASK + 1;
++				}
++				virReportSystemError(0, _("build unix socket change to tcp+port:<%s:%u>, domain:%s."),
++							hostaddr, calcport, def->name);
++				virBufferAsprintf(&buf, ",host=%s,port=%u", hostaddr, calcport);
++			} else {
++				VIR_ERROR("failed to make host:port arg.");
++				return NULL;
++			}
++            //virBufferAsprintf(&buf, ",fd=%d", fd);
+ 
+             virCommandPassFD(cmd, fd, VIR_COMMAND_PASS_FD_CLOSE_PARENT);
+         } else {
+diff -uprN libvirt_6.9.0/src/qemu/qemu_monitor.c libvirt_6.9.0_offload/src/qemu/qemu_monitor.c
+--- libvirt_6.9.0/src/qemu/qemu_monitor.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/qemu/qemu_monitor.c	2022-12-01 17:46:46.406945900 +0800
+@@ -43,6 +43,7 @@
+ #include "virtime.h"
+ #include "virsocket.h"
+ #include "virutil.h"
++#include "vircrypto.h"
+ 
+ #ifdef WITH_DTRACE_PROBES
+ # include "libvirt_qemu_probes.h"
+@@ -759,6 +760,7 @@ qemuMonitorOpenInternal(virDomainObjPtr
+  *
+  * Returns monitor object, NULL on error.
+  */
++#if 0
+ qemuMonitorPtr
+ qemuMonitorOpen(virDomainObjPtr vm,
+                 virDomainChrSourceDefPtr config,
+@@ -801,6 +803,185 @@ qemuMonitorOpen(virDomainObjPtr vm,
+     ret = qemuMonitorOpenInternal(vm, fd, context, cb, opaque);
+  cleanup:
+     if (!ret)
++        VIR_FORCE_CLOSE(fd);
++    virObjectUnref(vm);
++    return ret;
++}
++#endif
++
++#define STR_TO_DEC_NUM 10
++#define SEC_TO_MSEC 1000
++static int
++ReconnectTCP(int monfd,
++             virSocketAddr *addr,
++             unsigned long long timeout,
++             pid_t cpid,
++             bool retry)
++{
++    int ret = -1;
++	int trycnt = 3;
++
++    do {
++		ret = connect(monfd, &(addr->data.sa), addr->len);
++		if (ret >= 0 || trycnt <= 0) {
++			break;
++		}
++		virReportSystemError(ret, "connect failed, ret:%d trycnt:%d", ret, trycnt);
++		trycnt--;
++		sleep(1);
++    }while (1);
++	if (ret < 0) {
++        virReportSystemError(errno, "%s", _("failed to connect to tcp monitor socket"));
++        return -1;
++    } else {
++		virReportSystemError(0, "%s", _("successed to connect to tcp monitor socket"));
++	}
++    //}
++    return 0;
++}
++
++int
++qemuMonitorOpenTCP(const char *host,
++                   const char *port,
++                   pid_t cpid, bool retry,
++                   unsigned long long timeout)
++{
++    virSocketAddr addr;
++    int monfd = -1;
++    int tmpPort;
++    if (host == NULL || port == NULL)
++        return -1;
++    if ((monfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
++        virReportSystemError(errno, "%s", _("failed to create socket"));
++        goto error;
++    }
++	
++	virReportSystemError(errno, "%s, host:%s port:%s opened fd:%d", _("qemu monitor open TCP by DPU OFFLOAD"), host, port, monfd);
++    if (virStrToLong_i(port, NULL, STR_TO_DEC_NUM, &tmpPort) < 0) {
++        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("Failed to parse host port"));
++        goto error;
++    }
++    memset(&addr, 0, sizeof(addr));
++    if (virSocketAddrParse(&addr, host, AF_INET) < 0) {
++        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("Failed to parse host address"));
++        goto error;
++    }
++    if (virSocketAddrSetPort(&addr, tmpPort) < 0) {
++        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("Failed to set host port"));
++        goto error;
++    }
++    if (ReconnectTCP(monfd, &addr, timeout, cpid, retry) < 0) {
++        goto error;
++    }
++    return monfd;
++error:
++    VIR_FORCE_CLOSE(monfd);
++    return -1;
++}
++
++unsigned short qemuMd5CalcportByDomainName(char *name)
++{
++	unsigned short calcport = 0xffff;
++	char md5[VIR_CRYPTO_HASH_SIZE_MD5] = {0};
++	int chksumlen = -1;
++	char hostaddr[32] = {0};
++
++	chksumlen = virCryptoHashBuf(VIR_CRYPTO_HASH_MD5, name, md5);
++	if (chksumlen < 0) {
++		virReportSystemError(0, _("calc port by virCryptoHashBuf failed, name:%s."), name);
++		return 0xffff;
++	}
++	calcport = md5[VIR_CRYPTO_HASH_SIZE_MD5-2] << 8 | md5[VIR_CRYPTO_HASH_SIZE_MD5-1];
++	calcport =  (calcport & QEMU_PORT_MASK) + QEMU_PORT_BASE;
++	return calcport;
++}
++
++qemuMonitorPtr
++qemuMonitorOpen(virDomainObjPtr vm,
++                virDomainChrSourceDefPtr config,
++                bool retry,
++                unsigned long long timeout,
++                GMainContext *context,
++                qemuMonitorCallbacksPtr cb,
++                void *opaque)
++{
++    int fd = -1;
++    qemuMonitorPtr ret = NULL;
++	char *port = "32325";
++	char *hostaddr;
++	char *hostport;
++	char calcport[8] = {0};
++	char *name = NULL;
++	unsigned short md5port = 0xffff;
++
++    timeout += QEMU_DEFAULT_MONITOR_WAIT;
++
++    /* Hold an extra reference because we can't allow 'vm' to be
++     * deleted until the monitor gets its own reference. */
++    virObjectRef(vm);
++#ifdef DPU_OFFLOAD
++	if ((hostaddr = qemuGetHostAddr()) == NULL) {
++		goto cleanup;
++	}
++	if ((hostport = qemuGetQmpPort()) == NULL) {
++		goto cleanup;
++	}
++	if (vm != NULL && vm->def != NULL) {
++		name = vm->def->name;
++		if (name != NULL) {
++			md5port = qemuMd5CalcportByDomainName(name);
++			if (md5port == 0xffff)
++				goto cleanup;
++			sprintf(calcport, "%u", md5port);
++		}
++	}
++	virReportSystemError(errno, _("QEMU monitor domain name:%s md5sum:%x calcport:%s want open unix path:%s,but for dpu open tcp sock<%s:%s>"),
++				(name == NULL) ? "<NULL>" : name, md5port, calcport, config->data.nix.path, hostaddr,
++				(md5port != 0xffff) ? calcport : hostport);
++	if ((fd = qemuMonitorOpenTCP(hostaddr, (opaque == NULL) ? hostport : (md5port == 0xffff) ? port : calcport,
++											vm->pid, retry, timeout)) < 0) {
++		goto cleanup;
++	}
++
++    /*switch (config->type) {
++        case VIR_DOMAIN_CHR_TYPE_TCP:
++            //if ((fd = qemuMonitorOpenTCP(config->data.tcp.host, config->data.tcp.service,
++            //                            vm->pid, retry, timeout)) < 0) {
++            if ((fd = qemuMonitorOpenTCP(TEST_HOST, TEST_PORT,
++                                        vm->pid, retry, timeout)) < 0) {
++                goto cleanup;
++            }
++            break;
++        case VIR_DOMAIN_CHR_TYPE_UNIX:
++            if ((fd = qemuMonitorOpenUnix(config->data.nix.path,
++                                        vm->pid, retry, timeout)) < 0) {
++                goto cleanup;
++            }
++            break;
++        default:
++            virReportError(VIR_ERR_INTERNAL_ERROR,
++                           _("unable to handle monitor type: %s"),
++                           virDomainChrTypeToString(config->type));
++            goto cleanup;
++    }*/
++#else
++    virObjectUnlock(vm);
++    fd = qemuMonitorOpenUnix(config->data.nix.path,
++                             vm->pid, retry, timeout);
++    virObjectLock(vm);
++
++    if (fd < 0)
++        goto cleanup;
++
++    if (!virDomainObjIsActive(vm)) {
++        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
++                       _("domain is not running"));
++        goto cleanup;
++    }
++#endif
++    ret = qemuMonitorOpenInternal(vm, fd, context, cb, opaque);
++ cleanup:
++    if (!ret)
+         VIR_FORCE_CLOSE(fd);
+     virObjectUnref(vm);
+     return ret;
+diff -uprN libvirt_6.9.0/src/qemu/qemu_monitor.h libvirt_6.9.0_offload/src/qemu/qemu_monitor.h
+--- libvirt_6.9.0/src/qemu/qemu_monitor.h	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/qemu/qemu_monitor.h	2022-11-30 20:42:37.128631800 +0800
+@@ -1527,3 +1527,12 @@ qemuMonitorTransactionBackup(virJSONValu
+                              const char *target,
+                              const char *bitmap,
+                              qemuMonitorTransactionBackupSyncMode syncmode);
++
++#define QEMU_PORT_BASE 50000 /* 50000 ~ 54096 */
++#define QEMU_PORT_MASK 0xfff // 4096 - 1
++unsigned short qemuMd5CalcportByDomainName(char *name);
++char *qemuGetHostAddr(void);
++char *qemuGetQmpPort(void);
++char *qemuGetRexecPort(void);
++
++
+diff -uprN libvirt_6.9.0/src/qemu/qemu_process.c libvirt_6.9.0_offload/src/qemu/qemu_process.c
+--- libvirt_6.9.0/src/qemu/qemu_process.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/qemu/qemu_process.c	2022-12-02 19:20:06.426854600 +0800
+@@ -8651,15 +8651,24 @@ qemuProcessQMPStop(qemuProcessQMPPtr pro
+     virDomainObjEndAPI(&proc->vm);
+ 
+     if (proc->pid != 0) {
++        char cmdstring[128] = {0};
++        char *hostaddr = NULL;
++        char *rexecport = NULL;
++        if ((hostaddr = qemuGetHostAddr()) == NULL) {
++            VIR_ERROR("get host addr from file failed.");
++            goto out;
++        }
++        if ((rexecport = qemuGetRexecPort()) == NULL) {
++            VIR_ERROR("get rexec port from file failed.");
++            goto out;
++        }
+         VIR_DEBUG("Killing QMP caps process %lld", (long long)proc->pid);
+-        if (virProcessKill(proc->pid, SIGKILL) < 0 && errno != ESRCH)
+-            VIR_ERROR(_("Failed to kill process %lld: %s"),
+-                      (long long)proc->pid,
+-                      g_strerror(errno));
+-
++        sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec kill -SIGKILL %lld",
++                        hostaddr, rexecport, (long long)proc->pid);
++        system(cmdstring);
+         proc->pid = 0;
+     }
+-
++out:
+     if (proc->pidfile)
+         unlink(proc->pidfile);
+ 
+@@ -8762,6 +8771,7 @@ static int
+ qemuProcessQMPInit(qemuProcessQMPPtr proc)
+ {
+     g_autofree char *template = NULL;
++    char *hostaddr = NULL;
+ 
+     VIR_DEBUG("proc=%p, emulator=%s", proc, proc->binary);
+ 
+@@ -8783,8 +8793,12 @@ qemuProcessQMPInit(qemuProcessQMPPtr pro
+         return -1;
+ 
+     proc->monpath = g_strdup_printf("%s/%s", proc->uniqDir, "qmp.monitor");
+-
+-    proc->monarg = g_strdup_printf("unix:%s,server,nowait", proc->monpath);
++    if ((hostaddr = qemuGetHostAddr()) == NULL) {
++        VIR_ERROR("qmp get host addr from file failed, check exist?");
++        return -1;
++    }
++    proc->monarg = g_strdup_printf("tcp:%s:32323,server,nowait", hostaddr);
++    //proc->monarg = g_strdup_printf("unix:%s,server,nowait", proc->monpath);
+ 
+     /*
+      * Normally we'd use runDir for pid files, but because we're using
+diff -uprN libvirt_6.9.0/src/util/vircgroup.c libvirt_6.9.0_offload/src/util/vircgroup.c
+--- libvirt_6.9.0/src/util/vircgroup.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/util/vircgroup.c	2022-11-22 10:48:05.669894800 +0800
+@@ -249,7 +249,6 @@ virCgroupDetectMounts(virCgroupPtr group
+     return ret;
+ }
+ 
+-
+ /*
+  * virCgroupDetectPlacement:
+  * @group: the group to process
+@@ -449,6 +448,7 @@ virCgroupSetValueRaw(const char *path,
+                      const char *value)
+ {
+     char *tmp;
++	int pid;
+ 
+     VIR_DEBUG("Set value '%s' to '%s'", path, value);
+     if (virFileWriteStr(path, value, 0) < 0) {
+@@ -459,6 +459,13 @@ virCgroupSetValueRaw(const char *path,
+                                  value, tmp + 1);
+             return -1;
+         }
++		pid = atoi(value);
++		if (pid > 0) {
++			//virPrintProcessName(pid, 0);
++			//virPrintProcessName(pid, 1);
++			// 先忽略cgroup设置本地进程pid失败的情况
++			return 0;
++		}
+         virReportSystemError(errno,
+                              _("Unable to write to '%s'"), path);
+         return -1;
+diff -uprN libvirt_6.9.0/src/util/virfile.c libvirt_6.9.0_offload/src/util/virfile.c
+--- libvirt_6.9.0/src/util/virfile.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/util/virfile.c	2022-11-22 10:50:50.640510500 +0800
+@@ -1404,6 +1404,29 @@ virFileReadLimFD(int fd, int maxlen, cha
+     return len;
+ }
+ 
++void virPrintProcessName(int pid, int local)
++{
++	char readbuf[256];
++	char proc[32] = {0};
++	FILE *fp;
++	if (local == 1) {
++		sprintf(proc, "/local/proc/%d/status", pid);
++	} else {
++		sprintf(proc, "/proc/%d/status", pid);
++	}
++	fp = fopen(proc, "r");
++	if (NULL != fp) {
++		memset(readbuf, 0, 256);
++		fgets(readbuf, 255, fp);
++		fclose(fp);
++		virReportSystemError(0, _("<%s> %s Process pid:%d name:%s"), proc, (local == 1) ? "local" : "remote", pid, readbuf);
++	} else {
++		virReportSystemError(0, _("<%s> %s Process pid:%d failed to open proc, maybe not exist."), 
++					proc, (local == 1) ? "local" : "remote", pid);
++	}
++	return;
++}
++
+ int
+ virFileReadAll(const char *path, int maxlen, char **buf)
+ {
+diff -uprN libvirt_6.9.0/src/util/virprocess.c libvirt_6.9.0_offload/src/util/virprocess.c
+--- libvirt_6.9.0/src/util/virprocess.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/util/virprocess.c	2022-12-02 19:21:41.383816000 +0800
+@@ -439,8 +439,213 @@ int virProcessKillPainfully(pid_t pid, b
+     return virProcessKillPainfullyDelay(pid, force, 0);
+ }
+ 
++static int virGetHostInfoFromFile(const char *file, char *str)
++{
++    FILE *fp = NULL;
++    fp = fopen(file, "r");
++    if (fp == NULL) {
++        virReportSystemError(errno, _("get fp from file:%s failed."), (file == NULL) ? "<null>" : file);
++        return -1;
++    }
++    fscanf(fp, "%[^\n]", str);
++    fclose(fp);
++    return 0;
++}
++
++static char qemuOffloadHostAddr[20] = {0}; // ipv5 address
++static char qemuOffloadQmpPort[8] = {0}; // port 0~65535
++static char qemuOffloadRexecPort[8] = {0}; // port 0~65535
++char *qemuGetHostAddr(void)
++{
++#define OFFLOADFILE_HOSTADDR "/var/run/rexec/hostaddr"
++    if (qemuOffloadHostAddr[0] != 0)
++        return qemuOffloadHostAddr;
++    int ret = virGetHostInfoFromFile(OFFLOADFILE_HOSTADDR, qemuOffloadHostAddr);
++    if (ret == -1) {
++        VIR_ERROR("get host addr from %s failed.", OFFLOADFILE_HOSTADDR);
++        return NULL;
++    }
++    return qemuOffloadHostAddr;
++}
++char *qemuGetQmpPort(void)
++{
++#define OFFLOADFILE_QMPPORT "/var/run/rexec/qmpport"
++    if (qemuOffloadQmpPort[0] != 0)
++        return qemuOffloadQmpPort;
++    int ret = virGetHostInfoFromFile(OFFLOADFILE_QMPPORT, qemuOffloadQmpPort);
++    if (ret == -1) {
++        VIR_ERROR("get qmp port from %s failed.", OFFLOADFILE_QMPPORT);
++        return NULL;
++    }
++    return qemuOffloadQmpPort;
++}
++char *qemuGetRexecPort(void)
++{
++#define OFFLOADFILE_REXECPORT "/var/run/rexec/rexecport"
++    if (qemuOffloadRexecPort[0] != 0)
++        return qemuOffloadRexecPort;
++    int ret = virGetHostInfoFromFile(OFFLOADFILE_REXECPORT, qemuOffloadRexecPort);
++    if (ret == -1) {
++        VIR_ERROR("get rexec port from %s failed.", OFFLOADFILE_REXECPORT);
++        return NULL;
++    }
++    return qemuOffloadRexecPort;
++}
++
+ #if WITH_SCHED_GETAFFINITY
++struct _virBitmap {
++    size_t nbits;
++    size_t map_len;
++    size_t map_alloc;
++
++    /* Note that code below depends on the fact that unused bits of the bitmap
++     * are not set. Any function decreasing the size of the map needs clear
++     * bits which don't belong to the bitmap any more. */
++    unsigned long *map;
++};
++
++int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
++{
++#define TMP_STRLEN 16
++    size_t i;
++    int len;
++    char cmdstring[256] = {0};
++    char tmp[TMP_STRLEN] = {0};
++    char *hostaddr = NULL;
++    char *rexecport = NULL;
++    struct _virBitmap *bitmap = (struct _virBitmap *)map;
++
++    if ((hostaddr = qemuGetHostAddr()) == NULL) {
++        VIR_ERROR("failed to get host addr from file.");
++        return -1;
++    }
++    if ((rexecport = qemuGetRexecPort()) == NULL) {
++        VIR_ERROR("failed to get rexec port from file.");
++        return -1;
++    }
++    
++    VIR_DEBUG("Set process affinity on remote pid %lld", (long long)pid);
++    sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec taskset -pc ", hostaddr, rexecport);
++    for (i = 0; i < virBitmapSize(map); i++) {
++        len = strlen(cmdstring);
++        if (virBitmapIsBitSet(map, i)) {
++            switch (cmdstring[len - 1]) {
++                case ' ':
++                case ',':
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i);
++                    strcat(cmdstring, tmp);
++                    strcat(cmdstring, "-");
++                    break;
++                case '-':
++                    break;
++                default:
++                    // '0' ~ '9'
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i);
++                    strcat(cmdstring, ",");
++                    strcat(cmdstring, tmp);
++                    strcat(cmdstring, "-");
++                    break;
++            }
++        } else {
++            switch (cmdstring[len - 1]) {
++                case '-':
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i-1);
++                    strcat(cmdstring, tmp);
++                    //strcat(cmdstring, ",");
++                    break;
++                default:
++                    break;
++            }
++        }
++    }
++    if (cmdstring[strlen(cmdstring) - 1] == '-') {
++        memset(tmp, 0, TMP_STRLEN);
++        sprintf(tmp, "%d", i-1);
++        strcat(cmdstring, tmp);
++    }
++    memset(tmp, 0, TMP_STRLEN);
++    sprintf(tmp, "%d", pid);
++    strcat(cmdstring, " ");
++    strcat(cmdstring, tmp);
++    VIR_ERROR("set remote affinity cmdstring:%s", cmdstring);
++    for (i = 0; i < bitmap->map_len; i++) {
++        if (bitmap->map[i] == 0) continue;
++        VIR_ERROR("map[%d]:%lx", i, bitmap->map[i]);
++    }
++    if (system(cmdstring) < 0) {
++        VIR_ERROR("remote set affinity pid:%d failed.", pid);
++        return -1;
++    }
++    return 0;
++}
++
++
++
++#define CHAR2HEX(c) ((c >= 'a' && c <= 'f') ? (c - 'a' + 10) : (c - '0'))
++virBitmapPtr
++virProcessGetAffinity(pid_t pid)
++{
++#define CMD_DISP_LEN 128
++    char disp[CMD_DISP_LEN] = {0};
++    char cmdstring[256] = {0};
++    char tmp[TMP_STRLEN] = {0};
++    char *hostaddr = NULL;
++    char *rexecport = NULL;
++    FILE *pipe = NULL;
++    int cnt = 2000;
++    int dispidx = 0;
++
++    size_t i;
++    virBitmapPtr ret = NULL;
++    if ((hostaddr = qemuGetHostAddr()) == NULL) {
++        VIR_ERROR("failed to get host addr from file.");
++        return -1;
++    }
++    if ((rexecport = qemuGetRexecPort()) == NULL) {
++        VIR_ERROR("failed to get rexec port from file.");
++        return -1;
++    }
++    sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec taskset -p %d", hostaddr, rexecport, pid);
++    VIR_ERROR("get remote affinity pid:%d cmdstring:%s", pid, cmdstring);
++
++    pipe = popen(cmdstring, "r");
++    if (!pipe) {
++        VIR_ERROR("remote get affinity failed, popen failed.");
++        return NULL;
++    }
+ 
++    while (fgets(disp, CMD_DISP_LEN, pipe) == NULL && cnt-- > 0) {
++        sleep(1);
++    }
++    VIR_ERROR("cmd disp:%s", disp);
++    pclose(pipe);
++
++    dispidx = strlen(disp) - 1;
++    if (dispidx <= 0) {
++        VIR_ERROR("cmd:%s not return any info.", cmdstring);
++        return NULL;
++    }
++    ret = virBitmapNew(1024 << 8);
++    int offset = 0;
++    while (disp[dispidx] != ' ') {
++        char c = CHAR2HEX(disp[dispidx]);
++        dispidx--;
++        if (c < 0 || c > 0xf) continue;
++        VIR_ERROR("dispidx:%d c:%c num:%x", dispidx, disp[dispidx], c);
++        for (i = 0; i < 4; i++) {
++            if ((c >> i) & 0x1)
++                ignore_value(virBitmapSetBit(ret, offset * 4 + i));
++        }
++        offset++;
++    }
++
++    return ret;
++}
++
++#if 0
+ int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
+ {
+     size_t i;
+@@ -535,6 +740,7 @@ virProcessGetAffinity(pid_t pid)
+ 
+     return ret;
+ }
++#endif
+ 
+ #elif defined(WITH_BSD_CPU_AFFINITY)
+ 
+@@ -1091,8 +1297,8 @@ static int virProcessNamespaceHelper(pid
+     path = g_strdup_printf("/proc/%lld/ns/mnt", (long long)data->pid);
+ 
+     if ((fd = open(path, O_RDONLY)) < 0) {
+-        virReportSystemError(errno, "%s",
+-                             _("Kernel does not provide mount namespace"));
++        virReportSystemError(errno, "%s, pid:%lld",
++                             _("Kernel does not provide mount namespace"), (long long)data->pid);
+         goto cleanup;
+     }
+ 
+diff -uprN libvirt_6.9.0/src/util/virutil.h libvirt_6.9.0_offload/src/util/virutil.h
+--- libvirt_6.9.0/src/util/virutil.h	2020-11-02 18:16:52.000000000 +0800
++++ libvirt_6.9.0_offload/src/util/virutil.h	2022-10-19 17:16:09.442164600 +0800
+@@ -92,6 +92,7 @@ static inline int pthread_sigmask(int ho
+ }
+ #endif
+ 
++void virPrintProcessName(int pid, int local);
+ char *virGetHostname(void);
+ char *virGetHostnameQuiet(void);
+ 
