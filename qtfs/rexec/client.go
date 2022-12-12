@@ -156,7 +156,6 @@ func main() {
 
 	retryCnt := 3
 	// 1. get pid from response
-	time.Sleep(5 * time.Millisecond)
 	response := &CommandResponse{}
 retry:
 	err = receiver.Receive(response)
@@ -167,6 +166,9 @@ retry:
 			goto retry
 		}
 		log.Fatal(err)
+	}
+	if (response.WhiteList == 0) {
+		log.Fatalf("%s command in White List of rexec server\n", command.Cmd)
 	}
 	pid := response.Pid
 	lpid := os.Getpid()

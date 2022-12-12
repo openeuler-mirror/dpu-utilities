@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -17,13 +18,33 @@ import (
 
 const (
 	role = "server"
+	whiteList = "whitelist"
 )
+var WhiteLists map[string] int
+func getWhitelist() error {
+	fileName := fmt.Sprintf("%s/%s", configDir, whiteList)
+	if err := CheckRight(fileName); err != nil {
+		log.Fatal(err)
+	}
+	file, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		fmt.Printf("read %s failed: %s", fileName, err)
+		return err
+	}
+	fileContent := string(file)
+	lines := strings.Split(fileContent, "\n")
+	for i, v := range lines {
+		WhiteLists[v] = i
+	}
+	return nil
+}
 
 func getHost(addr string) string {
 	return strings.Split(addr, ":")[0]
 }
 
 func main() {
+	WhiteLists = make(map[string]int, 10)
 	cert := os.Getenv("TLS_CERT")
 	key := os.Getenv("TLS_KEY")
 
@@ -31,6 +52,10 @@ func main() {
 	na, err := parseNetAddr(role)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if err := getWhitelist(); err != nil {
+		log.Println("Get Whitelist failed")
+		return
 	}
 	if cert != "" && key != "" {
 		tlsCert, err := tls.LoadX509KeyPair(cert, key)
@@ -86,13 +111,23 @@ func main() {
 			}
 
 			command := &RemoteCommand{}
+			returnResult := &CommandResponse{}
+			returnResult.WhiteList = 1
 			err = receiver.Receive(command)
 			if err != nil {
 				log.Print(err)
 				return
 			}
 			log.Printf("cmd(%s), args(%v)\n", command.Cmd, command.Args)
-
+			if _, ok := WhiteLists[command.Cmd]; !ok {
+				log.Printf("%s not in WhiteLists", command.Cmd)
+				returnResult.WhiteList = 0
+				err = command.StatusChan.Send(returnResult)
+				if err != nil {
+					log.Print(err)
+				}
+				return
+			}
 			cmd := exec.Command(command.Cmd, command.Args...)
 			cmd.Stdout = command.Stdout
 			cmd.Stderr = command.Stderr
@@ -111,7 +146,6 @@ func main() {
 			defer command.Stdout.Close()
 			defer command.Stderr.Close()
 
-			returnResult := &CommandResponse{}
 			err = cmd.Start()
 			if err != nil {
 				// send return status back
