@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"io/ioutil"
 	"encoding/json"
 
@@ -30,10 +31,34 @@ type RemoteCommand struct {
 	Cgroups    map[string]string
 }
 
+func CheckRight(fileName string) error {
+	var uid int
+	var gid int
+	var mode int
+	var stat syscall.Stat_t
+	if err := syscall.Stat(fileName, &stat); err != nil {
+		return fmt.Errorf("Can't get status of %s: %s\n", fileName, err)
+	}
+	uid = int(stat.Uid)
+	gid = int(stat.Gid)
+	mode = int(stat.Mode)
+
+	if (uid != 0 || gid != 0) {
+		return fmt.Errorf("Owner of %s must be root\n", fileName)
+	}
+
+	if (mode & 0777 != 0400) {
+		return fmt.Errorf("Mode of %s must be 0400\n", fileName)
+	}
+
+	return nil
+}
+
 // CommandResponse is the returned response object from the remote execution
 type CommandResponse struct {
 	Pid	   int
 	Status int
+	WhiteList int
 }
 
 // NetAddr is struct to describe net proto and addr
@@ -90,6 +115,10 @@ func parseUnixAddr(inAddr string) (NetAddr, error) {
 
 func readAddrFromFile(role string) (string) {
 	fileName := fmt.Sprintf("%s/%s.json", configDir, role)
+	if err := CheckRight(fileName); err != nil {
+		fmt.Printf("Check right of %s failed: %s", fileName, err)
+		return ""
+	}
 	file, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		fmt.Printf("read %s failed: %s", fileName, err)
