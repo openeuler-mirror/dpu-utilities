@@ -1,0 +1,242 @@
+From a9d01eaf97d2a4a1249bb698d3deffcad160c522 Mon Sep 17 00:00:00 2001
+From: keliang <keliang4@huawei.com>
+Date: Fri, 9 Dec 2022 11:10:17 +0800
+Subject: [PATCH] fix get affinity
+
+Signed-off-by: kel <keliang4@huawei.com>
+---
+ src/qemu/qemu_process.c |  14 +---
+ src/util/virprocess.c   | 145 +++++++++++++++++++++++-----------------
+ 2 files changed, 87 insertions(+), 72 deletions(-)
+
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index 82eaf70..f20389e 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -8655,19 +8655,9 @@ qemuProcessQMPStop(qemuProcessQMPPtr proc)
+
+     if (proc->pid != 0) {
+         char cmdstring[128] = {0};
+-        char *hostaddr = NULL;
+-        char *rexecport = NULL;
+-        if ((hostaddr = qemuGetHostAddr()) == NULL) {
+-            VIR_ERROR("get host addr from file failed.");
+-            goto out;
+-        }
+-        if ((rexecport = qemuGetRexecPort()) == NULL) {
+-            VIR_ERROR("get rexec port from file failed.");
+-            goto out;
+-        }
+         VIR_DEBUG("Killing QMP caps process %lld", (long long)proc->pid);
+-        sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec kill -SIGKILL %lld",
+-                        hostaddr, rexecport, (long long)proc->pid);
++
++        sprintf(cmdstring, "/usr/bin/rexec kill -SIGKILL %lld", (long long)proc->pid);
+         system(cmdstring);
+         proc->pid = 0;
+     }
+diff --git a/src/util/virprocess.c b/src/util/virprocess.c
+index 7cb71cb..26c8448 100644
+--- a/src/util/virprocess.c
++++ b/src/util/virprocess.c
+@@ -457,7 +457,7 @@ static char qemuOffloadQmpPort[8] = {0}; // port 0~65535
+ static char qemuOffloadRexecPort[8] = {0}; // port 0~65535
+ char *qemuGetHostAddr(void)
+ {
+-#define OFFLOADFILE_HOSTADDR "/var/run/rexec/hostaddr"
++#define OFFLOADFILE_HOSTADDR "/etc/rexec/hostaddr"
+     if (qemuOffloadHostAddr[0] != 0)
+         return qemuOffloadHostAddr;
+     int ret = virGetHostInfoFromFile(OFFLOADFILE_HOSTADDR, qemuOffloadHostAddr);
+@@ -469,7 +469,7 @@ char *qemuGetHostAddr(void)
+ }
+ char *qemuGetQmpPort(void)
+ {
+-#define OFFLOADFILE_QMPPORT "/var/run/rexec/qmpport"
++#define OFFLOADFILE_QMPPORT "/etc/rexec/qmpport"
+     if (qemuOffloadQmpPort[0] != 0)
+         return qemuOffloadQmpPort;
+     int ret = virGetHostInfoFromFile(OFFLOADFILE_QMPPORT, qemuOffloadQmpPort);
+@@ -481,7 +481,7 @@ char *qemuGetQmpPort(void)
+ }
+ char *qemuGetRexecPort(void)
+ {
+-#define OFFLOADFILE_REXECPORT "/var/run/rexec/rexecport"
++#define OFFLOADFILE_REXECPORT "/etc/rexec/rexecport"
+     if (qemuOffloadRexecPort[0] != 0)
+         return qemuOffloadRexecPort;
+     int ret = virGetHostInfoFromFile(OFFLOADFILE_REXECPORT, qemuOffloadRexecPort);
+@@ -511,21 +511,10 @@ int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
+     int len;
+     char cmdstring[256] = {0};
+     char tmp[TMP_STRLEN] = {0};
+-    char *hostaddr = NULL;
+-    char *rexecport = NULL;
+     struct _virBitmap *bitmap = (struct _virBitmap *)map;
+-
+-    if ((hostaddr = qemuGetHostAddr()) == NULL) {
+-        VIR_ERROR("failed to get host addr from file.");
+-        return -1;
+-    }
+-    if ((rexecport = qemuGetRexecPort()) == NULL) {
+-        VIR_ERROR("failed to get rexec port from file.");
+-        return -1;
+-    }
+     
+     VIR_DEBUG("Set process affinity on remote pid %lld", (long long)pid);
+-    sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec taskset -pc ", hostaddr, rexecport);
++    strcat(cmdstring, "/usr/bin/rexec taskset -pc ");
+     for (i = 0; i < virBitmapSize(map); i++) {
+         len = strlen(cmdstring);
+         if (virBitmapIsBitSet(map, i)) {
+@@ -597,66 +586,102 @@ int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
+     return 0;
+ }
+ 
++static int virGetAffinity(pid_t pid, cpu_set_t* cpu_set)
++{
++#define LINE_LEN 1024
++#define PATH_LEN 1024
++    int ret = -1;
++    char path[PATH_LEN] = {0};
++    char *cpuList = "Cpus_allowed_list";
++    bool cpuAccess = false;
++    snprintf(path, PATH_LEN, "/proc/%d/status", pid);
++    FILE *file = fopen(path, "r");
++    char content[LINE_LEN];
++    while (!feof(file)) {
++        memset(content, 0, LINE_LEN);
++        fgets(content, LINE_LEN, file);
++        if (strstr(content, cpuList)) {
++            cpuAccess = true;
++            break;
++        }
++    }
++    if (!cpuAccess) {
++        goto cleanup;
++    }
++    bool lastToken = false;
++    char *value = strrchr(content, '\t');
++    char *begin = value + 1;
++    while (1) {
++        char *end = strchr(begin, ',');
++        if (!end) {
++            lastToken = true;
++        }
+ 
++        char *separator = strchr(begin, '-');
++        char *tmptr = NULL;
++        int first = strtol(begin, &tmptr, 10);
++        if (separator) {
++            int second = strtol(separator + 1, &tmptr, 10);
++            if (first > second) {
++                goto cleanup;
++            }
++            for (int i = first; i <= second; i++) {
++                CPU_SET(i, cpu_set);
++            }
++        } else {
++            CPU_SET(first, cpu_set);
++        }
++        if (lastToken) {
++            break;
++        } else {
++            begin = end + 1;
++        }
++    }
++
++    ret = 0;
++cleanup:
++    fclose(file);
++    return ret;
++}
+ 
+-#define CHAR2HEX(c) ((c >= 'a' && c <= 'f') ? (c - 'a' + 10) : (c - '0'))
+ virBitmapPtr
+ virProcessGetAffinity(pid_t pid)
+ {
+-#define CMD_DISP_LEN 128
+-    char disp[CMD_DISP_LEN] = {0};
+-    char cmdstring[256] = {0};
+-    char tmp[TMP_STRLEN] = {0};
+-    char *hostaddr = NULL;
+-    char *rexecport = NULL;
+-    FILE *pipe = NULL;
+-    int cnt = 2000;
+-    int dispidx = 0;
+-
+     size_t i;
++    cpu_set_t *mask;
++    size_t masklen;
++    size_t ncpus;
+     virBitmapPtr ret = NULL;
+-    if ((hostaddr = qemuGetHostAddr()) == NULL) {
+-        VIR_ERROR("failed to get host addr from file.");
+-        return -1;
+-    }
+-    if ((rexecport = qemuGetRexecPort()) == NULL) {
+-        VIR_ERROR("failed to get rexec port from file.");
+-        return -1;
+-    }
+-    sprintf(cmdstring, "CMD_NET_ADDR=tcp://%s:%s /usr/bin/rexec taskset -p %d", hostaddr, rexecport, pid);
+-    VIR_ERROR("get remote affinity pid:%d cmdstring:%s", pid, cmdstring);
+ 
+-    pipe = popen(cmdstring, "r");
+-    if (!pipe) {
+-        VIR_ERROR("remote get affinity failed, popen failed.");
++    /* 262144 cpus ought to be enough for anyone */
++    ncpus = 1024 << 8;
++    masklen = CPU_ALLOC_SIZE(ncpus);
++    mask = CPU_ALLOC(ncpus);
++
++    if (!mask) {
++        virReportOOMError();
+         return NULL;
+     }
+ 
+-    while (fgets(disp, CMD_DISP_LEN, pipe) == NULL && cnt-- > 0) {
+-        sleep(1);
+-    }
+-    VIR_ERROR("cmd disp:%s", disp);
+-    pclose(pipe);
++    CPU_ZERO_S(masklen, mask);
+ 
+-    dispidx = strlen(disp) - 1;
+-    if (dispidx <= 0) {
+-        VIR_ERROR("cmd:%s not return any info.", cmdstring);
+-        return NULL;
++    if (virGetAffinity(pid, mask) < 0) {
++        virReportSystemError(errno,
++                             _("cannot get CPU affinity of process %d"), pid);
++        goto cleanup;
+     }
+-    ret = virBitmapNew(1024 << 8);
+-    int offset = 0;
+-    while (disp[dispidx] != ' ') {
+-        char c = CHAR2HEX(disp[dispidx]);
+-        dispidx--;
+-        if (c < 0 || c > 0xf) continue;
+-        VIR_ERROR("dispidx:%d c:%c num:%x", dispidx, disp[dispidx], c);
+-        for (i = 0; i < 4; i++) {
+-            if ((c >> i) & 0x1)
+-                ignore_value(virBitmapSetBit(ret, offset * 4 + i));
+-        }
+-        offset++;
++
++    ret = virBitmapNew(ncpus);
++
++    for (i = 0; i < ncpus; i++) {
++         /* coverity[overrun-local] */
++        if (CPU_ISSET_S(i, masklen, mask))
++            ignore_value(virBitmapSetBit(ret, i));
+     }
+ 
++ cleanup:
++    CPU_FREE(mask);
++
+     return ret;
+ }
+ 
+-- 
+2.24.1.windows.2
+
