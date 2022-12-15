@@ -1146,6 +1146,7 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_getattr *req;
 	struct qtrsp_getattr *rsp;
+	struct inode *inode = path->dentry->d_inode;
 	int ret;
 
 	if (!pvar) {
@@ -1172,8 +1173,14 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 		return ret;
 	}
 	*stat = rsp->stat;
-	qtfs_debug("qtfs getattr success:<%s> blksiz:%u size:%lld mode:%o ino:%llu pathino:%lu.\n", req->path, rsp->stat.blksize,
-			rsp->stat.size, rsp->stat.mode, rsp->stat.ino, path->dentry->d_inode->i_ino);
+	qtfs_debug("qtfs getattr success:<%s> blksiz:%u size:%lld mode:%o ino:%llu pathino:%lu. %s\n", req->path, rsp->stat.blksize,
+			rsp->stat.size, rsp->stat.mode, rsp->stat.ino, inode->i_ino, rsp->stat.ino != inode->i_ino ? "delete current inode" : "");
+	if (inode->i_ino != rsp->stat.ino || inode->i_mode != rsp->stat.mode) {
+		if (inode->i_nlink > 0){
+			drop_nlink(inode);
+		}
+		d_invalidate(path->dentry);
+	}
 	qtfs_conn_put_param(pvar);
 	return 0;
 }
