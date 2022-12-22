@@ -196,7 +196,6 @@ int qtfs_open(struct inode *inode, struct file *file)
 		return err;
 	}
 	qtfs_info("qtfs open:%s success, f_mode:%o flag:%x, fd:%d", req->path, file->f_mode, file->f_flags, rsp->fd);
-	data->file = rsp->file;
 	data->fd = rsp->fd;
 	WARN_ON(file->private_data);
 	file->private_data = data;
@@ -287,9 +286,9 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 		return -ENOMEM;
 	}
 
-	req->file = private->file;
-	if (req->file <= 0) {
-		qtfs_err("qtfs_readiter: invalid file(0x%llx)", req->file);
+	req->fd = private->fd;
+	if (req->fd <= 0) {
+		qtfs_err("qtfs_readiter: invalid file(0x%llx)", req->fd);
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
@@ -359,9 +358,9 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		return -ENOMEM;
 	}
 	
-	req->d.file = private->file;
-	if (req->d.file < 0) {
-		qtfs_err("qtfs_write: invalid file(0x%llx)", req->d.file);
+	req->d.fd = private->fd;
+	if (req->d.fd < 0) {
+		qtfs_err("qtfs_write: invalid file(0x%llx)", req->d.fd);
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
@@ -617,7 +616,7 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 
 	p = &priv->readq.head;
 
-	if (IS_ERR((void *)fpriv->file) || (void *)fpriv->file == NULL) {
+	if (fpriv->fd < 0) {
 		qtfs_err("fifo poll priv file invalid.");
 		return 0;
 	}
@@ -627,7 +626,7 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 		return 0;
 	}
 	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
-	req->file = fpriv->file;
+	req->fd = fpriv->fd;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_FIFOPOLL, sizeof(struct qtreq_poll));
 	if (IS_ERR(rsp) || rsp == NULL) {
 		qtfs_conn_put_param(pvar);

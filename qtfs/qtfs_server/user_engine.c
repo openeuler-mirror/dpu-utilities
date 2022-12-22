@@ -9,10 +9,13 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
+#include <glib.h>
 
 #include <sys/epoll.h>
 
 #include "comm.h"
+
+char wl_type_str[QTFS_WHITELIST_MAX][10] = {"Open", "Write", "Read", "Readdir", "Mkdir", "Rmdir", "Create", "Unlink", "Rename", "Setattr", "Setxattr", "Mount"};
 
 #define engine_out(info, ...) \
 	do {\
@@ -28,6 +31,10 @@
 	do {\
 		printf("[ERROR:Engine::%s:%3d]"info"\n", __func__, __LINE__, ##__VA_ARGS__);\
 	} while (0);
+
+#define WHITELIST_FILE "/etc/qtfs/whitelist"
+
+struct whitelist *whitelist[QTFS_WHITELIST_MAX];
 
 struct engine_arg {
 	int psize;
@@ -171,6 +178,46 @@ int qtfs_epoll_init(int fd)
 	return epfd;
 }
 
+static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
+{
+	int64_t i, len;
+	char **items = g_key_file_get_string_list(config,wl_type_str[type],"Path",&len,NULL);
+	if (len == 0) {
+		engine_out("Can't find whitelist item %s", wl_type_str[type]);
+		return 0;
+	}
+	whitelist[type] = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len);
+	g_print("%s:\n", wl_type_str[type]);
+	whitelist[type]->len = len;
+	whitelist[type]->type = type;
+	for(i = 0; i < len;i++){
+		printf("%s\n", items[i]);
+		whitelist[type]->wl[i].len = strlen(items[i]);
+        strcpy(whitelist[type]->wl[i].path, items[i]);
+    }
+	int ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist[type]);
+	free(items);
+	return ret;
+}
+
+int qtfs_whitelist_init(int fd)
+{
+	int ret, i;
+	GKeyFile *config = g_key_file_new();
+	g_key_file_load_from_file(config, WHITELIST_FILE, G_KEY_FILE_KEEP_COMMENTS|G_KEY_FILE_KEEP_TRANSLATIONS, NULL);
+	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
+		ret = qtfs_whitelist_transfer(fd, config, i);
+		if (ret != 0) {
+			return ret;
+		}
+	}
+	g_key_file_free(config);
+	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
+		free(whitelist[i]);
+	}
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	if (argc != 3) {
@@ -192,6 +239,9 @@ int main(int argc, char *argv[])
 		close(fd);
 		return -1;
 	}
+	if (qtfs_whitelist_init(fd)) {
+		goto end;
+	}
 
 	umask(0);
 
@@ -212,7 +262,6 @@ int main(int argc, char *argv[])
 		engine_out("qtfs engine userp init failed.");
 		goto end;
 	}
-
 	struct engine_arg arg[QTFS_MAX_THREADS];
 	for (int i = 0; i < thread_nums; i++) {
 		arg[i].psize = psize;

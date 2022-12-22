@@ -35,7 +35,6 @@ extern struct kmem_cache *qtfs_inode_priv_cache;
 
 struct private_data {
 	int fd;
-	unsigned long long file;
 };
 
 struct qtfs_inode_priv {
