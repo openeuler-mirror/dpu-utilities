@@ -169,7 +169,6 @@ struct qtreq_open {
 };
 
 struct qtrsp_open {
-	__u64 file;
 	int fd;
 	int ret;
 };
@@ -182,25 +181,10 @@ struct qtrsp_close {
 	int ret;
 };
 
-struct qtreq_read {
-	size_t len;
-	long long pos;
-	__u64 file;
-};
-
-struct qtrsp_read {
-	struct qtrsp_read_len {
-		int ret;
-		ssize_t len;
-		int errno;
-	} d;
-	char readbuf[QTFS_TAIL_LEN(struct qtrsp_read_len)];
-};
-
 struct qtreq_readiter {
 	size_t len;
 	long long pos;
-	__u64 file;
+	int fd;
 };
 
 struct qtrsp_readiter {
@@ -216,7 +200,7 @@ struct qtreq_write {
 	struct qtreq_write_len {
 		int buflen;
 		long long pos;
-		__u64 file;
+		int fd;
 		long long flags;
 		long long mode;
 	} d;
@@ -505,7 +489,6 @@ struct qtrsp_sysumount {
 
 struct qtreq_poll {
 	int fd;
-	__u64 file;
 	int qproc;
 };
 
@@ -516,7 +499,6 @@ struct qtrsp_poll {
 
 
 struct qtreq_epollctl {
-	__u64 file;
 	int fd;
 	int op;
 	struct qtreq_epoll_event event;

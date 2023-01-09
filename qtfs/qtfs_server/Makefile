@@ -10,9 +10,9 @@ qtfs_server:
 	make -C $(KBUILD) M=$(PWD) modules
 
 engine:
-	gcc -O2 -o engine user_engine.c -lpthread -I../ -DQTFS_SERVER
+	gcc -O2 -o engine user_engine.c -lpthread -lglib-2.0 -I../ -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -DQTFS_SERVER
 
 clean:
 	make -C $(KBUILD) M=$(PWD) clean
 	rm -rf engine
-	rm -rf ../*.o
+	rm -rf ../*.o ../.*.o.cmd

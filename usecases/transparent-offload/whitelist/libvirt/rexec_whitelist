@@ -1,0 +1,4 @@
+/usr/bin/qemu-kvm
+taskset
+kill
+/usr/bin/kill

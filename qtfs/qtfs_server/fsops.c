@@ -23,6 +23,21 @@
 #define RSP(arg) (arg->out)
 #define USERP(arg) (arg->userp)
 
+bool in_white_list(char *path, int type)
+{
+	if (!whitelist[type]) {
+		return true;
+	}
+	int i, in_wl = -1;
+	for (i = 0; i < whitelist[type]->len; i++) {
+		if (!strncmp(path, whitelist[type]->wl[i].path, whitelist[type]->wl[i].len)){
+			in_wl = i;
+			break;
+		}
+	}
+	return in_wl != -1;
+}
+
 static inline void qtfs_inode_info_fill(struct inode_info *ii, struct inode *inode)
 {
 	ii->mode = inode->i_mode;
@@ -55,7 +70,6 @@ static int handle_ioctl(struct qtserver_arg *arg)
 	struct qtreq_ioctl *req = (struct qtreq_ioctl *)REQ(arg);
 	struct qtrsp_ioctl *rsp = (struct qtrsp_ioctl *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-
 	file = filp_open(req->path, O_RDONLY, 0);
 	if (err_ptr(file)) {
 		qtfs_err("handle ioctl error, path:<%s> failed.\n", req->path);
@@ -188,9 +202,13 @@ static int handle_statfs(struct qtserver_arg *arg)
 static int handle_mount(struct qtserver_arg *arg)
 {
 	struct path path;
-	int ret;
+	int ret, i, in_wl = -1;
 	struct qtreq_mount *req = (struct qtreq_mount *)REQ(arg);
 	struct qtrsp_mount *rsp = (struct qtrsp_mount *)RSP(arg);
+	if (!in_white_list(req->path, QTFS_WHITELIST_MOUNT)) {
+		rsp->ret = QTFS_ERR;
+		return sizeof(rsp->ret);
+	}
 
 	ret = kern_path(req->path, LOOKUP_DIRECTORY, &path);
 	if (ret) {
@@ -208,11 +226,15 @@ int handle_open(struct qtserver_arg *arg)
 {
 	int fd;
 	int ret;
-	struct fd f;
-	struct file *file = NULL;
 	struct qtreq_open *req = (struct qtreq_open *)REQ(arg);
 	struct qtrsp_open *rsp = (struct qtrsp_open *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
+	if (!in_white_list(req->path, QTFS_WHITELIST_OPEN)) {
+		qtfs_err("handle open path:%s not permited", req->path);
+		rsp->ret = QTFS_ERR;
+		rsp->fd = -EACCES;
+		return sizeof(struct qtrsp_open);
+	}
 
 	ret = copy_to_user(userp->userp, req->path, strlen(req->path)+1);
 	if (ret) {
@@ -235,26 +257,11 @@ int handle_open(struct qtserver_arg *arg)
 		}
 		rsp->ret = QTFS_ERR;
 		rsp->fd = fd;
-		rsp->file = 0;
 		return sizeof(struct qtrsp_open);
 	}
 
-	f = fdget(fd);
-	file = f.file;
-	if (err_ptr(file)) {
-		rsp->ret = QTFS_ERR;
-		rsp->fd = PTR_ERR(file);
-		// must close_fd(fd)?
-		WARN_ON(1);
-		qtfs_err("handle open get file pointer of <<%s>> error, fd:%d file err:%d.", req->path, fd, rsp->fd);
-		// XXX: fileclose here?
-	} else {
-		rsp->ret = QTFS_OK;
-		rsp->file = (__u64)file;
-		rsp->fd = fd;
-	}
-	qtfs_info("handle open file :%s fd:%d filep:%lx.", req->path, fd, (unsigned long)rsp->file);
-	fdput(f);
+	rsp->ret = QTFS_OK;
+	rsp->fd = fd;
 	return sizeof(struct qtrsp_open);
 }
 
@@ -279,18 +286,30 @@ int handle_close(struct qtserver_arg *arg)
 static int handle_readiter(struct qtserver_arg *arg)
 {
 	struct file *file = NULL;
+    char *pathbuf, *fullname;
 	struct qtreq_readiter *req = (struct qtreq_readiter *)REQ(arg);
 	struct qtrsp_readiter *rsp = (struct qtrsp_readiter *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 	size_t maxlen = (req->len >= sizeof(rsp->readbuf)) ? (sizeof(rsp->readbuf) - 1) : req->len;
 
-	file = (struct file *)req->file;
+	file = fget(req->fd);
+	pathbuf = __getname();
+    fullname = file_path(file, pathbuf, PATH_MAX);
+	if (!in_white_list(fullname, QTFS_WHITELIST_READ)) {
+		qtfs_err("%s not in whitelist.\n", fullname);
+		__putname(pathbuf);
+		rsp->d.ret = QTFS_ERR;
+		rsp->d.len = 0;
+		rsp->d.errno = -ENOENT;
+		goto end;
+	}
+	__putname(pathbuf);
 	if (err_ptr(file)) {
 		qtfs_err("handle readiter error, open failed, file:%p.\n", file);
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.len = 0;
 		rsp->d.errno = -ENOENT;
-		return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf) + rsp->d.len;
+		goto end;
 	}
 	if (file->f_op->read) {
 		int idx = 0;
@@ -326,23 +345,35 @@ static int handle_readiter(struct qtserver_arg *arg)
 
 	qtfs_info("handle readiter file:<%s>, len:%lu, rsplen:%ld, pos:%lld, ret:%d errno:%d.\n",
 			file->f_path.dentry->d_iname, req->len, rsp->d.len, req->pos, rsp->d.ret, rsp->d.errno);
+end:
+	fput(file);
 	return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf) + rsp->d.len;
 }
 
 static int handle_write(struct qtserver_arg *arg)
 {
 	struct file *file = NULL;
+    char *pathbuf, *fullname;
 	struct qtreq_write *req = (struct qtreq_write *)REQ(arg);
 	struct qtrsp_write *rsp = (struct qtrsp_write *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 	int idx = 0, leftlen = 0, ret = 0, len = 0;
 
-	file = (struct file *)req->d.file;
+	file = fget(req->d.fd);
+	pathbuf = __getname();
+	fullname = file_path(file, pathbuf, PATH_MAX);
+	if (!in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
+		kfree(pathbuf);
+		rsp->ret = QTFS_ERR;
+		rsp->len = 0;
+		goto end;
+	}
+	__putname(pathbuf);
 	if (err_ptr(file)) {
 		qtfs_err("qtfs handle write error, filp:<%p> open failed.\n", file);
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
-		return sizeof(struct qtrsp_write);
+		goto end;
 	}
 
 	file->f_mode = req->d.mode;
@@ -372,6 +403,8 @@ static int handle_write(struct qtserver_arg *arg)
 	rsp->ret = (rsp->len <= 0) ? QTFS_ERR : QTFS_OK;
 	qtfs_info("handle write file<%s> %s, write len:%ld pos:%lld mode:%o flags:%x.", file->f_path.dentry->d_iname,
 			(rsp->ret == QTFS_ERR) ? "failed" : "succeded", rsp->len, req->d.pos, file->f_mode, file->f_flags);
+end:
+	fput(file);
 	return sizeof(struct qtrsp_write);
 }
 
@@ -438,6 +471,12 @@ static int handle_readdir(struct qtserver_arg *arg)
 		.dir = (struct qtfs_dirent64 *)rsp->dirent,
 		.vldcnt = 0,
 	};
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_READDIR)) {
+		rsp->d.ret = QTFS_ERR;
+		rsp->d.vldcnt = 0;
+		return sizeof(struct qtrsp_readdir) - sizeof(rsp->dirent);
+	}
 	file = filp_open(req->path, O_RDONLY|O_NONBLOCK|O_DIRECTORY, 0);
 	if (err_ptr(file)) {
 		qtfs_err("handle readdir error, filp:<%s> open failed.\n", req->path);
@@ -466,7 +505,11 @@ static int handle_mkdir(struct qtserver_arg *arg)
 	struct inode *inode;
 	struct path path;
 	int ret;
-
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_MKDIR)) {
+		rsp->errno = -EFAULT;
+		goto err;
+	}
 	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
 		qtfs_err("handle mkdir copy to userp failed.\n");
 		rsp->errno = -EFAULT;
@@ -499,7 +542,11 @@ static int handle_rmdir(struct qtserver_arg *arg)
 	struct qtreq_rmdir *req = (struct qtreq_rmdir *)REQ(arg);
 	struct qtrsp_rmdir *rsp = (struct qtrsp_rmdir *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_RMDIR)) {
+		rsp->errno = -EFAULT;
+		goto err;
+	}
 	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
 		qtfs_err("handle rmdir copy to userp failed.\n");
 		rsp->errno = -EFAULT;
@@ -558,6 +605,12 @@ static int handle_setattr(struct qtserver_arg *arg)
 	struct inode *inode = NULL;
 	struct path path;
 	int ret;
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_SETATTR)) {
+		rsp->ret = QTFS_ERR;
+		rsp->errno = -ENOENT;
+		return sizeof(struct qtrsp_setattr);
+	}
 
 	ret = kern_path(req->path, 0, &path);
 	if (ret) {
@@ -610,6 +663,12 @@ int handle_icreate(struct qtserver_arg *arg)
 	struct inode *inode;
 	struct qtreq_icreate *req = (struct qtreq_icreate *)REQ(arg);
 	struct qtrsp_icreate *rsp = (struct qtrsp_icreate *)RSP(arg);
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_CREATE)) {
+		rsp->ret = QTFS_ERR;
+		rsp->errno = -ENOENT;
+		return sizeof(struct qtrsp_icreate);
+	}
 
 	file = filp_open(req->path, O_CREAT, req->mode);
 	if (err_ptr(file)) {
@@ -635,6 +694,12 @@ static int handle_mknod(struct qtserver_arg *arg)
 	struct path path;
 	int error;
 	unsigned int flags = LOOKUP_DIRECTORY;
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_CREATE)) {
+		rsp->ret = QTFS_ERR;
+		rsp->errno = -ENOENT;
+		return sizeof(struct qtrsp_mknod);
+	}
 
 retry:
 	dent = kern_path_create(AT_FDCWD, req->path, &path, flags);
@@ -668,6 +733,11 @@ int handle_unlink(struct qtserver_arg *arg)
 {
 	struct qtreq_unlink *req = (struct qtreq_unlink *)REQ(arg);
 	struct qtrsp_unlink *rsp = (struct qtrsp_unlink *)RSP(arg);
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_UNLINK)) {
+		rsp->errno = -ENOENT;
+		return sizeof(struct qtrsp_unlink);
+	}
 
 	rsp->errno = qtfs_kern_syms.do_unlinkat(AT_FDCWD, qtfs_kern_syms.getname_kernel(req->path));
 	if (rsp->errno < 0) {
@@ -770,7 +840,11 @@ int handle_rename(struct qtserver_arg *arg)
 	struct qtreq_rename *req = (struct qtreq_rename *)REQ(arg);
 	struct qtrsp_rename *rsp = (struct qtrsp_rename *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-
+	
+	if (!in_white_list(req->path, QTFS_WHITELIST_RENAME)) {
+		rsp->errno = -ENOENT;
+		goto err_handle;
+	}
 	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1) ||
 		copy_to_user(userp->userp2, &req->path[req->d.oldlen], strlen(&req->path[req->d.oldlen]) + 1)) {
 		qtfs_err("handle rename copy to userp failed.\n");
@@ -830,6 +904,12 @@ int handle_xattrset(struct qtserver_arg *arg)
 	struct qtrsp_xattrset *rsp = (struct qtrsp_xattrset *)RSP(arg);
 	struct path path;
 	int ret = 0;
+
+	if (!in_white_list(req->buf, QTFS_WHITELIST_SETXATTR)) {
+		rsp->errno = -ENOENT;
+		rsp->ret = QTFS_ERR;
+		goto err_handle;
+	}
 
 	ret = kern_path(req->buf, 0, &path);
 	if (ret) {
@@ -997,7 +1077,7 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	struct poll_wqueues table;
 	poll_table *pt;
 
-	filp = (struct file *)req->file;
+	filp = fget(req->fd);
 	inode = filp->f_inode;
 	if (!S_ISFIFO(inode->i_mode)) {
 		msleep(1);
@@ -1011,6 +1091,7 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	if (pipe == NULL) {
 		qtfs_err("file :%s pipe data is NULL.", filp->f_path.dentry->d_iname);
 		rsp->ret = QTFS_ERR;
+		fput(filp);
 		return sizeof(struct qtrsp_poll);
 	}
 	head = READ_ONCE(pipe->head);
@@ -1035,6 +1116,7 @@ end:
 
 	qtfs_info("handle fifo poll f_mode:%o: %s get poll mask 0x%x poll:%lx\n",
 			filp->f_mode, filp->f_path.dentry->d_iname, rsp->mask, (unsigned long)filp->f_op->poll);
+	fput(filp);
 	return sizeof(struct qtrsp_poll);
 }
 
@@ -1055,8 +1137,8 @@ int handle_epollctl(struct qtserver_arg *arg)
 	}
 	qtinfo_cntinc((req->op == EPOLL_CTL_ADD) ? QTINF_EPOLL_ADDFDS : QTINF_EPOLL_DELFDS);
 	rsp->ret = QTFS_OK;
-	qtfs_info("handle do epoll ctl success, fd:%d file:%lx op:%x data:%lx poll_t:%x.",
-			req->fd, (unsigned long)req->file, req->op, req->event.data, (unsigned)req->event.events);
+	qtfs_info("handle do epoll ctl success, fd:%d op:%x data:%lx poll_t:%x.",
+			req->fd, req->op, req->event.data, (unsigned)req->event.events);
 
 	return sizeof(struct qtrsp_epollctl);
 }
@@ -1197,3 +1279,4 @@ int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar)
 	qtfs_sock_msg_clear(pvar);
 	return (ret < 0) ? QTERROR : QTOK;
 }
+

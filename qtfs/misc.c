@@ -61,7 +61,6 @@ void qtfs_req_size(void)
 	qtfs_diag_info->req_size[QTFS_REQ_MOUNT] = sizeof(struct qtreq_mount);
 	qtfs_diag_info->req_size[QTFS_REQ_OPEN] = sizeof(struct qtreq_open);
 	qtfs_diag_info->req_size[QTFS_REQ_CLOSE] = sizeof(struct qtreq_close);
-	qtfs_diag_info->req_size[QTFS_REQ_READ] = sizeof(struct qtreq_read);
 	qtfs_diag_info->req_size[QTFS_REQ_READITER] = sizeof(struct qtreq_readiter);
 	qtfs_diag_info->req_size[QTFS_REQ_WRITE] = sizeof(struct qtreq_write);
 	qtfs_diag_info->req_size[QTFS_REQ_LOOKUP] = sizeof(struct qtreq_lookup);
@@ -92,7 +91,6 @@ void qtfs_req_size(void)
 	qtfs_diag_info->rsp_size[QTFS_REQ_MOUNT] = sizeof(struct qtrsp_mount);
 	qtfs_diag_info->rsp_size[QTFS_REQ_OPEN] = sizeof(struct qtrsp_open);
 	qtfs_diag_info->rsp_size[QTFS_REQ_CLOSE] = sizeof(struct qtrsp_close);
-	qtfs_diag_info->rsp_size[QTFS_REQ_READ] = sizeof(struct qtrsp_read);
 	qtfs_diag_info->rsp_size[QTFS_REQ_READITER] = sizeof(struct qtrsp_readiter);
 	qtfs_diag_info->rsp_size[QTFS_REQ_WRITE] = sizeof(struct qtrsp_write);
 	qtfs_diag_info->rsp_size[QTFS_REQ_LOOKUP] = sizeof(struct qtrsp_lookup);

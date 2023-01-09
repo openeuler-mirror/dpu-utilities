@@ -28,6 +28,8 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 	.events = NULL,
 };
 
+struct whitelist* whitelist[QTFS_WHITELIST_MAX];
+
 long qtfs_server_epoll_thread(struct qtfs_sock_var_s *pvar)
 {
 	int n;
@@ -140,9 +142,10 @@ long qtfs_server_epoll_init(void)
 
 long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int i;
+	int i, len;
 	long ret = 0;
 	struct qtfs_sock_var_s *pvar;
+	struct whitelist *tmp;
 	struct qtfs_thread_init_s init_userp;
 	switch (cmd) {
 		case QTFS_IOCTL_THREAD_INIT:
@@ -212,6 +215,26 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			break;
 
 		case QTFS_IOCTL_ALLINFO:
+		case QTFS_IOCTL_WHITELIST:
+			if (copy_from_user(&len, (void __user *)arg, sizeof(int))) {
+				qtfs_err("qtfs ioctl white init copy from user failed.");
+				return QTERROR;
+			}
+			tmp = (struct whitelist *)kmalloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len, GFP_KERNEL);
+			
+			if (copy_from_user(tmp, (void __user *)arg, sizeof(struct whitelist) + sizeof(struct wl_item) * len)) {
+				qtfs_err("qtfs ioctl white init copy from user failed.");
+				return QTERROR;
+			}
+			
+			if (whitelist[tmp->type] != NULL) {
+				kfree(whitelist[tmp->type]);
+			}
+			whitelist[tmp->type] = tmp;
+			for (i = 0; i < whitelist[tmp->type]->len; i++) {
+				qtfs_err("init %d list:%d %s", tmp->type, i, whitelist[tmp->type]->wl[i].path);
+			}
+			break;
 		case QTFS_IOCTL_CLEARALL:
 		case QTFS_IOCTL_LOGLEVEL:
 			ret = qtfs_misc_ioctl(file, cmd, arg);
@@ -226,7 +249,11 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 
 static int __init qtfs_server_init(void)
 {
+	int i;
 	qtfs_log_init(qtfs_log_level);
+	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
+		whitelist[i] = NULL;
+	}
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);
 	if (qtfs_diag_info == NULL) 
 		qtfs_err("kmalloc qtfs diag info failed.");
@@ -246,6 +273,7 @@ static int __init qtfs_server_init(void)
 
 static void __exit qtfs_server_exit(void)
 {
+	int i;
 	qtfs_mod_exiting = true;
 	qtfs_server_thread_run = 0;
 
@@ -268,6 +296,11 @@ static void __exit qtfs_server_exit(void)
 	if (qtfs_userps != NULL) {
 		kfree(qtfs_userps);
 		qtfs_userps = NULL;
+	}
+	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
+		if (whitelist[i] != NULL) {
+			kfree(whitelist[i]);
+		}
 	}
 	qtfs_misc_destroy();
 	qtfs_info("qtfs server exit done.\n");

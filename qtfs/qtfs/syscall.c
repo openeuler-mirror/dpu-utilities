@@ -110,7 +110,6 @@ static void do_epoll_ctl_remote(int op, struct epoll_event __user *event, struct
 	}
 	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
 	req->fd = priv->fd;
-	req->file = priv->file;
 	req->op = op;
 	if (ep_op_has_event(op) && copy_from_user(&tmp, event, sizeof(struct epoll_event))) {
 		qtfs_err("qtfs do epoll ctl remote copy from user failed.");
@@ -131,7 +130,7 @@ static void do_epoll_ctl_remote(int op, struct epoll_event __user *event, struct
 	} else {
 		qtinfo_cntinc(QTINF_EPOLL_DELFDS);
 	}
-	qtfs_info("qtfs do epoll ctl remote success, fd:%d file:%lx.", req->fd, (unsigned long)req->file);
+	qtfs_info("qtfs do epoll ctl remote success, fd:%d.", req->fd);
 	qtfs_conn_put_param(pvar);
 	return;
 }
