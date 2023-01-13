@@ -414,14 +414,14 @@ struct qtrsp_rename {
 // xattr def
 #define QTFS_XATTR_LEN 64
 struct qtreq_xattrlist {
+	size_t buffer_size;
 	char path[MAX_PATH_LEN];
 };
 
 struct qtrsp_xattrlist {
 	struct qtrsp_xattrlist_len {
 		int ret;
-		int errno;
-		bool result;
+		ssize_t size;
 	}d;
 	char name[QTFS_TAIL_LEN(struct qtrsp_xattrlist_len)];
 };

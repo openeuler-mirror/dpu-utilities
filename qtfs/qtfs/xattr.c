@@ -6,67 +6,50 @@
 #include "req.h"
 #include "log.h"
 
-static bool qtfs_xattr_list(struct dentry *dentry)
+ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 {
 	struct qtreq_xattrlist *req;
 	struct qtrsp_xattrlist *rsp;
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
-	bool ret;
+	ssize_t ret;
 
 	if (!pvar) {
 		qtfs_err("qtfs_xattr_list Failed to get qtfs sock var");
-		return -EINVAL;
+		return 0;
 	}
 
 	if (dentry == NULL) {
 		qtfs_err("qtfs_xattr_list dentry is NULL.");
 		qtfs_conn_put_param(pvar);
-		return false;
+		return 0;
 	}
 
 	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->path, dentry) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
-		return false;
+		return 0;
 	}
-
-	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRLIST, strlen(req->path) + 1);
+	req->buffer_size = buffer_size;
+	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRLIST, QTFS_SEND_SIZE(struct qtreq_xattrlist, req->path));
 	if (IS_ERR(rsp) || rsp == NULL) {
 		qtfs_err("qtfs_xattr_list remote run failed.");
 		qtfs_conn_put_param(pvar);
-		return false;
+		return 0;
 	}
 	
 	if (rsp->d.ret == QTFS_ERR) {
 		qtfs_err("qtfs_xattr_list failed with ret:%d.", rsp->d.ret);
-		ret = rsp->d.result;
+		ret = rsp->d.size;
 		qtfs_conn_put_param(pvar);
 		return ret;
 	}
-	ret = rsp->d.result;
+	ret = rsp->d.size;
+	if (buffer != NULL) {
+		memcpy(buffer, rsp->name, buffer_size);
+	}
 	qtfs_conn_put_param(pvar);
 	return ret;
-}
-
-static bool qtfs_xattr_user_list(struct dentry *dentry)
-{
-	return qtfs_xattr_list(dentry);
-}
-
-static bool qtfs_xattr_trusted_list(struct dentry *dentry)
-{
-	return qtfs_xattr_list(dentry);
-}
-
-static bool qtfs_xattr_security_list(struct dentry *dentry)
-{
-	return qtfs_xattr_list(dentry);
-}
-
-static bool qtfs_xattr_hurd_list(struct dentry *dentry)
-{
-	return qtfs_xattr_list(dentry);
 }
 
 static int qtfs_xattr_set(const struct xattr_handler *handler,
@@ -177,12 +160,6 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		qtfs_err("Failed to get qtfs sock var");
 		return 0;
 	}
-	/*if (buf == NULL || size <= 0) {
-		qtfs_err("xattr get failed, buf:%lx size:%d name:%s dentry:%lx",
-				(unsigned long)buf, size, (name == NULL) ? "NULL" : name, (unsigned long)dentry);
-		qtfs_conn_put_param(pvar);
-		return 0;
-	}*/
 
 	if (dentry == NULL) {
 		qtfs_err("xattr get dentry is NULL.");
@@ -216,7 +193,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 			qtfs_conn_put_param(pvar);
 			return PTR_ERR(rsp);
 		}
-		if (rsp->d.ret == QTFS_ERR || rsp->d.size > req->d.size || leftlen < rsp->d.size) {
+		if (rsp->d.ret == QTFS_ERR || (size !=0 && (rsp->d.size > req->d.size || leftlen < rsp->d.size))) {
 			qtfs_err("ret:%d rsp size:%ld req size:%d leftlen:%lu", rsp->d.ret, rsp->d.size,
 					req->d.size, leftlen);
 			goto err_end;
@@ -239,28 +216,24 @@ err_end:
 
 const struct xattr_handler qtfs_xattr_user_handler = {
 	.prefix	= XATTR_USER_PREFIX,
-	.list	= qtfs_xattr_user_list,
 	.get	= qtfs_xattr_get,
 	.set	= qtfs_xattr_user_set,
 };
 
 const struct xattr_handler qtfs_xattr_trusted_handler = {
 	.prefix	= XATTR_TRUSTED_PREFIX,
-	.list	= qtfs_xattr_trusted_list,
 	.get	= qtfs_xattr_get,
 	.set	= qtfs_xattr_trusted_set,
 };
 
 const struct xattr_handler qtfs_xattr_security_handler = {
 	.prefix	= XATTR_SECURITY_PREFIX,
-	.list	= qtfs_xattr_security_list,
 	.get	= qtfs_xattr_get,
 	.set	= qtfs_xattr_security_set,
 };
 
 const struct xattr_handler qtfs_xattr_hurd_handler = {
 	.prefix	= XATTR_HURD_PREFIX,
-	.list	= qtfs_xattr_hurd_list,
 	.get	= qtfs_xattr_get,
 	.set	= qtfs_xattr_hurd_set,
 };

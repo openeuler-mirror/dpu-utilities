@@ -866,26 +866,27 @@ int handle_xattrlist(struct qtserver_arg *arg)
 	struct qtrsp_xattrlist *rsp = (struct qtrsp_xattrlist *)RSP(arg);
 	struct path path;
 	int ret;
-	ssize_t size;
+	ssize_t size, buffer_size;
 	int i;
 
+	buffer_size = req->buffer_size;
 	ret = kern_path(req->path, 0, &path);
 	if (ret) {
 		qtfs_err("handle xattr list path error.\n");
-		rsp->d.errno = -ENOENT;
+		rsp->d.size = -ENOENT;
 		goto err_handle;
 	}
-	size = generic_listxattr(path.dentry, rsp->name, sizeof(rsp->name));
+	size = vfs_listxattr(path.dentry, buffer_size == 0 ? NULL : rsp->name, buffer_size);
 	path_put(&path);
 	if (size < 0) {
 		qtfs_err("handle list xattr failed, errno:%ld.\n", size);
-		rsp->d.errno = size;
+		rsp->d.size = size;
 		goto err_handle;
 	}
 	if (size == 0)
 		goto err_handle;
 	rsp->d.ret = QTFS_OK;
-	rsp->d.result = true;
+	rsp->d.size = size;
 	while (i < size) {
 		qtfs_info("handle list xattr result:%s\n", &rsp->name[i]);
 		i += strlen(&rsp->name[i]) + 1;
@@ -894,7 +895,7 @@ int handle_xattrlist(struct qtserver_arg *arg)
 
 err_handle:
 	rsp->d.ret = QTFS_ERR;
-	rsp->d.result = false;
+	rsp->d.size = size;
 	return sizeof(struct qtrsp_xattrlist);
 }
 
@@ -970,9 +971,9 @@ int handle_xattrget(struct qtserver_arg *arg)
 		}
 		qtfs_info("handle getxattr: path:%s prefix name:%s : (%s - 0x%llx), size:%ld, reqpos:%d\n", req->path, req->d.prefix_name, kvalue, (__u64)kvalue, error, req->d.pos);
 		len = (error - req->d.pos)>sizeof(rsp->buf)? sizeof(rsp->buf):(error - req->d.pos);
+		rsp->d.size = len;
 		if (req->d.size > 0) {
 			memcpy(rsp->buf, &kvalue[req->d.pos], len);
-			rsp->d.size = len;
 		}
 		rsp->d.pos = req->d.pos + len;
 	} else {
