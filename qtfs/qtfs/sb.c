@@ -18,7 +18,7 @@
 static struct inode_operations qtfs_inode_ops;
 static struct inode_operations qtfs_symlink_inode_ops;
 struct inode *qtfs_iget(struct super_block *sb, struct inode_info *ii);
-
+extern ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size);
 int qtfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
@@ -1338,12 +1338,14 @@ static struct inode_operations qtfs_inode_ops = {
 	.getattr = qtfs_getattr,
 	.setattr = qtfs_setattr,
 	.rename = qtfs_rename,
+	.listxattr = qtfs_xattr_list,
 };
 
 static struct inode_operations qtfs_symlink_inode_ops = {
 	.get_link = qtfs_getlink,
 	.getattr = qtfs_getattr,
 	.setattr = qtfs_setattr,
+	.listxattr = qtfs_xattr_list,
 };
 
 const struct xattr_handler *qtfs_xattr_handlers[] = {
