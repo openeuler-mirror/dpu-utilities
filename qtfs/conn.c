@@ -151,10 +151,6 @@ static int qtfs_conn_sockclient_init(struct qtfs_sock_var_s *pvar)
 {
 	struct socket *sock;
 	int ret;
-	struct sockaddr_in saddr;
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(pvar->port);
-	saddr.sin_addr.s_addr = in_aton(pvar->addr);
 
 	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
 	if (ret) {
