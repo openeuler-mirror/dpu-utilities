@@ -9,7 +9,7 @@ static struct file_system_type qtfs_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= QTFS_FSTYPE_NAME,
 	.mount		= qtfs_fs_mount,
-	.kill_sb	= qtfs_kill_sb,//qtfs_kill_sb,
+	.kill_sb	= qtfs_kill_sb,
 };
 MODULE_ALIAS_FS("qtfs");
 
