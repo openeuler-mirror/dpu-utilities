@@ -3,6 +3,9 @@
 
 extern struct qtinfo *qtfs_diag_info;
 
+#define QTFS_CLIENT_DEV "/dev/qtfs_client"
+#define QTFS_SERVER_DEV "/dev/qtfs_server"
+
 #define QTFS_IOCTL_MAGIC 'Q'
 enum {
     _QTFS_IOCTL_EXEC,
@@ -18,6 +21,7 @@ enum {
 
 	_QTFS_IOCTL_LOG_LEVEL,
 	_QTFS_IOCTL_EPOLL_SUPPORT,
+	_QTFS_IOCTL_UDS_PROXY_PID,
 };
 
 #define QTFS_IOCTL_THREAD_INIT			_IO(QTFS_IOCTL_MAGIC, _QTFS_IOCTL_EXEC)
@@ -31,6 +35,7 @@ enum {
 #define QTFS_IOCTL_CLEARALL				_IO(QTFS_IOCTL_MAGIC, _QTFS_IOCTL_CLEARALL)
 #define QTFS_IOCTL_LOGLEVEL				_IO(QTFS_IOCTL_MAGIC, _QTFS_IOCTL_LOG_LEVEL)
 #define QTFS_IOCTL_EPOLL_SUPPORT		_IO(QTFS_IOCTL_MAGIC, _QTFS_IOCTL_EPOLL_SUPPORT)
+#define QTFS_IOCTL_UDS_PROXY_PID		_IO(QTFS_IOCTL_MAGIC, _QTFS_IOCTL_UDS_PROXY_PID)
 
 #define QTINFO_MAX_EVENT_TYPE 36 // look qtreq_type at req.h
 #define QTFS_FUNCTION_LEN 64
@@ -119,6 +124,7 @@ enum qtinfo_cnts {
 };
 #endif
 
+#if (defined(QTFS_CLIENT) || defined(client) || defined(QTFS_SERVER) || defined(server))
 // for connection state machine
 typedef enum {
 	QTCONN_INIT,
@@ -159,7 +165,7 @@ struct qtinfo {
 #define QTINFO_STATE(state) ((state == QTCONN_INIT) ? "INIT" : \
 							((state == QTCONN_CONNECTING) ? "CONNECTING" : \
 							((state == QTCONN_ACTIVE) ? "ACTIVE" : "UNKNOWN")))
-
+#endif
 //ko compile
 #if (defined(QTFS_CLIENT) || defined(client))
 static inline void qtinfo_clear(void)
