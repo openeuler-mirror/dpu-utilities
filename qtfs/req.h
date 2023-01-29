@@ -12,29 +12,29 @@ enum qtreq_type {
 	QTFS_REQ_OPEN,
 	QTFS_REQ_CLOSE,
 	QTFS_REQ_READ,
-	QTFS_REQ_READITER, //5
+	QTFS_REQ_READITER, // 5
 	QTFS_REQ_WRITE,
 	QTFS_REQ_LOOKUP,
 	QTFS_REQ_READDIR,
 	QTFS_REQ_MKDIR,
-	QTFS_REQ_RMDIR, //10
+	QTFS_REQ_RMDIR, // 10
 	QTFS_REQ_GETATTR,
 	QTFS_REQ_SETATTR,
 	QTFS_REQ_ICREATE,
 	QTFS_REQ_MKNOD,
-	QTFS_REQ_UNLINK, //15
+	QTFS_REQ_UNLINK, // 15
 	QTFS_REQ_SYMLINK,
 	QTFS_REQ_LINK,
 	QTFS_REQ_GETLINK,
 	QTFS_REQ_READLINK,
-	QTFS_REQ_RENAME, //20
+	QTFS_REQ_RENAME, // 20
 
 	QTFS_REQ_XATTRLIST,
 	QTFS_REQ_XATTRGET,
 	QTFS_REQ_XATTRSET,
 
 	QTFS_REQ_SYSMOUNT,
-	QTFS_REQ_SYSUMOUNT, //25
+	QTFS_REQ_SYSUMOUNT, // 25
 	QTFS_REQ_FIFOPOLL,
 
 	QTFS_REQ_STATFS,
@@ -117,11 +117,11 @@ static inline void qtfs_nbytes_print(unsigned char *buf, int bytes)
 #define QTFS_SEND_SIZE(stru, tailstr) sizeof(stru) - sizeof(tailstr) + strlen(tailstr) + 1
 
 struct qtreq {
-	unsigned int type;	// operation type
+	unsigned int type; // operation type
 	unsigned int err;
 	unsigned long seq_num; // check code
 	size_t len;
-	char data[QTFS_REQ_MAX_LEN];	// operation's private data
+	char data[QTFS_REQ_MAX_LEN]; // operation's private data
 };
 
 #define QTFS_MSG_LEN sizeof(struct qtreq)

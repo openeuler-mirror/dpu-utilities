@@ -396,7 +396,6 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		leftlen -= wrbuflen;
 	} while (leftlen);
 
-	//if (qtfs_support_epoll(kio->ki_filp->f_inode->i_mode) || ) {
 	do {
 		struct inode *inode = kio->ki_filp->f_inode;
 		struct qtfs_inode_priv *priv = inode->i_private;
@@ -406,7 +405,6 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 			wake_up_interruptible_poll(&priv->readq, EPOLLIN);
 			qtfs_err("writeiter file:%s char:<%s> wakup poll.", filp->f_path.dentry->d_iname, req->path_buf);
 		}
-		//qtfs_info("qtfs write iter fifo %s sync poll.", filp->f_path.dentry->d_iname);
 	} while (0);
 	qtfs_info("qtfs write %s over, leftlen:%lu.", filp->f_path.dentry->d_iname, leftlen);
 	qtfs_conn_put_param(pvar);
