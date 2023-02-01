@@ -666,8 +666,8 @@ int uds_event_tcp2pipe(void *arg, int epfd, struct uds_event_global_var *p_event
 		uds_err("read from tcp failed, len:%d str:%s", len, strerror(errno));
 		return EVENT_DEL;
 	}
-	p_event_var->iov_base[len] = 0;
-	uds_log("tcp:%d to pipe:%d len:%d, buf:\n>>>>>>>\n%s\n<<<<<<<\n", evt->fd, evt->peerfd, len, p_event_var->iov_base);
+
+	uds_log("tcp:%d to pipe:%d len:%d, buf:\n>>>>>>>\n%.*s\n<<<<<<<\n", evt->fd, evt->peerfd, len, len, p_event_var->iov_base);
 	int ret = write(evt->peerfd, p_event_var->iov_base, len);
 	if (ret <= 0) {
 		uds_err("write to pipe failed, fd:%d str:%s", evt->peerfd, strerror(errno));
@@ -685,8 +685,8 @@ int uds_event_pipe2tcp(void *arg, int epfd, struct uds_event_global_var *p_event
 		uds_err("read from pipe failed, len:%d str:%s", len, strerror(errno));
 		return EVENT_DEL;
 	}
-	p_event_var->iov_base[len] = 0;
-	uds_log("pipe:%d to tcp:%d len:%d, buf:\n>>>>>>>\n%s\n<<<<<<<\n", evt->fd, evt->peerfd, len, p_event_var->iov_base);
+
+	uds_log("pipe:%d to tcp:%d len:%d, buf:\n>>>>>>>\n%.*s\n<<<<<<<\n", evt->fd, evt->peerfd, len, len, p_event_var->iov_base);
 	int ret = write(evt->peerfd, p_event_var->iov_base, len);
 	if (ret <= 0) {
 		uds_err("write to tcp failed, fd:%d str:%s", evt->peerfd, strerror(errno));
@@ -769,9 +769,8 @@ int uds_event_uds2tcp(void *arg, int epfd, struct uds_event_global_var *p_event_
 		return EVENT_ERR;
 	}
 
-	p_msg->data[p_msg->msglen] = 0;
-	uds_log("write iov msg to tcp success, msgtype:%d ret:%d iovlen:%d recvlen:%d udsheadlen:%d msg:\n>>>>>>>\n%s\n<<<<<<<\n",
-			p_msg->msgtype, ret, iov.iov_len, len, sizeof(struct uds_tcp2tcp), p_msg->data);
+	uds_log("write iov msg to tcp success, msgtype:%d ret:%d iovlen:%d recvlen:%d udsheadlen:%d msglen:%d msg:\n>>>>>>>\n%.*s\n<<<<<<<\n",
+			p_msg->msgtype, ret, iov.iov_len, len, sizeof(struct uds_tcp2tcp), p_msg->msglen, p_msg->msglen, p_msg->data);
 endmsg:
 	return uds_msg_tcp_end_msg(evt->peer->fd);
 }
@@ -810,6 +809,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 		if (p_msg->msgtype == MSG_END) {
 			break;
 		}
+        if (p_msg->msglen > p_event_var->iov_len - sizeof(struct uds_tcp2tcp) || p_msg->msglen <= 0) {
+            uds_err("pmsg len:%d is invalid, fd:%d peerfd:%d", p_msg->msglen, evt->fd, evt->peer->fd);
+            continue;
+        }
 		switch(p_msg->msgtype) {
 			case MSG_NORMAL:
 				if (normal_msg_len != 0) {
@@ -817,13 +820,12 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 					goto err;
 				}
 				normal_msg_len = recv(evt->fd, p_event_var->iov_base_send, p_msg->msglen, MSG_WAITALL);
-				if (len <= 0) {
+				if (normal_msg_len <= 0) {
 					uds_err("recv msg error:%d fd:%d", len, evt->fd);
 					goto close_event;
 				}
 				iov.iov_len = normal_msg_len;
-				p_event_var->iov_base_send[p_msg->msglen] = 0;
-				uds_log("recv normal msg len:%d str: \n>>>>>>>\n%s\n<<<<<<<", iov.iov_len, iov.iov_base);
+				uds_log("recv normal msg len:%d str: \n>>>>>>>\n%.*s\n<<<<<<<", iov.iov_len, iov.iov_len, iov.iov_base);
 				break;
 			case MSG_SCM_RIGHTS: {
 				int len;
