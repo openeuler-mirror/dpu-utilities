@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -61,6 +62,9 @@ func removePidFile() {
 
 func cleanRedundantPidFile() {
 	filepath.Walk(rexecPidDir, func(path string, info os.FileInfo, err error) error {
+		if strings.TrimSuffix(path, "/") == strings.TrimSuffix(rexecPidDir, "/") {
+			return nil
+		}
 		f, err := os.Open(path)
 		if err != nil {
 			// open failed, just skip
@@ -147,7 +151,9 @@ func main() {
 		Stderr:     os.Stderr,
 		Env:        append([]string{}, os.Environ()...),
 		StatusChan: remoteSender,
+		Files:      make(map[int]FileInfo),
 	}
+	checkpointFileInfo(command.Files)
 
 	err = sender.Send(command)
 	if err != nil {
@@ -168,7 +174,7 @@ retry:
 		log.Fatal(err)
 	}
 	if (response.WhiteList == 0) {
-		log.Fatalf("%s command in White List of rexec server\n", command.Cmd)
+		log.Fatalf("%s command not in White List of rexec server\n", command.Cmd)
 	}
 	pid := response.Pid
 	lpid := os.Getpid()
