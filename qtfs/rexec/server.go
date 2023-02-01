@@ -128,7 +128,16 @@ func main() {
 				}
 				return
 			}
-			cmd := exec.Command(command.Cmd, command.Args...)
+
+			args := []string{}
+			fdFilePath := restoreFileInfo(command.Cmd, command.Files)
+			if fdFilePath != "" {
+				args = append(args, "-f", fdFilePath)
+			}
+			args = append(args, command.Cmd)
+			args = append(args, command.Args...)
+
+			cmd := exec.Command("/usr/bin/rexec_shim", args...)
 			cmd.Stdout = command.Stdout
 			cmd.Stderr = command.Stderr
 			cmd.Env = append([]string{}, command.Env...)
