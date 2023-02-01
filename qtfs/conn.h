@@ -26,6 +26,7 @@ extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
 extern int log_level;
 extern struct qtinfo *qtfs_diag_info;
 extern bool qtfs_epoll_mode;
+extern int qtfs_uds_proxy_pid;
 
 #define qtfs_conn_get_param(void) _qtfs_conn_get_param(__func__)
 

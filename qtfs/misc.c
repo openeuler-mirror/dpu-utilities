@@ -156,6 +156,13 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 			break;
 		}
+		case QTFS_IOCTL_UDS_PROXY_PID:
+			if (copy_from_user(&qtfs_uds_proxy_pid, (void *)arg, sizeof(int))) {
+				qtfs_err("ioctl get uds proxy pid failed.");
+				break;
+			}
+			qtfs_info("ioctl get uds proxy process pid is %d", qtfs_uds_proxy_pid);
+			break;
 	}
 	return ret;
 }

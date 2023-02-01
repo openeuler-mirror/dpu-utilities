@@ -32,6 +32,7 @@ struct qtfs_sock_var_s *qtfs_epoll_var = NULL;
 struct socket *qtfs_server_main_sock = NULL;
 struct qtfs_server_userp_s *qtfs_userps = NULL;
 #endif
+int qtfs_uds_proxy_pid = -1;
 #define QTFS_EPOLL_THREADIDX (QTFS_MAX_THREADS + 4)
 
 
