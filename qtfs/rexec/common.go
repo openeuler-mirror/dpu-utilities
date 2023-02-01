@@ -1,16 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
-	"io/ioutil"
-	"encoding/json"
 
 	"github.com/docker/libchan"
 )
@@ -29,6 +29,7 @@ type RemoteCommand struct {
 	Stderr     io.WriteCloser
 	StatusChan libchan.Sender
 	Cgroups    map[string]string
+	Files      map[int]FileInfo
 }
 
 func CheckRight(fileName string) error {
@@ -43,11 +44,11 @@ func CheckRight(fileName string) error {
 	gid = int(stat.Gid)
 	mode = int(stat.Mode)
 
-	if (uid != 0 || gid != 0) {
+	if uid != 0 || gid != 0 {
 		return fmt.Errorf("Owner of %s must be root\n", fileName)
 	}
 
-	if (mode & 0777 != 0400) {
+	if mode & 0777 != 0400 {
 		return fmt.Errorf("Mode of %s must be 0400\n", fileName)
 	}
 
@@ -113,7 +114,7 @@ func parseUnixAddr(inAddr string) (NetAddr, error) {
 	}, nil
 }
 
-func readAddrFromFile(role string) (string) {
+func readAddrFromFile(role string) string {
 	fileName := fmt.Sprintf("%s/%s.json", configDir, role)
 	if err := CheckRight(fileName); err != nil {
 		fmt.Printf("Check right of %s failed: %s", fileName, err)
