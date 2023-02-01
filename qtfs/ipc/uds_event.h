@@ -11,7 +11,7 @@ enum EVENT_RETCODE {
 };
 
 enum TCP2TCP_TYPE {
-	MSG_NORMAL = 0,		// 普通消息，当buf对待，直接转发
+	MSG_NORMAL = 0xa5a5,		// 消息类型从特殊数字开始，防止误识别消息
 	MSG_SCM_RIGHTS,
 	MSG_SCM_CREDENTIALS,	// unix domain 扩展消息，预留
 	MSG_SCM_SECURITY,	// unix domain 扩展消息，预留
