@@ -14,6 +14,7 @@
 #include <sys/epoll.h>
 
 #include "comm.h"
+#include "ipc/uds_main.h"
 
 char wl_type_str[QTFS_WHITELIST_MAX][10] = {"Open", "Write", "Read", "Readdir", "Mkdir", "Rmdir", "Create", "Unlink", "Rename", "Setattr", "Setxattr", "Mount"};
 
@@ -220,13 +221,12 @@ int qtfs_whitelist_init(int fd)
 
 int main(int argc, char *argv[])
 {
-	if (argc != 3) {
-		engine_out("Usage: %s <buf size> <number of threads>.", argv[0]);
-		engine_out("     Example: %s 4096 16.", argv[0]);
+	if (argc != 7) {
+		engine_out("Usage: %s <number of threads> <uds proxy thread num> <host ip> <uds proxy port> <dpu ip> <uds proxy port>.", argv[0]);
+		engine_out("     Example: %s 16 1 192.168.10.10 12121 192.168.10.11 12121.", argv[0]);
 		return -1;
 	}
-	int psize = atoi(argv[1]);
-	int thread_nums = atoi(argv[2]);
+	int thread_nums = atoi(argv[1]);
 	int fd = open(QTFS_SERVER_FILE, O_RDONLY);
 	if (fd < 0) {
 		engine_err("qtfs server file:%s open failed, fd:%d.", QTFS_SERVER_FILE, fd);
@@ -247,9 +247,9 @@ int main(int argc, char *argv[])
 
 	pthread_t texec[QTFS_MAX_THREADS];
 	pthread_t tepoll;
-	if (psize > QTFS_USERP_MAXSIZE || thread_nums > QTFS_MAX_THREADS) {
-		engine_err("qtfs engine param invalid, size:%d(must <= %d) thread_nums:%d(must <= %d).",
-				psize, QTFS_USERP_MAXSIZE, thread_nums, QTFS_MAX_THREADS);
+	if (thread_nums > QTFS_MAX_THREADS) {
+		engine_err("qtfs engine param invalid, thread_nums:%d(must <= %d).",
+				thread_nums, QTFS_MAX_THREADS);
 		goto end;
 	}
 	(void)ioctl(fd, QTFS_IOCTL_EXIT, 1);
@@ -257,24 +257,30 @@ int main(int argc, char *argv[])
 	signal(SIGKILL, qtfs_signal_int);
 	signal(SIGTERM, qtfs_signal_int);
 
-	struct qtfs_server_userp_s *userp = qtfs_engine_thread_init(fd, thread_nums, psize);
+	struct qtfs_server_userp_s *userp = qtfs_engine_thread_init(fd, thread_nums, QTFS_USERP_SIZE);
 	if (userp == NULL) {
 		engine_out("qtfs engine userp init failed.");
 		goto end;
 	}
 	struct engine_arg arg[QTFS_MAX_THREADS];
 	for (int i = 0; i < thread_nums; i++) {
-		arg[i].psize = psize;
+		arg[i].psize = QTFS_USERP_SIZE;
 		arg[i].fd = fd;
 		arg[i].thread_idx = i;
 		(void)pthread_create(&texec[i], NULL, qtfs_engine_kthread, &arg[i]);
 	}
 	(void)pthread_create(&tepoll, NULL, qtfs_engine_epoll_thread, &arg[0]);
+	// 必须放在这个位置，uds main里面最终也有join
+	if (uds_proxy_main(6, &argv[1]) != 0) {
+		engine_out("uds proxy start failed.");
+		goto engine_free;
+	}
 	for (int i = 0; i < thread_nums; i++) {
 		pthread_join(texec[i], NULL);
 		engine_out("qtfs engine join thread %d.", i);
 	}
 	pthread_join(tepoll, NULL);
+engine_free:
 	qtfs_engine_userp_free(userp, thread_nums);
 	engine_out("qtfs engine join epoll thread.");
 end:

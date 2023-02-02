@@ -288,7 +288,7 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 
 	req->fd = private->fd;
 	if (req->fd <= 0) {
-		qtfs_err("qtfs_readiter: invalid file(0x%llx)", req->fd);
+		qtfs_err("qtfs_readiter: invalid file(%d)", req->fd);
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
