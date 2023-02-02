@@ -237,6 +237,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			break;
 		case QTFS_IOCTL_CLEARALL:
 		case QTFS_IOCTL_LOGLEVEL:
+		case QTFS_IOCTL_UDS_PROXY_PID:
 			ret = qtfs_misc_ioctl(file, cmd, arg);
 			break;
 		default:

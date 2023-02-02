@@ -25,10 +25,11 @@
 
 bool in_white_list(char *path, int type)
 {
+	int i, in_wl = -1;
+
 	if (!whitelist[type]) {
 		return true;
 	}
-	int i, in_wl = -1;
 	for (i = 0; i < whitelist[type]->len; i++) {
 		if (!strncmp(path, whitelist[type]->wl[i].path, whitelist[type]->wl[i].len)){
 			in_wl = i;
@@ -202,7 +203,7 @@ static int handle_statfs(struct qtserver_arg *arg)
 static int handle_mount(struct qtserver_arg *arg)
 {
 	struct path path;
-	int ret, i, in_wl = -1;
+	int ret;
 	struct qtreq_mount *req = (struct qtreq_mount *)REQ(arg);
 	struct qtrsp_mount *rsp = (struct qtrsp_mount *)RSP(arg);
 	if (!in_white_list(req->path, QTFS_WHITELIST_MOUNT)) {

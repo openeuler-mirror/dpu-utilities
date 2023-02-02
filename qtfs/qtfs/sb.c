@@ -360,7 +360,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 	
 	req->d.fd = private->fd;
 	if (req->d.fd < 0) {
-		qtfs_err("qtfs_write: invalid file(0x%llx)", req->d.fd);
+		qtfs_err("qtfs_write: invalid file(%d)", req->d.fd);
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
