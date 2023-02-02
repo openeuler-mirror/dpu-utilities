@@ -4,9 +4,13 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <string.h>
+#include <stddef.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include "qtinfo.h"
 #include "comm.h"
+#include "ipc/uds_main.h"
 
 #ifdef client
 #define QTFS_DEV_NAME "/dev/qtfs_client"
@@ -312,6 +316,69 @@ void qtinfo_opt_p(int fd, char *support)
 	return;
 }
 
+#define PATH_MAX 4096
+void qtinfo_opt_u()
+{
+	int len;
+	struct sockaddr_un svr;
+	int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		qtinfo_err("Create socket fd failed.");
+		return;
+	}
+
+	memset(&svr, 0, sizeof(svr));
+	svr.sun_family = AF_UNIX;
+	strcpy(svr.sun_path, UDS_DIAG_ADDR);
+	len = offsetof(struct sockaddr_un, sun_path) + strlen(svr.sun_path);
+	if (connect(sockfd, (struct sockaddr *)&svr, len) < 0) {
+		qtinfo_err("connect to %s failed.", UDS_DIAG_ADDR);
+		return;
+	}
+	while (1) {
+		char buf[256];
+		int n;
+		memset(buf, 0, 256);
+		n = recv(sockfd, buf, 256, 0);
+		if (n <= 0)
+			break;
+		qtinfo_out2("%s", buf);
+	}
+	close(sockfd);
+	return;
+}
+
+void qtinfo_opt_s()
+{
+	int len;
+	struct sockaddr_un svr;
+	int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		qtinfo_err("Create socket fd failed.");
+		return;
+	}
+
+	memset(&svr, 0, sizeof(svr));
+	svr.sun_family = AF_UNIX;
+	strcpy(svr.sun_path, UDS_LOGLEVEL_UPD);
+	len = offsetof(struct sockaddr_un, sun_path) + strlen(svr.sun_path);
+	if (connect(sockfd, (struct sockaddr *)&svr, len) < 0) {
+		qtinfo_err("connect to %s failed.", UDS_LOGLEVEL_UPD);
+		return;
+	}
+	while (1) {
+		char buf[256];
+		int n;
+		memset(buf, 0, 256);
+		n = recv(sockfd, buf, 256, 0);
+		if (n <= 0)
+			break;
+		qtinfo_out2("%s", buf);
+	}
+	close(sockfd);
+	return;
+
+}
 
 static void qtinfo_help(char *exec)
 {
@@ -322,6 +389,8 @@ static void qtinfo_help(char *exec)
 	qtinfo_out("  -l, Set log level(valid param: \"NONE\", \"ERROR\", \"WARN\", \"INFO\", \"DEBUG\").");
 	qtinfo_out("  -t, For test informations.");
 	qtinfo_out("  -p, Epoll support file mode(1: any files; 0: only fifo).");
+	qtinfo_out("  -u, Display unix socket proxy diagnostic info");
+	qtinfo_out("  -s, Set unix socket proxy log level(Increase by 1 each time)");
 }
 
 int main(int argc, char *argv[])
@@ -334,7 +403,7 @@ int main(int argc, char *argv[])
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
 		return 0;
 	}
-	while ((ch = getopt(argc, argv, "acl:tp:")) != -1) {
+	while ((ch = getopt(argc, argv, "acl:tp:us")) != -1) {
 		switch (ch) {
 			case 'a':
 				qtinfo_opt_a(fd);
@@ -350,6 +419,12 @@ int main(int argc, char *argv[])
 				break;
 			case 'p':
 				qtinfo_opt_p(fd, optarg);
+				break;
+			case 'u':
+				qtinfo_opt_u();
+				break;
+			case 's':
+				qtinfo_opt_s();
 				break;
 			default:
 				qtinfo_help(argv[0]);
