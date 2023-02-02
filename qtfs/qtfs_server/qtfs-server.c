@@ -214,7 +214,6 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			qtfs_server_thread_run = arg;
 			break;
 
-		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_WHITELIST:
 			if (copy_from_user(&len, (void __user *)arg, sizeof(int))) {
 				qtfs_err("qtfs ioctl white init copy from user failed.");
@@ -235,6 +234,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("init %d list:%d %s", tmp->type, i, whitelist[tmp->type]->wl[i].path);
 			}
 			break;
+		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_CLEARALL:
 		case QTFS_IOCTL_LOGLEVEL:
 		case QTFS_IOCTL_UDS_PROXY_PID:
