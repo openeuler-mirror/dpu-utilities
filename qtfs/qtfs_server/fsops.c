@@ -577,6 +577,7 @@ static int handle_getattr(struct qtserver_arg *arg)
 	qtfs_debug("handle getattr path:%s\n", req->path);
 	ret = kern_path(req->path, 0, &path);
 	if (ret) {
+		rsp->errno = ret;
 		qtfs_err("handle getattr path:%s failed, ret:%d %s\n", req->path, ret, (ret != -ENOENT) ? "." : "file not exist");
 		goto failed;
 	}
