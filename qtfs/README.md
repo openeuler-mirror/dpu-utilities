@@ -24,6 +24,7 @@ qtfs的特性：
 ## 安装教程
 
 目录说明：
++ **ipc**: 跨主机unix domain socket协同组件，在该目录下编译udsproxyd二进制和libudsproxy.so库。
 + **qtfs**: 客户端内核模块相关代码，直接在该目录下编译客户端ko。
 + **qtfs_server**: 服务端内核模块相关代码，直接在该目录下编译服务端ko和相关程序。
 + **qtinfo**: 诊断工具，支持查询文件系统的工作状态以及修改log级别等。
@@ -34,19 +35,23 @@ qtfs的特性：
 
     1. 要求内核版本在5.10或更高版本。
     2. 安装内核开发包：yum install kernel-devel。
+	3. 假设host服务器ip为192.168.10.10，dpu为192.168.10.11
 
 服务端安装：
     
     1. cd qtfs_server
     2. make clean && make
     3. insmod qtfs_server.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
-    4. ./engine 4096 16
+    4. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
 
 客户端安装：
     
     1. cd qtfs
     2. make clean && make
     3. insmod qtfs.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
+	4. cd ../ipc/
+	5. make clean && make && make install
+	6. nohup udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &
 
 ## 使用说明
 
