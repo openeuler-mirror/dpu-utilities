@@ -12,6 +12,10 @@ uds_main.o:
 libudsproxy.so:
 	gcc -g -O2 -o libudsproxy.so uds_connector.c -fPIC --shared
 
+install:
+	yes | cp udsproxyd /usr/bin/
+	yes | cp libudsproxy.so /usr/lib64/
+
 clean:
 	@rm -rf *.o udsproxyd libudsproxy.so
 	
