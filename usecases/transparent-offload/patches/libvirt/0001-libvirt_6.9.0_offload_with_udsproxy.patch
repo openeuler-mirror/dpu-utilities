@@ -1,0 +1,258 @@
+diff -uprN libvirt-6.9.0-orig/src/qemu/qemu_command.c libvirt-6.9.0/src/qemu/qemu_command.c
+--- libvirt-6.9.0-orig/src/qemu/qemu_command.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt-6.9.0/src/qemu/qemu_command.c	2023-02-07 19:08:58.657319700 +0800
+@@ -4816,7 +4816,7 @@ qemuBuildChrChardevStr(virLogManagerPtr
+ 
+     case VIR_DOMAIN_CHR_TYPE_UNIX:
+         virBufferAsprintf(&buf, "socket,id=%s", charAlias);
+-        if (dev->data.nix.listen &&
++        if (0 && dev->data.nix.listen &&
+             (flags & QEMU_BUILD_CHARDEV_UNIX_FD_PASS) &&
+             virQEMUCapsGet(qemuCaps, QEMU_CAPS_CHARDEV_FD_PASS)) {
+             int fd;
+diff -uprN libvirt-6.9.0-orig/src/qemu/qemu_monitor.c libvirt-6.9.0/src/qemu/qemu_monitor.c
+--- libvirt-6.9.0-orig/src/qemu/qemu_monitor.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt-6.9.0/src/qemu/qemu_monitor.c	2023-02-07 19:13:33.558703200 +0800
+@@ -271,6 +271,7 @@ qemuMonitorOpenUnix(const char *monitor,
+     }
+ 
+     if (retry) {
++		int retry1 = 3;
+         if (virTimeBackOffStart(&timebackoff, 1, timeout * 1000) < 0)
+             goto error;
+         while (virTimeBackOffWait(&timebackoff)) {
+@@ -278,6 +279,11 @@ qemuMonitorOpenUnix(const char *monitor,
+ 
+             if (ret == 0)
+                 break;
++			if (retry1 > 0) {
++				sleep(1);
++				retry1--;
++				continue;
++			}
+ 
+             if ((errno == ENOENT || errno == ECONNREFUSED) &&
+                 (!cpid || virProcessKill(cpid, 0) == 0)) {
+@@ -297,12 +303,18 @@ qemuMonitorOpenUnix(const char *monitor,
+             goto error;
+         }
+     } else {
+-        ret = connect(monfd, (struct sockaddr *) &addr, sizeof(addr));
+-        if (ret < 0) {
+-            virReportSystemError(errno, "%s",
+-                                 _("failed to connect to monitor socket"));
+-            goto error;
+-        }
++		int retry2 = 3;
++		while (retry2 > 0) {
++	        ret = connect(monfd, (struct sockaddr *) &addr, sizeof(addr));
++	        if (ret < 0) {
++	            virReportSystemError(errno, "%s",
++	                                 _("failed to connect to monitor socket"));
++	            retry2--;
++				sleep(1);
++				continue;
++	        }
++			break;
++		}
+     }
+ 
+     return monfd;
+diff -uprN libvirt-6.9.0-orig/src/qemu/qemu_process.c libvirt-6.9.0/src/qemu/qemu_process.c
+--- libvirt-6.9.0-orig/src/qemu/qemu_process.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt-6.9.0/src/qemu/qemu_process.c	2023-02-07 19:25:43.609284800 +0800
+@@ -8651,15 +8651,13 @@ qemuProcessQMPStop(qemuProcessQMPPtr pro
+     virDomainObjEndAPI(&proc->vm);
+ 
+     if (proc->pid != 0) {
++        char cmdstring[128] = {0};
+         VIR_DEBUG("Killing QMP caps process %lld", (long long)proc->pid);
+-        if (virProcessKill(proc->pid, SIGKILL) < 0 && errno != ESRCH)
+-            VIR_ERROR(_("Failed to kill process %lld: %s"),
+-                      (long long)proc->pid,
+-                      g_strerror(errno));
+-
++        sprintf(cmdstring, "/usr/bin/rexec kill -SIGKILL %lld",
++                        (long long)proc->pid);
++        system(cmdstring);
+         proc->pid = 0;
+     }
+-
+     if (proc->pidfile)
+         unlink(proc->pidfile);
+ 
+diff -uprN libvirt-6.9.0-orig/src/util/vircgroup.c libvirt-6.9.0/src/util/vircgroup.c
+--- libvirt-6.9.0-orig/src/util/vircgroup.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt-6.9.0/src/util/vircgroup.c	2023-02-07 19:16:56.208192500 +0800
+@@ -449,6 +449,7 @@ virCgroupSetValueRaw(const char *path,
+                      const char *value)
+ {
+     char *tmp;
++	int pid;
+ 
+     VIR_DEBUG("Set value '%s' to '%s'", path, value);
+     if (virFileWriteStr(path, value, 0) < 0) {
+@@ -459,6 +460,10 @@ virCgroupSetValueRaw(const char *path,
+                                  value, tmp + 1);
+             return -1;
+         }
++		pid = atoi(value);
++		if (pid > 0) {
++			return 0;
++		}
+         virReportSystemError(errno,
+                              _("Unable to write to '%s'"), path);
+         return -1;
+diff -uprN libvirt-6.9.0-orig/src/util/virprocess.c libvirt-6.9.0/src/util/virprocess.c
+--- libvirt-6.9.0-orig/src/util/virprocess.c	2020-11-02 18:16:52.000000000 +0800
++++ libvirt-6.9.0/src/util/virprocess.c	2023-02-07 19:19:56.092020800 +0800
+@@ -440,9 +440,141 @@ int virProcessKillPainfully(pid_t pid, b
+ }
+ 
+ #if WITH_SCHED_GETAFFINITY
++struct _virBitmap {
++    size_t nbits;
++    size_t map_len;
++    size_t map_alloc;
++
++    /* Note that code below depends on the fact that unused bits of the bitmap
++     * are not set. Any function decreasing the size of the map needs clear
++     * bits which don't belong to the bitmap any more. */
++    unsigned long *map;
++};
+ 
+ int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
+ {
++#define TMP_STRLEN 16
++    size_t i;
++    int len;
++    char cmdstring[256] = {0};
++    char tmp[TMP_STRLEN] = {0};
++    struct _virBitmap *bitmap = (struct _virBitmap *)map;
++    
++    VIR_DEBUG("Set process affinity on remote pid %lld", (long long)pid);
++    sprintf(cmdstring, "/usr/bin/rexec taskset -pc ");
++    for (i = 0; i < virBitmapSize(map); i++) {
++        len = strlen(cmdstring);
++        if (virBitmapIsBitSet(map, i)) {
++            switch (cmdstring[len - 1]) {
++                case ' ':
++                case ',':
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i);
++                    strcat(cmdstring, tmp);
++                    strcat(cmdstring, "-");
++                    break;
++                case '-':
++                    break;
++                default:
++                    // '0' ~ '9'
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i);
++                    strcat(cmdstring, ",");
++                    strcat(cmdstring, tmp);
++                    strcat(cmdstring, "-");
++                    break;
++            }
++        } else {
++            switch (cmdstring[len - 1]) {
++                case '-':
++                    memset(tmp, 0, TMP_STRLEN);
++                    sprintf(tmp, "%d", i-1);
++                    strcat(cmdstring, tmp);
++                    //strcat(cmdstring, ",");
++                    break;
++                default:
++                    break;
++            }
++        }
++    }
++    if (cmdstring[strlen(cmdstring) - 1] == '-') {
++        memset(tmp, 0, TMP_STRLEN);
++        sprintf(tmp, "%d", i-1);
++        strcat(cmdstring, tmp);
++    }
++    memset(tmp, 0, TMP_STRLEN);
++    sprintf(tmp, "%d", pid);
++    strcat(cmdstring, " ");
++    strcat(cmdstring, tmp);
++    VIR_ERROR("set remote affinity cmdstring:%s", cmdstring);
++    for (i = 0; i < bitmap->map_len; i++) {
++        if (bitmap->map[i] == 0) continue;
++        VIR_ERROR("map[%d]:%lx", i, bitmap->map[i]);
++    }
++    if (system(cmdstring) < 0) {
++        VIR_ERROR("remote set affinity pid:%d failed.", pid);
++        return -1;
++    }
++    return 0;
++}
++
++
++
++#define CHAR2HEX(c) ((c >= 'a' && c <= 'f') ? (c - 'a' + 10) : (c - '0'))
++virBitmapPtr
++virProcessGetAffinity(pid_t pid)
++{
++#define CMD_DISP_LEN 128
++    char disp[CMD_DISP_LEN] = {0};
++    char cmdstring[256] = {0};
++    char tmp[TMP_STRLEN] = {0};
++    FILE *pipe = NULL;
++    int cnt = 2000;
++    int dispidx = 0;
++
++    size_t i;
++    virBitmapPtr ret = NULL;
++
++    sprintf(cmdstring, "/usr/bin/rexec taskset -p %d", pid);
++    VIR_ERROR("get remote affinity pid:%d cmdstring:%s", pid, cmdstring);
++
++    pipe = popen(cmdstring, "r");
++    if (!pipe) {
++        VIR_ERROR("remote get affinity failed, popen failed.");
++        return NULL;
++    }
++
++    while (fgets(disp, CMD_DISP_LEN, pipe) == NULL && cnt-- > 0) {
++        sleep(1);
++    }
++    VIR_ERROR("cmd disp:%s", disp);
++    pclose(pipe);
++
++    dispidx = strlen(disp) - 1;
++    if (dispidx <= 0) {
++        VIR_ERROR("cmd:%s not return any info.", cmdstring);
++        return NULL;
++    }
++    ret = virBitmapNew(1024 << 8);
++    int offset = 0;
++    while (disp[dispidx] != ' ') {
++        char c = CHAR2HEX(disp[dispidx]);
++        dispidx--;
++        if (c < 0 || c > 0xf) continue;
++        VIR_ERROR("dispidx:%d c:%c num:%x", dispidx, disp[dispidx], c);
++        for (i = 0; i < 4; i++) {
++            if ((c >> i) & 0x1)
++                ignore_value(virBitmapSetBit(ret, offset * 4 + i));
++        }
++        offset++;
++    }
++
++    return ret;
++}
++
++#if 0
++int virProcessSetAffinity(pid_t pid, virBitmapPtr map, bool quiet)
++{
+     size_t i;
+     int numcpus = 1024;
+     size_t masklen;
+@@ -535,6 +667,7 @@ virProcessGetAffinity(pid_t pid)
+ 
+     return ret;
+ }
++#endif
+ 
+ #elif defined(WITH_BSD_CPU_AFFINITY)
+ 
