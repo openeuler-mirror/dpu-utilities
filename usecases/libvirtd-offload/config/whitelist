@@ -1,0 +1,8 @@
+kill
+taskset
+qemu-kvm
+rexec_shim
+/usr/bin/taskset
+/usr/bin/kill
+/usr/bin/qemu-kvm
+/usr/bin/rexec_shim

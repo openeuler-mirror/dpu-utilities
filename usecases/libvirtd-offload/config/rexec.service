@@ -1,0 +1,13 @@
+[Unit]
+Description=Rexec_server Service
+After=network.target
+
+[Service]
+Type=simple
+Environment=CMD_NET_ADDR=tcp://0.0.0.0:7777
+ExecStart=/usr/bin/rexec_server
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
