@@ -113,8 +113,7 @@ struct qtfs_kallsyms {
 				struct path *, struct qstr *, int *);
 	struct dentry * (*__lookup_hash)(const struct qstr *, struct dentry *, unsigned int);
 	long (*do_mount)(const char *, const char __user *, const char *, unsigned long, void *);
-	int (*path_mount)(const char *, struct path *, const char *, unsigned long, void *);
-	int (*path_umount)(struct path *, int);
+	int (*ksys_umount)(char __user *name, int flags);
 	struct task_struct *(*find_get_task_by_vpid)(pid_t nr);
 	int (*do_readlinkat)(int, const char __user *, char __user *, int);
 	int (*do_renameat2)(int, const char __user *, int, const char __user *, unsigned int);

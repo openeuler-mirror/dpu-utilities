@@ -2,6 +2,7 @@
 #include <linux/kallsyms.h>
 #include <linux/kprobes.h>
 #include <linux/tcp.h>
+#include <net/tcp.h>
 
 #include "comm.h"
 #include "conn.h"
@@ -35,6 +36,86 @@ struct qtfs_server_userp_s *qtfs_userps = NULL;
 int qtfs_uds_proxy_pid = -1;
 #define QTFS_EPOLL_THREADIDX (QTFS_MAX_THREADS + 4)
 
+#ifdef KVER_4_19
+static inline void sock_valbool_flag(struct sock *sk, enum sock_flags bit,
+				     int valbool)
+{
+	if (valbool)
+		sock_set_flag(sk, bit);
+	else
+		sock_reset_flag(sk, bit);
+}
+
+void sock_set_keepalive(struct sock *sk)
+{
+	lock_sock(sk);
+	if (sk->sk_prot->keepalive)
+		sk->sk_prot->keepalive(sk, true);
+	sock_valbool_flag(sk, SOCK_KEEPOPEN, true);
+	release_sock(sk);
+}
+
+int tcp_sock_set_keepidle_locked(struct sock *sk, int val)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (val < 1 || val > MAX_TCP_KEEPIDLE)
+		return -EINVAL;
+
+	tp->keepalive_time = val * HZ;
+	if (sock_flag(sk, SOCK_KEEPOPEN) &&
+		!((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))) {
+		u32 elapsed = keepalive_time_elapsed(tp);
+
+		if (tp->keepalive_time > elapsed)
+			elapsed = tp->keepalive_time - elapsed;
+		else
+			elapsed = 0;
+		inet_csk_reset_keepalive_timer(sk, elapsed);
+	}
+
+	return 0;
+}
+
+int tcp_sock_set_keepidle(struct sock *sk, int val)
+{
+	int err;
+
+	lock_sock(sk);
+	err = tcp_sock_set_keepidle_locked(sk, val);
+	release_sock(sk);
+	return err;
+}
+
+int tcp_sock_set_keepintvl(struct sock *sk, int val)
+{
+	if (val < 1 || val > MAX_TCP_KEEPINTVL)
+		return -EINVAL;
+
+	lock_sock(sk);
+	tcp_sk(sk)->keepalive_intvl = val * HZ;
+	release_sock(sk);
+	return 0;
+}
+
+int tcp_sock_set_keepcnt(struct sock *sk, int val)
+{
+	if (val < 1 || val > MAX_TCP_KEEPCNT)
+		return -EINVAL;
+
+	lock_sock(sk);
+	tcp_sk(sk)->keepalive_probes = val;
+	release_sock(sk);
+	return 0;
+}
+
+void sock_set_reuseaddr(struct sock *sk)
+{
+	lock_sock(sk);
+	sk->sk_reuse = SK_CAN_REUSE;
+	release_sock(sk);
+}
+#endif
 
 #define QTCONN_IS_EPOLL_CONN(pvar) (pvar->cur_threadidx == QTFS_EPOLL_THREADIDX)
 #define QTSOCK_SET_KEEPX(sock, val) sock_set_keepalive(sock->sk); tcp_sock_set_keepcnt(sock->sk, val);\
@@ -170,7 +251,7 @@ err_end:
 
 int qtfs_conn_init(int msg_mode, struct qtfs_sock_var_s *pvar)
 {
-	int ret;
+	int ret = -EINVAL;
 
 	switch (msg_mode) {
 		case QTFS_CONN_SOCKET:
@@ -206,7 +287,7 @@ void qtfs_conn_fini(int msg_mode, struct qtfs_sock_var_s *pvar)
 
 int qtfs_conn_send(int msg_mode, struct qtfs_sock_var_s *pvar)
 {
-	int ret;
+	int ret = -EINVAL;
 	switch (msg_mode) {
 		case QTFS_CONN_SOCKET:
 			ret = qtfs_conn_sock_send(pvar);
@@ -220,7 +301,7 @@ int qtfs_conn_send(int msg_mode, struct qtfs_sock_var_s *pvar)
 
 int do_qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar, bool block)
 {
-	int ret;
+	int ret = -EINVAL;
 	switch (msg_mode) {
 		case QTFS_CONN_SOCKET:
 			ret = qtfs_conn_sock_recv(pvar, block);
@@ -250,8 +331,12 @@ int qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar)
 void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 {
 	int error;
+#ifdef KVER_4_19
+	struct timeval tv;
+#else
 	struct __kernel_sock_timeval tv;
 	sockptr_t optval = KERNEL_SOCKPTR((void *)&tv);
+#endif
 	tv.tv_sec = sec;
 	tv.tv_usec = usec;
 
@@ -259,8 +344,14 @@ void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 		qtfs_err("qtfs sock recvtimeo set failed, sock is invalid.");
 		return;
 	}
+
+#ifdef KVER_4_19
+	error = sock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+			(char *)&tv, sizeof(tv));
+#else
 	error = sock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO_OLD,
-													optval, sizeof(struct __kernel_sock_timeval));
+			optval, sizeof(struct __kernel_sock_timeval));
+#endif
 	if (error) {
 		qtfs_err("qtfs param setsockopt error, ret:%d.\n", error);
 	}
@@ -864,8 +955,7 @@ void qtfs_kallsyms_hack_init(void)
 									unsigned int));
 	KSYMS(do_mount, long (*)(const char *, const char __user *, const char *,
 									unsigned long, void *));
-	KSYMS(path_mount, int (*)(const char *, struct path *, const char *, unsigned long, void *));
-	KSYMS(path_umount, int (*)(struct path *, int));
+	KSYMS(ksys_umount, int (*)(char __user *, int));
 	KSYMS(find_get_task_by_vpid, struct task_struct *(*)(pid_t nr));
 	KSYMS(do_readlinkat, int (*)(int, const char __user *, char __user *, int));
 	KSYMS(do_renameat2, int (*)(int, const char __user *, int, const char __user *, unsigned int));
