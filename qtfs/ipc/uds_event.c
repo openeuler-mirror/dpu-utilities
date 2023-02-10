@@ -762,7 +762,7 @@ int uds_event_uds2tcp(void *arg, int epfd, struct uds_event_global_var *p_event_
 
 	struct uds_tcp2tcp *p_msg = (struct uds_tcp2tcp *)p_event_var->iov_base;
 	p_msg->msgtype = MSG_NORMAL;
-	p_msg->msglen = len - cmsgcnt;
+	p_msg->msglen = len;
 	int ret = write(evt->peer->fd, (void *)p_msg, p_msg->msglen + sizeof(struct uds_tcp2tcp));
 	if (ret <= 0) {
 		uds_err("write to peer:%d failed, retcode:%d len:%d", evt->peer->fd, ret, len);
