@@ -469,7 +469,7 @@ int uds_env_prepare()
 	} else {
 		closedir(dir);
 	}
-	int fd = open(UDS_BUILD_CONN_ADDR, O_RDONLY|O_CREAT);
+	int fd = open(UDS_BUILD_CONN_ADDR, O_RDONLY|O_CREAT, 0700);
 	if (fd < 0) {
 		uds_err("create file:%s failed.", UDS_BUILD_CONN_ADDR);
 		return EVENT_ERR;
