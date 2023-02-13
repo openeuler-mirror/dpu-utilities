@@ -360,10 +360,8 @@ int uds_build_pipe_proxy(struct uds_event *evt, struct uds_stru_scm_pipe *msg)
 	uds_log("pipe proxy event fd:%d pipe fd:%d dir:%d", evt->fd, msg->srcfd, msg->dir);
 
 	if (msg->dir == SCM_PIPE_READ) {
-		evt->pipe = 1;
-		evt->peerfd = evt->fd;
-		evt->fd = msg->srcfd;
-		evt->handler = uds_event_pipe2tcp;
+		uds_add_pipe_event(msg->srcfd, evt->fd, uds_event_pipe2tcp, NULL);
+		return EVENT_DEL;
 	} else {
 		evt->pipe = 1;
 		evt->peerfd = msg->srcfd;
