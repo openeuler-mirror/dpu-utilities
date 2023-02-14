@@ -2,7 +2,6 @@
 #include <linux/stddef.h>
 #include <linux/namei.h>
 #include <linux/dirent.h>
-#include <linux/init_syscalls.h>
 #include <linux/xattr.h>
 #include <linux/mount.h>
 #include <linux/statfs.h>
@@ -11,6 +10,8 @@
 #include <linux/fs_struct.h>
 #include <asm-generic/ioctls.h>
 #include <asm-generic/termbits.h>
+#include <linux/syscalls.h>
+#include <linux/file.h>
 
 #include "conn.h"
 #include "qtfs-server.h"
@@ -867,9 +868,9 @@ int handle_xattrlist(struct qtserver_arg *arg)
 	struct qtreq_xattrlist *req = (struct qtreq_xattrlist *)REQ(arg);
 	struct qtrsp_xattrlist *rsp = (struct qtrsp_xattrlist *)RSP(arg);
 	struct path path;
-	int ret;
-	ssize_t size, buffer_size;
-	int i;
+	int ret = 0;
+	ssize_t size = 0, buffer_size = 0;
+	int i = 0;
 
 	buffer_size = req->buffer_size;
 	ret = kern_path(req->path, 0, &path);
@@ -995,30 +996,15 @@ err_handle:
 	return sizeof(struct qtrsp_xattrget) - sizeof(rsp->buf);
 }
 
-long qtfs_do_mount(const char *dev_name, const char *dir_name,
-		const char *type_page, unsigned long flags, void *data_page)
-{
-	struct path path;
-	int ret;
-
-	ret = kern_path(dir_name, LOOKUP_FOLLOW, &path);
-	if (ret) {
-		qtfs_err("qtfs do mount failed, ret:%d\n", ret);
-		return ret;
-	}
-	qtfs_info("handle path mount: dev(%s), dir(%s), type(%s), flags(0x%lx), data(%s)", dev_name, dir_name, type_page, flags, (char *)data_page);
-	ret = qtfs_kern_syms.path_mount(dev_name, &path, type_page, flags, data_page);
-	path_put(&path);
-	return ret;
-}
-
 int handle_syscall_mount(struct qtserver_arg *arg)
 {
 	struct qtreq_sysmount *req = (struct qtreq_sysmount *)REQ(arg);
 	struct qtrsp_sysmount *rsp = (struct qtrsp_sysmount *)RSP(arg);
-	char *dev_name, *dir_name, *type;
+	char *dev_name, *dir_name, *type, *udir_name;
 	void *data_page;
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
+	udir_name = userp->userp;
 	dev_name = req->d.dev_len == 0 ? NULL : req->buf;
 	dir_name = &req->buf[req->d.dev_len];
 	type = req->d.type_len == 0 ? NULL : &req->buf[req->d.dev_len + req->d.dir_len];
@@ -1027,9 +1013,15 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	else
 		data_page = NULL;
 
+	if (copy_to_user(udir_name, dir_name, strlen(dir_name)+1)) {
+		qtfs_err("syscall mount failed to copy to user");
+		rsp->errno = -ENOMEM;
+		return sizeof(struct qtrsp_sysmount);
+	}
+
 	qtfs_info("handle syscall mount devname:%s dirname:%s type:%s data:%s\n", dev_name, dir_name, type,
 			(data_page == NULL) ? "nil" : (char *)data_page);
-	rsp->errno = qtfs_do_mount(dev_name, dir_name, type, req->d.flags, data_page);
+	rsp->errno = qtfs_kern_syms.do_mount(dev_name, udir_name, type, req->d.flags, data_page);
 	if (rsp->errno < 0)
 		qtfs_err("handle syscall mount failed devname:%s dirname:%s type:%s data:%s, errno:%d\n",
 				dev_name, dir_name, type, (char *)data_page, rsp->errno);
@@ -1041,39 +1033,63 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 {
 	struct qtreq_sysumount *req = (struct qtreq_sysumount *)REQ(arg);
 	struct qtrsp_sysumount *rsp = (struct qtrsp_sysumount *)RSP(arg);
-	int lookup_flags = LOOKUP_MOUNTPOINT;
-	struct path path;
-	int ret;
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	qtfs_info("handle umount path:%s\n", req->buf);
-	// basic validity checks done first
-	if (req->flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW)) {
-		qtfs_err("handle syscall umount flags error:%x", req->flags);
-		rsp->errno = -EINVAL;
+	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1) <= 0) {
+		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
 	}
-
-	if (!(req->flags & UMOUNT_NOFOLLOW))
-		lookup_flags |= LOOKUP_FOLLOW;
-	ret = kern_path(req->buf, lookup_flags, &path);
-	if (ret) {
-		qtfs_err("umount(%s) failed, ret:%d\n", req->buf, ret);
-		rsp->errno = ret;
-		return sizeof(struct qtrsp_sysumount);
-	}
-	rsp->errno = qtfs_kern_syms.path_umount(&path, req->flags);
+	rsp->errno = qtfs_kern_syms.ksys_umount(userp->userp, req->flags);
 	if (rsp->errno)
 		qtfs_err("umount(%s) failed, errno:%d\n", req->buf, rsp->errno);
 	//dont need to path_put here.
 	return sizeof(struct qtrsp_sysumount);
 }
 
+#ifdef KVER_4_19
+static bool qtfs_pipe_empty(struct pipe_inode_info *pipe)
+{
+	int nrbufs;
+
+	nrbufs = pipe->nrbufs;
+	return nrbufs <= 0;
+}
+
+static bool qtfs_pipe_full(struct pipe_inode_info *pipe)
+{
+	int nrbufs;
+
+	nrbufs = pipe->nrbufs;
+	return nrbufs >= pipe->buffers;
+}
+#else
+static bool qtfs_pipe_empty(struct pipe_inode_info *pipe)
+{
+	unsigned int head, tail;
+
+	head = READ_ONCE(pipe->head);
+	tail = READ_ONCE(pipe->tail);
+
+	return pipe_empty(head, tail);
+}
+
+static bool qtfs_pipe_full(struct pipe_inode_info *pipe)
+{
+	unsigned int head, tail;
+
+	head = READ_ONCE(pipe->head);
+	tail = READ_ONCE(pipe->tail);
+
+	return pipe_full(head, tail, pipe->max_usage);
+}
+#endif
+
 int handle_fifopoll(struct qtserver_arg *arg)
 {
 	struct qtreq_poll *req = (struct qtreq_poll *)REQ(arg);
 	struct qtrsp_poll *rsp = (struct qtrsp_poll *)RSP(arg);
 	struct file *filp = NULL;
-	unsigned int head, tail;
 	struct pipe_inode_info *pipe;
 	struct inode *inode;
 	__poll_t mask;
@@ -1097,18 +1113,16 @@ int handle_fifopoll(struct qtserver_arg *arg)
 		fput(filp);
 		return sizeof(struct qtrsp_poll);
 	}
-	head = READ_ONCE(pipe->head);
-	tail = READ_ONCE(pipe->tail);
 	mask = 0;
 	if (filp->f_mode & FMODE_READ) {
-		if (!pipe_empty(head, tail))
+		if (!qtfs_pipe_empty(pipe))
 			mask |= EPOLLIN | EPOLLRDNORM;
 		if (!pipe->writers && filp->f_version != pipe->w_counter)
 			mask |= EPOLLHUP;
 	}
 
 	if (filp->f_mode & FMODE_WRITE) {
-		if (!pipe_full(head, tail, pipe->max_usage))
+		if (!qtfs_pipe_full(pipe))
 			mask |= EPOLLOUT | EPOLLWRNORM;
 		if (!pipe->readers)
 			mask |= EPOLLERR;

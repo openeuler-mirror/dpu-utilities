@@ -93,15 +93,22 @@ struct inode_operations qtfs_proc_sym_ops = {
 
 struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags)
 {
-	char cpath[NAME_MAX] = {0};
-	char local_path[NAME_MAX] = {0};
-	char tmp[NAME_MAX] = {0};
+	char *cpath = NULL, *tmp = NULL;
 	struct path spath;
 	struct dentry *d = NULL;
 	struct inode_info ii;
 	struct inode *inode = NULL;
 	int ret = 0;
 	int pid = -1;
+
+	cpath = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	tmp = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	if (!tmp || !cpath) {
+		qtfs_err("%s: failed to alloc memory", __func__);
+		goto remote;
+	}
+	memset(cpath, 0, MAX_PATH_LEN);
+	memset(tmp, 0, MAX_PATH_LEN);
 
 	if (qtfs_fullname(cpath, child_dentry) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
@@ -111,11 +118,12 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 	pid = is_local_process(cpath);
 	if (pid > 0) {
 		sscanf(cpath, "/proc/%s", tmp);
-		sprintf(local_path, "/local_proc/%s", tmp);
-		qtfs_debug("[%s]: get path:%s from local: %s\n", __func__, cpath, local_path);
-		ret = kern_path(local_path, 0, &spath);
+		memset(cpath, 0, MAX_PATH_LEN);
+		sprintf(cpath, "/local_proc/%s", tmp);
+		qtfs_debug("[%s]: get path from local: %s\n", __func__, cpath);
+		ret = kern_path(cpath, 0, &spath);
 		if(ret) {
-			qtfs_err("[%s]: kern_path(%s) failed: %d\n", __func__, local_path, ret);
+			qtfs_err("[%s]: kern_path(%s) failed: %d\n", __func__, cpath, ret);
 			goto remote;
 		}
 
@@ -128,33 +136,42 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 		ii.ctime = spath.dentry->d_inode->i_ctime;
 		path_put(&spath);
 
+		kfree(tmp);
 		inode = qtfs_iget(parent_inode->i_sb, &ii);
 		if (inode == NULL) {
-			qtfs_err("%s: failed to get inode for %s:%s", __func__, cpath, local_path);
+			qtfs_err("%s: failed to get inode for %s", __func__, cpath);
+			kfree(cpath);
 			return ERR_PTR(-ENOMEM);
 		}
 		d = d_splice_alias(inode, child_dentry);
+		kfree(cpath);
 		return d;
 	}
 
 remote:
+	if (cpath)
+		kfree(cpath);
+	if (tmp)
+		kfree(tmp);
 	return qtfs_lookup(parent_inode, child_dentry, flags);
 }
 
 const char *qtfs_proc_getlink(struct dentry *dentry,
 					struct inode *inode, struct delayed_call *done)
 {
-	char path[NAME_MAX] = {0};
-	char tmp[NAME_MAX] = {0};
-	char *link;
+	char *link = NULL, *path = NULL, *tmp = NULL;
 	int pid = -1;
 
 	link = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
-	if (!link) {
+	path = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	tmp = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	if (!link || !tmp || !path) {
 		qtfs_err("[%s]: failed to alloc memory", __func__);
-		goto remote;
+		goto link_remote;
 	}
 	memset(link, 0, MAX_PATH_LEN);
+	memset(path, 0, MAX_PATH_LEN);
+	memset(tmp, 0, MAX_PATH_LEN);
 
 	if (qtfs_fullname(path, dentry) < 0) {
 		qtfs_info("[%s]: get path failed", __func__);
@@ -164,13 +181,13 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 	if (!strncmp(path, "/proc/self", 11)) {
 		sprintf(link, "/local_proc/%d", (int)current->pid);
 		qtfs_info("[%s] success: %s getlink: %s", __func__, path, link);
-		return link;
+		goto link_local;
 	}
 
 	if (!strcmp(path, "/proc/mounts")) {
 		sprintf(link, "/proc/1/mounts");
 		qtfs_info("[%s] success: %s getlink /proc/1/mounts", __func__, path);
-		return link;
+		goto link_local;
 	}
 
 	pid = is_local_process(path);
@@ -178,23 +195,40 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 		sscanf(path, "/proc/%s", tmp);
 		sprintf(link, "/local_proc/%s", tmp);
 		qtfs_info("[%s] success: %s getlink: %s", __func__, path, link);
-		return link;
+		goto link_local;
 	}
 
 link_remote:
-	kfree(link);
-remote:
+	if (link)
+		kfree(link);
+	if (tmp)
+		kfree(tmp);
+	if (path)
+		kfree(path);
 	return qtfs_getlink(dentry, inode, done);
+link_local:
+	kfree(tmp);
+	kfree(path);
+	return link;
 }
 
 int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags)
 {
-	char cpath[NAME_MAX] = {0};
-	char tmp[NAME_MAX] = {0};
-	char local_path[NAME_MAX] = {0};
+	char *cpath = NULL, *tmp = NULL, *local_path = NULL;
 	struct path spath;
 	int ret = 0;
 	int pid = -1;
+
+	cpath = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	tmp = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	local_path = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+	if (!cpath || !tmp || !local_path) {
+		qtfs_err("[%s]: failed to alloc memory", __func__);
+		goto remote;
+	}
+	memset(cpath, 0, MAX_PATH_LEN);
+	memset(tmp, 0, MAX_PATH_LEN);
+	memset(local_path, 0, MAX_PATH_LEN);
 
 	if (qtfs_fullname(cpath, path->dentry) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
@@ -219,9 +253,18 @@ int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask,
 		}
 		qtfs_debug("[%s]: %s success", __func__, local_path);
 		stat->mode = (stat->mode & ~(S_IFMT)) | S_IFLNK;
+		kfree(cpath);
+		kfree(tmp);
+		kfree(local_path);
 		return 0;
 	}
 
 remote:
+	if (cpath)
+		kfree(cpath);
+	if (tmp)
+		kfree(tmp);
+	if (local_path)
+		kfree(local_path);
 	return qtfs_getattr(path, stat, req_mask, flags);
 }

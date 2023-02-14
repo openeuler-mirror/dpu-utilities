@@ -85,15 +85,6 @@ qtfs_xattr_security_set(const struct xattr_handler *handler,
 	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
 }
 
-static int
-qtfs_xattr_hurd_set(const struct xattr_handler *handler,
-		    struct dentry *unused, struct inode *inode,
-		    const char *name, const void *value,
-		    size_t size, int flags)
-{
-	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
-}
-
 static int qtfs_xattr_set(const struct xattr_handler *handler,
 		    struct dentry *dentry, struct inode *inode,
 		    const char *name, const void *value,
@@ -232,8 +223,19 @@ const struct xattr_handler qtfs_xattr_security_handler = {
 	.set	= qtfs_xattr_security_set,
 };
 
+#ifndef KVER_4_19
+static int
+qtfs_xattr_hurd_set(const struct xattr_handler *handler,
+		    struct dentry *unused, struct inode *inode,
+		    const char *name, const void *value,
+		    size_t size, int flags)
+{
+	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
+}
+
 const struct xattr_handler qtfs_xattr_hurd_handler = {
 	.prefix	= XATTR_HURD_PREFIX,
 	.get	= qtfs_xattr_get,
 	.set	= qtfs_xattr_hurd_set,
 };
+#endif

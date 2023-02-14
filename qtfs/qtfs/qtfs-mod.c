@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/ktime.h>
+#include <linux/kthread.h>
 #include "conn.h"
 
 #include "qtfs-mod.h"
@@ -265,5 +266,3 @@ module_init(qtfs_init);
 module_exit(qtfs_exit);
 MODULE_AUTHOR("liqiang64@huawei.com");
 MODULE_LICENSE("GPL");
-
-

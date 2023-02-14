@@ -1,6 +1,12 @@
 #ifndef __QTFS_SERVER_COMM_H__
 #define __QTFS_SERVER_COMM_H__
 
+#include <linux/version.h>
+
+#if (LINUX_VERSION_CODE == KERNEL_VERSION(4,19,90)) || (LINUX_VERSION_CODE == KERNEL_VERSION(4,19,36))
+#define KVER_4_19 1
+#endif
+
 extern struct qtinfo *qtfs_diag_info;
 
 #define QTFS_CLIENT_DEV "/dev/qtfs_client"

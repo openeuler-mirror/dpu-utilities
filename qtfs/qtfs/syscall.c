@@ -1,5 +1,4 @@
 #include <linux/compiler_types.h>
-#include <asm/syscall_wrapper.h>
 #include <linux/syscalls.h>
 #include <linux/trace_events.h>
 #include <linux/mount.h>
@@ -243,10 +242,6 @@ out_type:
 
 __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 {
-	int lookup_flags = LOOKUP_MOUNTPOINT;
-	struct path path;
-	int ret;
-
 	// basic validate checks done first
 	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
 		return -EINVAL;
@@ -256,42 +251,28 @@ __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 		return qtfs_remote_umount(name, flags);
 	}
 
-	if (!(flags & UMOUNT_NOFOLLOW))
-		lookup_flags |= LOOKUP_FOLLOW;
-	ret = user_path_at(AT_FDCWD, name, lookup_flags, &path);
-	if (ret)
-		return ret;
-	return qtfs_kern_syms.path_umount(&path, flags);
+	return qtfs_kern_syms.ksys_umount(name, flags);
 }
 
+#ifdef __x86_64__
 // make the page writable
 int make_rw(unsigned long address)
 {
-#ifdef __x86_64__
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
 	pte->pte |= _PAGE_RW;
-#endif
-#ifdef __aarch64__
-	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
-#endif
-
 	return 0;
 }
+
 // make the page write protected
 int make_ro(unsigned long address)
 {
-#ifdef __x86_64__
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
 	pte->pte &= ~_PAGE_RW;
-#endif
-
-#ifdef __aarch64__
-	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
-#endif
 	return 0;
 }
+#endif
 
 int qtfs_dir_to_qtdir(char *dir, char *qtdir)
 {
@@ -397,7 +378,7 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_sysmount *req;
-	struct qtrsp_sysmount *rsp;
+	struct qtrsp_sysmount *rsp = NULL;
 	char *kernel_dir;
 	int ret;
 	int totallen;

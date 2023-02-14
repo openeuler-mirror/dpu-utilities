@@ -561,7 +561,6 @@ out:
 
 long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	char fullname[64] = {0};
 	switch(cmd) {
 		case FS_IOC_FSGETXATTR:
 		case TCGETS:
@@ -570,10 +569,16 @@ long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct fsxattr));
 		case TCSETS:
 			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct ktermios));
-		default:
+		default: {
+			char *fullname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+			if (!fullname)
+				return -ENOMEM;
+			memset(fullname, 0, MAX_PATH_LEN);
 			qtfs_fullname(fullname, filp->f_path.dentry);
 			qtfs_err("qtfs ioctl get not support cmd:%d file:%s TCGETS:%d", cmd, fullname, TCGETS);
+			kfree(fullname);
 			return -EOPNOTSUPP;
+		}
 	}
 }
 
@@ -682,6 +687,7 @@ static int qtfs_readpage(struct file *file, struct page *page)
 	return 0;
 }
 
+#ifndef KVER_4_19
 static struct page **qtfs_alloc_pages(unsigned int nr)
 {
 	struct page **pages = kzalloc(nr * (sizeof(struct page *)), GFP_KERNEL);
@@ -712,6 +718,7 @@ static void qtfs_readahead(struct readahead_control *rac)
 	qtfs_free_pages(pages);
 	return;
 }
+#endif
 
 static int qtfs_writepage(struct page *page, struct writeback_control *wbc)
 {
@@ -735,7 +742,9 @@ static int qtfs_setpagedirty(struct page *page)
 
 static const struct address_space_operations qtfs_aops = {
 	.readpage = qtfs_readpage,
+#ifndef KVER_4_19
 	.readahead = qtfs_readahead,
+#endif
 	.writepage = qtfs_writepage,
 	.writepages = qtfs_writepages,
 	.set_page_dirty = qtfs_setpagedirty,
@@ -1350,7 +1359,9 @@ const struct xattr_handler *qtfs_xattr_handlers[] = {
 	&qtfs_xattr_user_handler,
 	&qtfs_xattr_trusted_handler,
 	&qtfs_xattr_security_handler,
+#ifndef KVER_4_19
 	&qtfs_xattr_hurd_handler,
+#endif
 	NULL
 };
 
