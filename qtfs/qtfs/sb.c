@@ -413,13 +413,18 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 
 loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 {
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_sock_var_s *pvar = NULL;
 	struct qtreq_llseek *req;
 	struct qtrsp_llseek *rsp;
 	loff_t ret;
 	struct private_data *priv = NULL;
 	
-	qtfs_info("qtfs llseek off:%lld, whence:%d.", off, whence);
+	qtfs_info("qtfs llseek off:%lld, whence:%d cur pos:%lld.", off, whence, file->f_pos);
+
+    if (off == 0 && whence == SEEK_CUR) {
+        return file->f_pos;
+    }
+    pvar = qtfs_conn_get_param();
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var.");
 		return -EINVAL;
