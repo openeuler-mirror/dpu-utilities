@@ -6,7 +6,7 @@
 #include "uds_module.h"
 
 #define UDS_EPOLL_MAX_EVENTS 64
-#define UDS_WORK_THREAD_MAX 64
+#define UDS_WORK_THREAD_MAX 1 // Temporarily only supports 1 thread
 
 extern struct uds_global_var *p_uds_var;
 
