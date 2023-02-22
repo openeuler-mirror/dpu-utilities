@@ -12,6 +12,11 @@
 
 #include "uds_module.h"
 
+#define LOG_OFF 1
+#if LOG_OFF
+#define uds_log(info, ...)
+#define uds_err(info, ...)
+#else
 #define uds_log(info, ...) \
 	do { \
 		time_t t; \
@@ -33,6 +38,7 @@
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	} while (0);
+#endif
 
 static unsigned short uds_conn_get_sock_type(int sockfd)
 {
@@ -133,7 +139,7 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 	memcpy(&addr_proxy, addr, sizeof(struct sockaddr_un));
 	memcpy(&addr_proxy.sun_path[sun_len], UDS_PROXY_SUFFIX, strlen(UDS_PROXY_SUFFIX));
 	addr_proxy.sun_path[sun_len + strlen(UDS_PROXY_SUFFIX)] = '\0';
-	return (*libcconnect)(fd, addr_proxy, len);
+	return (*libcconnect)(fd, (const struct sockaddr *)&addr_proxy, len);
 
 err_end:
 	close(sock_fd);
