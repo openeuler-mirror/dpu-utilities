@@ -487,8 +487,9 @@ static void uds_sig_pipe(int signum)
 void uds_helpinfo(char *argv[])
 {
 	uds_err("Usage:");
-	uds_err("	%s <addr> <port> <peeraddr> <peerport>.", argv[0]);
+	uds_err("	%s <thread nums> <addr> <port> <peeraddr> <peerport>.", argv[0]);
 	uds_err("Param:");
+	uds_err("  <thread nums> - numbers of work thread(currently only supports 1 thread)");
 	uds_err("  <addr> - server ip address");
 	uds_err("  <port> - port number");
 	uds_err("  <peeraddr> - peer address");
@@ -496,10 +497,6 @@ void uds_helpinfo(char *argv[])
 	return;
 }
 
-/*
- * uds跨主机协同主程序，设计成镜像的，每一端2个线程：send thread、recv thread
- * 在server侧线程由原engine拉起，在client侧新起一个engine进程
- */
 #ifdef QTFS_SERVER
 int uds_proxy_main(int argc, char *argv[])
 #else
@@ -523,7 +520,13 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, uds_sig_pipe);
 	p_uds_var->work_thread_num = atoi(argv[1]);
 	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
-		uds_err("work thread num:%d is too large.(must small or equal than %d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
+		uds_err("work thread num:%d is invalid.(must be 1~%d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
+		return -1;
+	}
+	int myport = atoi(argv[3]);
+	int peerport = atoi(argv[5]);
+	if (myport < 1024 || peerport < 1024 || myport >= 65536 || peerport >= 65536) {
+		uds_err("local port:%d or peer port:%d invalid.(must be 1024~65535)", myport, peerport);
 		return -1;
 	}
 	p_uds_var->efd = (int *)malloc(sizeof(int) * p_uds_var->work_thread_num);
