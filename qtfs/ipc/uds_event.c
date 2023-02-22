@@ -196,6 +196,11 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 		uds_err("read msg error:%d errno:%s", len, strerror(errno));
 		goto end;
 	}
+	if (strlen(msg->sun_path) >= (UDS_SUN_PATH_LEN - strlen(UDS_PROXY_SUFFIX))) {
+		uds_err("sun_path:<%s> len:%d is too large to add suffex:<%s>, so can't build uds proxy server.",
+			msg->sun_path, strlen(msg->sun_path), UDS_PROXY_SUFFIX);
+	       	goto end;
+	}
 	if (msg->type != SOCK_STREAM && msg->type != SOCK_DGRAM) {
 		uds_err("uds type:%d invalid", msg->type);
 		return EVENT_ERR;
@@ -256,12 +261,13 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	uds.cs = UDS_SOCKET_SERVER;
 	uds.udstype = udsmsg->type;
 	strncpy(uds.sun_path, udsmsg->sun_path, sizeof(uds.sun_path));
+	strcat(uds.sun_path, UDS_PROXY_SUFFIX);
 	if (uds_build_unix_connection(&uds) < 0) {
 		uds_err("failed to build uds server sunpath:%s", uds.sun_path);
 		goto event_del;
 	}
 	uds_log("remote conn build success, build uds server type:%d sunpath:%s fd:%d OK this event suspend,",
-			udsmsg->type, udsmsg->sun_path, uds.sockfd);
+			uds.udstype, uds.sun_path, uds.sockfd);
 	uds_event_suspend(epfd, evt);
 	uds_add_event(uds.sockfd, evt, uds_event_build_step4, NULL);
 
@@ -346,7 +352,7 @@ int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_re
 	return EVENT_OK;
 }
 
-int uds_build_pipe_proxy(struct uds_event *evt, struct uds_stru_scm_pipe *msg)
+int uds_build_pipe_proxy(int efd, struct uds_event *evt, struct uds_stru_scm_pipe *msg)
 {
 	int len = recv(evt->fd, msg, sizeof(struct uds_stru_scm_pipe), MSG_WAITALL);
 	if (len <= 0) {
@@ -361,7 +367,9 @@ int uds_build_pipe_proxy(struct uds_event *evt, struct uds_stru_scm_pipe *msg)
 
 	if (msg->dir == SCM_PIPE_READ) {
 		uds_add_pipe_event(msg->srcfd, evt->fd, uds_event_pipe2tcp, NULL);
-		return EVENT_DEL;
+		// 此处必须保留evt->fd，只删除对他的监听，以及释放evt内存即可
+		uds_event_suspend(efd, evt);
+		free(evt);
 	} else {
 		evt->pipe = 1;
 		evt->peerfd = msg->srcfd;
@@ -389,7 +397,7 @@ int uds_event_remote_build(void *arg, int epfd, struct uds_event_global_var *p_e
 			ret = uds_build_connect2uds(evt, msg);
 			break;
 		case MSGCNTL_PIPE:
-			ret = uds_build_pipe_proxy(evt, (struct uds_stru_scm_pipe *)bdmsg->data);
+			ret = uds_build_pipe_proxy(epfd, evt, (struct uds_stru_scm_pipe *)bdmsg->data);
 			break;
 		default:
 			uds_err("remote build not support msgtype %d now", bdmsg->msgtype);

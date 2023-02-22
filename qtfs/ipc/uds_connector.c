@@ -73,6 +73,12 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 		return libcret;
 	}
 
+	if (strlen(addr->sun_path) >= (UDS_SUN_PATH_LEN - strlen(UDS_PROXY_SUFFIX))) {
+		uds_err("sun_path:<%s> len:%d is too large to add suffex:<%s>, so can't connect to uds proxy.",
+				addr->sun_path, strlen(addr->sun_path), UDS_PROXY_SUFFIX);
+		return libcret;
+	}
+
 	uds_log("enter uds connect fd:%d sunpath:%s family:%d len:%d connect function:0x%lx", fd, addr->sun_path,
 			addr->sun_family, len, libcconnect);
     // 本地未连接，且是uds链接
@@ -121,7 +127,13 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 	} while(0);
 
 	close(sock_fd);
-	return (*libcconnect)(fd, addrarg, len);
+
+	struct sockaddr_un addr_proxy;
+	int sun_len = strlen(addr->sun_path);
+	memcpy(&addr_proxy, addr, sizeof(struct sockaddr_un));
+	memcpy(&addr_proxy.sun_path[sun_len], UDS_PROXY_SUFFIX, strlen(UDS_PROXY_SUFFIX));
+	addr_proxy.sun_path[sun_len + strlen(UDS_PROXY_SUFFIX)] = '\0';
+	return (*libcconnect)(fd, addr_proxy, len);
 
 err_end:
 	close(sock_fd);
