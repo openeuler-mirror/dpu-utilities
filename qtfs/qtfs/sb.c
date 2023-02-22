@@ -421,10 +421,10 @@ loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 	
 	qtfs_info("qtfs llseek off:%lld, whence:%d cur pos:%lld.", off, whence, file->f_pos);
 
-    if (off == 0 && whence == SEEK_CUR) {
-        return file->f_pos;
-    }
-    pvar = qtfs_conn_get_param();
+	if (off == 0 && whence == SEEK_CUR) {
+		return file->f_pos;
+	}
+	pvar = qtfs_conn_get_param();
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var.");
 		return -EINVAL;
