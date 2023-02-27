@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <glib.h>
 
 #include "../comm.h"
 #include "uds_main.h"
@@ -26,6 +27,7 @@
 struct uds_global_var g_uds_var = {.logstr = {"NONE", "ERROR", "INFO", "UNKNOWN"}};
 struct uds_global_var *p_uds_var = &g_uds_var;
 struct uds_event_global_var *g_event_var = NULL;
+GHashTable *event_tmout_hash;
 
 struct uds_event *uds_alloc_event()
 {
@@ -72,6 +74,31 @@ int uds_event_delete(int efd, int fd)
 	return ret;
 }
 
+#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+int uds_event_tmout_item(gpointer key, gpointer value, gpointer data)
+{
+	struct uds_event *evt = (struct uds_event *)value;
+	if (evt->tmout == 0) {
+		uds_err("Unexpected time out value in fd:%d", key);
+		goto clear;
+	}
+	evt->tmout--;
+	if (evt->tmout > 0)
+		return 0;
+
+	uds_log("The connection was not established within 5s, the fd:%d wait was over due to a timeout.", key);
+clear:
+	close((int)key);
+	free(evt);
+	return 1;
+}
+#pragma GCC diagnostic pop
+
+void uds_event_timeout_proc()
+{
+	g_hash_table_foreach_remove(event_tmout_hash, uds_event_tmout_item, NULL);
+}
+
 void uds_main_loop(int efd, struct uds_thread_arg *arg)
 {
 	int n = 0;
@@ -100,8 +127,10 @@ void uds_main_loop(int efd, struct uds_thread_arg *arg)
 	while (1) {
 #endif
 		n = epoll_wait(efd, evts, UDS_EPOLL_MAX_EVENTS, 1000);
-		if (n == 0)
+		if (n == 0) {
+			uds_event_timeout_proc();
 			continue;
+		}
 		if (n < 0) {
 			uds_err("epoll wait return errcode:%d", n);
 			continue;
@@ -268,6 +297,7 @@ struct uds_event *uds_add_event(int fd, struct uds_event *peer, int (*handler)(v
 	newevt->handler = handler;
 	newevt->priv = priv;
 	newevt->tofree = 0;
+	newevt->tmout = 0;
 	uds_event_insert(p_uds_var->efd[hash], newevt);
 	return newevt;
 }
@@ -287,6 +317,7 @@ struct uds_event *uds_add_pipe_event(int fd, int peerfd, int (*handler)(void *, 
 	newevt->priv = priv;
 	newevt->tofree = 0;
 	newevt->pipe = 1;
+	newevt->tmout = 0;
 	uds_event_insert(p_uds_var->efd[hash], newevt);
 	return newevt;
 }
@@ -479,9 +510,50 @@ int uds_env_prepare()
 	return EVENT_OK;
 }
 
+int uds_hash_init()
+{
+	event_tmout_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
+	if (event_tmout_hash == NULL) {
+		uds_err("g_hash_table_new failed.");
+		return EVENT_ERR;
+	}
+	uds_log("init event timt out hash:0x%lx", (unsigned long)event_tmout_hash);
+	return EVENT_OK;
+}
+
+void uds_hash_destroy()
+{
+	g_hash_table_destroy(event_tmout_hash);
+	return;
+}
+
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
+int uds_hash_insert_dirct(GHashTable *table, int key, struct uds_event *value)
+{
+	if (g_hash_table_insert(table, (gpointer)key, value) == 0) {
+		uds_err("Hash table key:%d value:0x%lx is already exist, update it.", key, value);
+	}
+	uds_log("Hash insert key:%d value:0x%lx", key, value);
+	return 0;
+}
+
+void *uds_hash_lookup_dirct(GHashTable *table, int key)
+{
+	return (void *)g_hash_table_lookup(table, (gpointer)key);
+}
+
+void uds_hash_remove_dirct(GHashTable *table, int key)
+{
+	if (g_hash_table_remove(table, (gpointer)key) == 0) {
+		uds_err("Remove key:%d from hash failed.", key);
+	}
+	return;
+}
+#pragma GCC diagnostic pop
+
 static void uds_sig_pipe(int signum)
 {
-	uds_log("uds proxy recv sigpipe and ignore");
+	return;
 }
 
 void uds_helpinfo(char *argv[])
@@ -515,6 +587,10 @@ int main(int argc, char *argv[])
 	}
 	if (uds_env_prepare() != EVENT_OK) {
 		uds_err("proxy prepare environment failed.");
+		return -1;
+	}
+	if (uds_hash_init() != EVENT_OK) {
+		uds_err("proxy hash init failed.");
 		return -1;
 	}
 	signal(SIGPIPE, uds_sig_pipe);
@@ -554,6 +630,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	uds_thread_create();
+	uds_hash_destroy();
 
 	return 0;
 }

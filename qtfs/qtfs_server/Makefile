@@ -18,10 +18,10 @@ user_engine.o:
 	cc -g -c -o user_engine.o user_engine.c $(DEPGLIB) -I../ -DQTFS_SERVER
 
 uds_event.o:
-	cc -g -c -o uds_event.o ../ipc/uds_event.c -DQTFS_SERVER
+	cc -g -c -o uds_event.o ../ipc/uds_event.c -DQTFS_SERVER $(DEPGLIB)
 
 uds_main.o:
-	cc -g -c -o uds_main.o ../ipc/uds_main.c -DQTFS_SERVER
+	cc -g -c -o uds_main.o ../ipc/uds_main.c -DQTFS_SERVER $(DEPGLIB)
 
 clean:
 	make -C $(KBUILD) M=$(PWD) clean
