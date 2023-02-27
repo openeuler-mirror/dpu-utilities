@@ -9,6 +9,7 @@
 #define UDS_WORK_THREAD_MAX 1 // Temporarily only supports 1 thread
 
 extern struct uds_global_var *p_uds_var;
+extern GHashTable *event_tmout_hash;
 
 enum {
 	UDS_LOG_NONE,
@@ -79,7 +80,8 @@ struct uds_event {
 	int fd; /* 本事件由这个fd触发 */
 	unsigned int tofree : 1, /* 1--in to free list; 0--not */
 		     pipe : 1, // this is a pipe event
-		     reserved : 30;
+		     tmout : 4,
+		     reserved : 26;
 	union {
 		struct uds_event *peer; /* peer event */
 		int peerfd;		// scm pipe 场景单向导通，只需要一个fd即可
@@ -135,6 +137,10 @@ int uds_build_unix_connection(struct uds_conn_arg *arg);
 void uds_del_event(struct uds_event *evt);
 int uds_event_suspend(int efd, struct uds_event *event);
 int uds_event_insert(int efd, struct uds_event *event);
+int uds_hash_insert_dirct(GHashTable *table, int key, struct uds_event *value);
+void *uds_hash_lookup_dirct(GHashTable *table, int key);
+void uds_hash_remove_dirct(GHashTable *table, int key);
+
 #ifdef QTFS_SERVER
 int uds_proxy_main(int argc, char *argv[]);
 #endif

@@ -4,6 +4,8 @@
 #define UDS_EVENT_BUFLEN 	4096
 #define UDS_PATH_MAX		1024
 
+#define UDS_EVENT_WAIT_TMOUT 5 // 5s timeout
+
 enum EVENT_RETCODE {
 	EVENT_OK = 0,
 	EVENT_ERR = -1,

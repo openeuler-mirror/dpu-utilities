@@ -10,6 +10,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <glib.h>
 #include "dirent.h"
 
 #include "uds_main.h"
@@ -199,7 +200,7 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	if (strlen(msg->sun_path) >= (UDS_SUN_PATH_LEN - strlen(UDS_PROXY_SUFFIX))) {
 		uds_err("sun_path:<%s> len:%d is too large to add suffex:<%s>, so can't build uds proxy server.",
 			msg->sun_path, strlen(msg->sun_path), UDS_PROXY_SUFFIX);
-	       	goto end;
+			goto end;
 	}
 	if (msg->type != SOCK_STREAM && msg->type != SOCK_DGRAM) {
 		uds_err("uds type:%d invalid", msg->type);
@@ -269,7 +270,13 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	uds_log("remote conn build success, build uds server type:%d sunpath:%s fd:%d OK this event suspend,",
 			uds.udstype, uds.sun_path, uds.sockfd);
 	uds_event_suspend(epfd, evt);
-	uds_add_event(uds.sockfd, evt, uds_event_build_step4, NULL);
+	
+	struct uds_event *newevt = uds_add_event(uds.sockfd, evt, uds_event_build_step4, NULL);
+	evt->tmout = UDS_EVENT_WAIT_TMOUT;
+	newevt->tmout = UDS_EVENT_WAIT_TMOUT;
+	uds_hash_insert_dirct(event_tmout_hash, evt->fd, evt);
+	uds_hash_insert_dirct(event_tmout_hash, newevt->fd, newevt);
+	uds_log("Add hash key:%d-->value:0x%lx and key:%d-->value:%lx", evt->fd, evt, newevt->fd, newevt);
 
 	msg.ret = 1;
 	write(evt->peer->fd, &msg, sizeof(struct uds_proxy_remote_conn_rsp));
@@ -290,6 +297,11 @@ int uds_event_build_step4(void *arg, int epfd, struct uds_event_global_var *p_ev
 		uds_err("accept connection failed fd:%d", connfd);
 		return EVENT_ERR;
 	}
+	uds_hash_remove_dirct(event_tmout_hash, evt->fd);
+	uds_hash_remove_dirct(event_tmout_hash, evt->peer->fd);
+	evt->tmout = 0;
+	evt->peer->tmout = 0;
+
 	struct uds_event *peerevt = (struct uds_event *)evt->peer;
 	peerevt->handler = uds_event_tcp2uds;
 	peerevt->peer = uds_add_event(connfd, peerevt, uds_event_uds2tcp, NULL);
@@ -815,10 +827,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 		if (p_msg->msgtype == MSG_END) {
 			break;
 		}
-        if (p_msg->msglen > p_event_var->iov_len - sizeof(struct uds_tcp2tcp) || p_msg->msglen <= 0) {
-            uds_err("pmsg len:%d is invalid, fd:%d peerfd:%d", p_msg->msglen, evt->fd, evt->peer->fd);
-            continue;
-        }
+		if (p_msg->msglen > p_event_var->iov_len - sizeof(struct uds_tcp2tcp) || p_msg->msglen <= 0) {
+			uds_err("pmsg len:%d is invalid, fd:%d peerfd:%d", p_msg->msglen, evt->fd, evt->peer->fd);
+			continue;
+		}
 		switch(p_msg->msgtype) {
 			case MSG_NORMAL:
 				if (normal_msg_len != 0) {
@@ -931,9 +943,9 @@ int uds_diag_string(char *buf, int len)
 	pos = sprintf(buf,		"+-----------------------------Unix Proxy Diagnostic information-------------------------+\n");
 	pos += sprintf(&buf[pos],	"+ Thread nums:%d\n", p_uds_var->work_thread_num);
 	for (int i = 0; i < p_uds_var->work_thread_num; i++) {
-		pos += sprintf(&buf[pos], "+    Thread %d events count:%d\n", i+1, p_uds_var->work_thread[i].info.events);
+		pos += sprintf(&buf[pos], "+	Thread %d events count:%d\n", i+1, p_uds_var->work_thread[i].info.events);
 	}
-	pos += sprintf(&buf[pos],	"+  Log level:%s\n", p_uds_var->logstr[p_uds_var->loglevel]);
+	pos += sprintf(&buf[pos],	"+	Log level:%s\n", p_uds_var->logstr[p_uds_var->loglevel]);
 	strcat(buf,			"+---------------------------------------------------------------------------------------+\n");
 	return strlen(buf);
 }
