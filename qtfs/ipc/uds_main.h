@@ -7,6 +7,7 @@
 
 #define UDS_EPOLL_MAX_EVENTS 64
 #define UDS_WORK_THREAD_MAX 1 // Temporarily only supports 1 thread
+#define UDS_FD_LIMIT 65536
 
 extern struct uds_global_var *p_uds_var;
 extern GHashTable *event_tmout_hash;
