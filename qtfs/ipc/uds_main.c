@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <glib.h>
+#include <sys/resource.h>
 
 #include "../comm.h"
 #include "uds_main.h"
@@ -551,6 +552,17 @@ void uds_hash_remove_dirct(GHashTable *table, int key)
 }
 #pragma GCC diagnostic pop
 
+static void uds_rlimit()
+{
+	struct rlimit lim;
+
+	getrlimit(RLIMIT_NOFILE, &lim);
+	uds_log("uds proxy fd cur limit:%d, change to:%d", lim.rlim_cur, UDS_FD_LIMIT);
+	lim.rlim_cur = UDS_FD_LIMIT;
+	setrlimit(RLIMIT_NOFILE, &lim);
+	return;
+}
+
 static void uds_sig_pipe(int signum)
 {
 	return;
@@ -593,6 +605,7 @@ int main(int argc, char *argv[])
 		uds_err("proxy hash init failed.");
 		return -1;
 	}
+	uds_rlimit();
 	signal(SIGPIPE, uds_sig_pipe);
 	p_uds_var->work_thread_num = atoi(argv[1]);
 	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
