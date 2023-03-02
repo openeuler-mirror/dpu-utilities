@@ -13,6 +13,7 @@
 #include "req.h"
 #include "log.h"
 #include "ops.h"
+#include "symbol_wrapper.h"
 
 #define CURRENT_TIME(inode) (current_time(inode))
 static struct inode_operations qtfs_inode_ops;

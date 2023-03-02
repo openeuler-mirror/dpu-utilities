@@ -7,7 +7,7 @@
 
 #include "conn.h"
 #include "qtfs-mod.h"
-
+#include "symbol_wrapper.h"
 
 static long qtfs_remote_mount(char __user *dev_name, char __user *dir_name, char __user *type,
 		unsigned long flags, void __user *data);
@@ -22,39 +22,6 @@ unsigned long start_rodata, end_rodata;
 static char *qtfs_copy_mount_string(const void __user *data)
 {
 	return data ? strndup_user(data, PATH_MAX) : NULL;
-}
-
-static void *qtfs_copy_mount_options(const void __user *data)
-{
-	char *copy;
-	unsigned left, offset;
-
-	if (!data)
-		return NULL;
-
-	copy = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!copy)
-		return ERR_PTR(-ENOMEM);
-	left = copy_from_user(copy, data, PAGE_SIZE);
-	/*
-	 * Not all architectures have an exact copy_from_user, Resort to
-	 * byte at a time.
-	 */
-	offset = PAGE_SIZE - left;
-	while (left) {
-		char c;
-		if (get_user(c, (const char __user *)data + offset))
-			break;
-		copy[offset] = c;
-		left--;
-		offset++;
-	}
-
-	if (left == PAGE_SIZE) {
-		kfree(copy);
-		return ERR_PTR(-EFAULT);
-	}
-	return copy;
 }
 
 static inline int qtfs_fstype_judgment(char __user *dir)
@@ -184,15 +151,11 @@ end:
 __SYSCALL_DEFINEx(4, _qtfs_epoll_ctl, int, epfd, int, op, int, fd,
 	struct epoll_event __user *, event)
 {
-	struct epoll_event epds;
 	int ret = -1;
 
 	ret = qtfs_epoll_ctl_remote(op, fd, event);
-	if (ep_op_has_event(op) &&
-			copy_from_user(&epds, event, sizeof(struct epoll_event)))
-		return -EFAULT;
 	if (!ret) {
-		return qtfs_kern_syms.do_epoll_ctl(epfd, op, fd, &epds, false);
+		return qtfs_syscall_epoll_ctl(epfd, op, fd, event);
 	} else {
 		return -1;
 	}
@@ -217,7 +180,7 @@ __SYSCALL_DEFINEx(5, _qtfs_mount, char __user *, dev_name, char __user *, dir_na
 	if (IS_ERR(kernel_dev))
 		goto out_dev;
 
-	options = qtfs_copy_mount_options(data);
+	options = qtfs_copy_mount_string(data);
 	ret = PTR_ERR(options);
 	if (IS_ERR(options))
 		goto out_data;
@@ -228,7 +191,7 @@ __SYSCALL_DEFINEx(5, _qtfs_mount, char __user *, dev_name, char __user *, dir_na
 		goto remote_mount;
 	}
 
-	ret = qtfs_kern_syms.do_mount(kernel_dev, dir_name, kernel_type, flags, options);
+	ret = qtfs_syscall_mount(dev_name, dir_name, type, flags, data);
 
 remote_mount:
 	kfree(options);
@@ -251,7 +214,7 @@ __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 		return qtfs_remote_umount(name, flags);
 	}
 
-	return qtfs_kern_syms.ksys_umount(name, flags);
+	return qtfs_syscall_umount(name, flags);
 }
 
 #ifdef __x86_64__
@@ -482,19 +445,15 @@ static int qtfs_remote_umount(char __user *name, int flags)
 	return ret;
 }
 
-static unsigned long *qtfs_oldsyscall_mount = NULL;
-static unsigned long *qtfs_oldsyscall_umount = NULL;
-static unsigned long *qtfs_oldsyscall_epoll_ctl = NULL;
-
 int qtfs_syscall_init(void)
 {
 	qtfs_debug("qtfs use my_mount instead of mount:0x%lx umount:0x%lx\n",
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount], (unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2]);
 	qtfs_debug("qtfs use my_epoll_ctl instead of epoll_ctl:0x%lx\n",
 			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_epoll_ctl]);
-	qtfs_oldsyscall_mount = qtfs_kern_syms.sys_call_table[__NR_mount];
-	qtfs_oldsyscall_umount = qtfs_kern_syms.sys_call_table[__NR_umount2];
-	qtfs_oldsyscall_epoll_ctl = qtfs_kern_syms.sys_call_table[__NR_epoll_ctl];
+	symbols_origin[SYMBOL_SYSCALL_MOUNT] = qtfs_kern_syms.sys_call_table[__NR_mount];
+	symbols_origin[SYMBOL_SYSCALL_UMOUNT] = qtfs_kern_syms.sys_call_table[__NR_umount2];
+	symbols_origin[SYMBOL_SYSCALL_EPOLL_CTL] = qtfs_kern_syms.sys_call_table[__NR_epoll_ctl];
 #ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)__x64_sys_qtfs_mount;
@@ -524,21 +483,21 @@ int qtfs_syscall_init(void)
 
 int qtfs_syscall_fini(void)
 {
-	qtfs_info("qtfs mount resume to 0x%lx.\n", (unsigned long)qtfs_oldsyscall_mount);
+	qtfs_info("qtfs mount resume to 0x%lx.\n", (unsigned long)symbols_origin[SYMBOL_SYSCALL_MOUNT]);
 #ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
-	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)qtfs_oldsyscall_mount;
-	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)qtfs_oldsyscall_umount;
-	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)qtfs_oldsyscall_epoll_ctl;
+	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_MOUNT];
+	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_UMOUNT];
+	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_EPOLL_CTL];
 	/*set mkdir syscall to the original one */
 	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
 #endif
 #ifdef __aarch64__
 	// disable write protection
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
-	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)qtfs_oldsyscall_mount;
-	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)qtfs_oldsyscall_umount;
-	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)qtfs_oldsyscall_epoll_ctl;
+	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_MOUNT];
+	qtfs_kern_syms.sys_call_table[__NR_umount2] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_UMOUNT];
+	qtfs_kern_syms.sys_call_table[__NR_epoll_ctl] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_EPOLL_CTL];
 	// enable write protection
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif

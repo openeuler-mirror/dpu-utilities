@@ -5,6 +5,7 @@
 
 #include "qtfs-mod.h"
 #include "syscall.h"
+#include "symbol_wrapper.h"
 
 static struct file_system_type qtfs_fs_type = {
 	.owner		= THIS_MODULE,

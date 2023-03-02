@@ -10,7 +10,7 @@
 
 #include "qtinfo.h"
 #include "comm.h"
-#include "ipc/uds_main.h"
+#include "ipc/uds_module.h"
 
 #ifdef client
 #define QTFS_DEV_NAME "/dev/qtfs_client"

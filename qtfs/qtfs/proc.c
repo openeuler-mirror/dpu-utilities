@@ -6,6 +6,7 @@
 #include "req.h"
 #include "log.h"
 #include "ops.h"
+#include "symbol_wrapper.h"
 
 struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags);
 const char *qtfs_proc_getlink(struct dentry *dentry, struct inode *inode, struct delayed_call *done);

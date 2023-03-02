@@ -1,6 +1,5 @@
 
 #include <linux/kallsyms.h>
-#include <linux/kprobes.h>
 #include <linux/tcp.h>
 #include <net/tcp.h>
 
@@ -8,10 +7,6 @@
 #include "conn.h"
 #include "log.h"
 #include "req.h"
-
-static struct kprobe kp = {
-	.symbol_name = "kallsyms_lookup_name"
-};
 
 char qtfs_log_level[QTFS_LOGLEVEL_STRLEN] = {0};
 char qtfs_server_ip[20] = "127.0.0.1";
@@ -932,64 +927,4 @@ void qtfs_conn_list_cnt(void)
 #endif
 	return;
 }
-
-#define KSYMS(sym, type) \
-				qtfs_kern_syms.sym = (type) qtfs_kallsyms_lookup_name(#sym);\
-				qtfs_info("qtfs kallsyms get %s:0x%lx.", #sym, (unsigned long)qtfs_kern_syms.sym);
-
-struct qtfs_kallsyms qtfs_kern_syms;
-kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
-void qtfs_kallsyms_hack_init(void)
-{
-	register_kprobe(&kp);
-	qtfs_kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
-	unregister_kprobe(&kp);
-
-	KSYMS(sys_call_table, unsigned long **);
-	KSYMS(d_absolute_path, char * (*)(const struct path *, char *, int));
-	KSYMS(do_unlinkat, long (*)(int, struct filename *));
-	KSYMS(getname_kernel, struct filename * (*)(const char *));
-	KSYMS(filename_parentat, struct filename * (*)(int, struct filename *, unsigned int,
-									struct path *, struct qstr *, int *));
-	KSYMS(__lookup_hash, struct dentry * (*)(const struct qstr *, struct dentry *,
-									unsigned int));
-	KSYMS(do_mount, long (*)(const char *, const char __user *, const char *,
-									unsigned long, void *));
-	KSYMS(ksys_umount, int (*)(char __user *, int));
-	KSYMS(find_get_task_by_vpid, struct task_struct *(*)(pid_t nr));
-	KSYMS(do_readlinkat, int (*)(int, const char __user *, char __user *, int));
-	KSYMS(do_renameat2, int (*)(int, const char __user *, int, const char __user *, unsigned int));
-	KSYMS(do_mkdirat, long (*)(int, const char __user *, umode_t));
-	KSYMS(do_rmdir, long (*)(int, struct filename *));
-	KSYMS(getname, struct filename * (*)(const char __user *));
-	KSYMS(ep_ptable_queue_proc, void (*)(struct file *, wait_queue_head_t *, struct poll_table_struct *));
-	KSYMS(user_statfs, int (*)(const char __user *, struct kstatfs *));
-	
-	KSYMS(__close_fd, int (*)(struct files_struct *, int));
-	KSYMS(do_sys_open, int (*)(int, const char __user *, int ,umode_t));
-	KSYMS(do_epoll_ctl, int (*)(int, int, int, struct epoll_event *, bool));
-	KSYMS(do_epoll_wait, int (*)(int, struct epoll_event __user *, int, int));
-	KSYMS(do_linkat, int (*)(int, const char __user *, int, const char __user *, int));
-	KSYMS(mnt_get_count, int (*)(void *));
-	KSYMS(do_mknodat, long (*)(int, const char __user *, umode_t, unsigned int));
-	KSYMS(ksys_lseek, off_t (*)(unsigned int, off_t, unsigned int));
-	return;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
