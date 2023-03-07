@@ -31,11 +31,11 @@ struct pt_regs;
 
 #define WRAPPER_ARGS_TO_REGS5(regs) \
 	WRAPPER_ARGS_TO_REGS4(regs)\
-	regs->r9 = (unsigned long)x5;
+	regs->r8 = (unsigned long)x5;
 
 #define WRAPPER_ARGS_TO_REGS6(regs) \
 	WRAPPER_ARGS_TO_REGS5(regs)\
-	regs->r8 = (unsigned long)x6;
+	regs->r9 = (unsigned long)x6;
 #endif
 #ifdef __aarch64__
 // symbols not finded in sys call table
@@ -151,7 +151,7 @@ WRAPPER_DEFINE_CLIENT(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3,
 	}
 
 #ifdef QTFS_SERVER
-WRAPPER_DEFINE(2, long, qtfs_syscall_umount(char __user *x1, int x2), __NR_umount);
+WRAPPER_DEFINE(2, long, qtfs_syscall_umount(char __user *x1, int x2), __NR_umount2);
 WRAPPER_DEFINE(5, long, qtfs_syscall_mount(char __user *x1, char __user *x2,
 		char __user *x3, unsigned long x4, void __user *x5), __NR_mount);
 WRAPPER_DEFINE(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3, 
@@ -181,6 +181,7 @@ WRAPPER_DEFINE(3, off_t, qtfs_syscall_lseek(unsigned int x1, off_t x2,
 		struct pt_regs *regs = &_regs;\
 		int retval;\
 		WRAPPER_ARGS_TO_REGS##nargs(regs);\
+		retval = (SYSCALL_TYPE symbols_a64[nr])(regs);\
 		return retval;\
 	}
 
