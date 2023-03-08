@@ -2,7 +2,7 @@ ccflags-y += -I$(src)/../ -I$(src) -DQTFS_SERVER
 KBUILD=/lib/modules/$(shell uname -r)/build/
 
 obj-m:=qtfs_server.o
-qtfs_server-objs:=../conn.o fsops.o qtfs-server.o ../misc.o
+qtfs_server-objs:=../conn.o fsops.o qtfs-server.o ../misc.o ../symbol_wrapper.o
 
 DEPGLIB=-lglib-2.0 -I../ -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include
 

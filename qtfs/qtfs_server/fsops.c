@@ -19,6 +19,7 @@
 #include "log.h"
 #include "fsops.h"
 #include "comm.h"
+#include "symbol_wrapper.h"
 
 #define REQ(arg) (arg->data)
 #define RSP(arg) (arg->out)
@@ -189,13 +190,17 @@ static int handle_statfs(struct qtserver_arg *arg)
 		return sizeof(struct qtrsp_statfs);
 	}
 
-	ret = qtfs_kern_syms.user_statfs((char *)userp->userp, &(rsp->kstat));
+	ret = qtfs_syscall_statfs((char *)userp->userp, userp->userp2);
 	if (ret) {
 		qtfs_err("qtfs server handle statfs path:%s failed with ret:%d.\n", req->path, ret);
 		rsp->ret = QTFS_ERR;
 	} else {
 		qtfs_info("qtfs server handle statfs path:%s success.\n", req->path);
 		rsp->ret = QTFS_OK;
+	}
+	if (copy_from_user(&rsp->kstat, userp->userp2, sizeof(struct kstatfs))) {
+		qtfs_err("copy statfs to kstatfs failed");
+		rsp->ret = QTFS_ERR;
 	}
 	rsp->errno = ret;
 	return sizeof(struct qtrsp_statfs);
@@ -245,11 +250,11 @@ int handle_open(struct qtserver_arg *arg)
 		rsp->fd = -EFAULT;
 		return sizeof(struct qtrsp_open);
 	}
-	fd = qtfs_kern_syms.do_sys_open(AT_FDCWD, (char *)userp->userp, req->flags, req->mode);
+	fd = qtfs_syscall_openat(AT_FDCWD, (char *)userp->userp, req->flags, req->mode);
 	if (fd == -EEXIST) {
 		qtfs_err("handle open file <<%s>> flags:%llx mode:%o, opened:failed %d, do again\n", req->path, req->flags, req->mode, fd);
 		req->flags &= ~(O_CREAT | O_EXCL);
-		fd = qtfs_kern_syms.do_sys_open(AT_FDCWD, (char *)userp->userp, req->flags, req->mode);
+		fd = qtfs_syscall_openat(AT_FDCWD, (char *)userp->userp, req->flags, req->mode);
 	}
 	if (fd < 0) {
 		if (fd != -ENOENT) {
@@ -517,7 +522,7 @@ static int handle_mkdir(struct qtserver_arg *arg)
 		rsp->errno = -EFAULT;
 		goto err;
 	}
-	rsp->errno = qtfs_kern_syms.do_mkdirat(AT_FDCWD, userp->userp, req->mode);
+	rsp->errno = qtfs_syscall_mkdirat(AT_FDCWD, userp->userp, req->mode);
 	if (rsp->errno < 0) {
 		qtfs_err("handle mkdir path:%s failed with ret:%d.", req->path, rsp->errno);
 		goto err;
@@ -554,7 +559,7 @@ static int handle_rmdir(struct qtserver_arg *arg)
 		rsp->errno = -EFAULT;
 		goto err;
 	}
-	rsp->errno = qtfs_kern_syms.do_rmdir(AT_FDCWD, qtfs_kern_syms.getname(userp->userp));
+	rsp->errno = qtfs_syscall_rmdir(userp->userp);
 	if (rsp->errno < 0) {
 		qtfs_err("handle rmdir error:%d.", rsp->errno);
 		goto err;
@@ -736,13 +741,20 @@ int handle_unlink(struct qtserver_arg *arg)
 {
 	struct qtreq_unlink *req = (struct qtreq_unlink *)REQ(arg);
 	struct qtrsp_unlink *rsp = (struct qtrsp_unlink *)RSP(arg);
-	
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
+
 	if (!in_white_list(req->path, QTFS_WHITELIST_UNLINK)) {
 		rsp->errno = -ENOENT;
 		return sizeof(struct qtrsp_unlink);
 	}
 
-	rsp->errno = qtfs_kern_syms.do_unlinkat(AT_FDCWD, qtfs_kern_syms.getname_kernel(req->path));
+	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
+		qtfs_err("handle unlink copy to userp failed.");
+		rsp->errno = -EFAULT;
+		return sizeof(struct qtrsp_unlink);
+	}
+
+	rsp->errno = qtfs_syscall_unlink(userp->userp);
 	if (rsp->errno < 0) {
 		qtfs_err("handle unlink failed, errno:%d\n", rsp->errno);
 	} else {
@@ -768,7 +780,7 @@ int handle_link(struct qtserver_arg *arg)
 		return sizeof(struct qtrsp_link);
 	}
 
-	rsp->errno = qtfs_kern_syms.do_linkat(AT_FDCWD, userp->userp, AT_FDCWD, userp->userp2, 0);
+	rsp->errno = qtfs_syscall_linkat(AT_FDCWD, userp->userp, AT_FDCWD, userp->userp2, 0);
 	qtfs_info("handle link new:%s old:%s return %d\n", newname, oldname, rsp->errno);
 	rsp->ret = rsp->errno == 0 ? QTFS_OK : QTFS_ERR;
 	return sizeof(struct qtrsp_link);
@@ -819,7 +831,7 @@ int handle_getlink(struct qtserver_arg *arg)
 		rsp->errno = -EFAULT;
 		goto err_handle;
 	}
-	rsp->errno = qtfs_kern_syms.do_readlinkat(AT_FDCWD, userp->userp, userp->userp2, userp->size);
+	rsp->errno = qtfs_syscall_readlinkat(AT_FDCWD, userp->userp, userp->userp2, userp->size);
 	if (rsp->errno < 0) {
 		qtfs_err("handle getlink<%s> do readlinkat failed, errno:%d\n", req->path, rsp->errno);
 		goto err_handle;
@@ -854,7 +866,7 @@ int handle_rename(struct qtserver_arg *arg)
 		rsp->errno = -EFAULT;
 		goto err_handle;
 	}
-	rsp->errno = qtfs_kern_syms.do_renameat2(AT_FDCWD, userp->userp, AT_FDCWD, userp->userp2, 0);
+	rsp->errno = qtfs_syscall_renameat2(AT_FDCWD, userp->userp, AT_FDCWD, userp->userp2, 0);
 
 err_handle:
 	rsp->ret = (rsp->errno < 0) ? QTFS_ERR : QTFS_OK;
@@ -1002,9 +1014,9 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	struct qtrsp_sysmount *rsp = (struct qtrsp_sysmount *)RSP(arg);
 	char *dev_name, *dir_name, *type, *udir_name;
 	void *data_page;
+	char *udev_name, *utype, *udata;
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
-	udir_name = userp->userp;
 	dev_name = req->d.dev_len == 0 ? NULL : req->buf;
 	dir_name = &req->buf[req->d.dev_len];
 	type = req->d.type_len == 0 ? NULL : &req->buf[req->d.dev_len + req->d.dir_len];
@@ -1013,19 +1025,38 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	else
 		data_page = NULL;
 
-	if (copy_to_user(udir_name, dir_name, strlen(dir_name)+1)) {
+	if (strlen(dir_name) >= (userp->size / 2) ||
+		strlen(dev_name) >= (userp->size / 2) ||
+		strlen(type) >= (userp->size / 2) ||
+		strlen(data_page) >= (userp->size / 2)) {
+		qtfs_err("mount str len is too big dirname:%lu devname:%lu type:%lu data:%lu",
+				strlen(dir_name), strlen(dev_name), strlen(type), strlen(data_page));
+		rsp->errno = -EINVAL;
+		goto end;
+	}
+	udir_name = userp->userp;
+	udev_name = udir_name + userp->size / 2;
+	utype = userp->userp2;
+	udata = utype + userp->size / 2;
+	qtfs_info("udir name:%lx udev name:%lx utype:%lx udata:%lx",
+			(unsigned long)udir_name, (unsigned long)udev_name, (unsigned long)utype, (unsigned long)udata);
+	if (copy_to_user(udir_name, dir_name, strlen(dir_name) + 1) ||
+		copy_to_user(udev_name, dev_name, strlen(dev_name) + 1) ||
+		copy_to_user(utype, type, strlen(type) + 1) ||
+		(data_page != NULL && copy_to_user(udata, data_page, strlen(data_page) + 1))) {
 		qtfs_err("syscall mount failed to copy to user");
 		rsp->errno = -ENOMEM;
-		return sizeof(struct qtrsp_sysmount);
+		goto end;
 	}
 
 	qtfs_info("handle syscall mount devname:%s dirname:%s type:%s data:%s\n", dev_name, dir_name, type,
 			(data_page == NULL) ? "nil" : (char *)data_page);
-	rsp->errno = qtfs_kern_syms.do_mount(dev_name, udir_name, type, req->d.flags, data_page);
+	rsp->errno = qtfs_syscall_mount(udev_name, udir_name, utype, req->d.flags, udata);
 	if (rsp->errno < 0)
 		qtfs_err("handle syscall mount failed devname:%s dirname:%s type:%s data:%s, errno:%d\n",
 				dev_name, dir_name, type, (char *)data_page, rsp->errno);
 
+end:
 	return sizeof(struct qtrsp_sysmount);
 }
 
@@ -1040,7 +1071,7 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
 	}
-	rsp->errno = qtfs_kern_syms.ksys_umount(userp->userp, req->flags);
+	rsp->errno = qtfs_syscall_umount(userp->userp, req->flags);
 	if (rsp->errno)
 		qtfs_err("umount(%s) failed, errno:%d\n", req->buf, rsp->errno);
 	//dont need to path_put here.
@@ -1141,12 +1172,18 @@ int handle_epollctl(struct qtserver_arg *arg)
 {
 	struct qtreq_epollctl *req = (struct qtreq_epollctl *)REQ(arg);
 	struct qtrsp_epollctl *rsp = (struct qtrsp_epollctl *)RSP(arg);
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
 	int ret;
 	struct epoll_event evt;
 
 	evt.data = (__u64)req->event.data;
 	evt.events = req->event.events;
-	ret = qtfs_kern_syms.do_epoll_ctl(qtfs_epoll.epfd, req->op, req->fd, &evt, false);
+	if (copy_to_user(userp->userp, &evt, sizeof(struct epoll_event)) <= 0) {
+		qtfs_err("copy to user failed.");
+		rsp->ret = QTFS_ERR;
+		return sizeof(struct qtrsp_epollctl);
+	}
+	ret = qtfs_syscall_epoll_ctl(qtfs_epoll.epfd, req->op, req->fd, userp->userp);
 	if (ret < 0) {
 		qtfs_err("handle do epoll ctl failed, ret:%d.", ret);
 		rsp->ret = QTFS_ERR;
@@ -1166,7 +1203,7 @@ int handle_llseek(struct qtserver_arg *arg)
 	struct qtrsp_llseek *rsp = (struct qtrsp_llseek *)RSP(arg);
 
 	qtfs_info("llseek get req fd:%d, off:%lld whence:%d.", req->fd, req->off, req->whence);
-	rsp->off = qtfs_kern_syms.ksys_lseek(req->fd, req->off, req->whence);
+	rsp->off = qtfs_syscall_lseek(req->fd, req->off, req->whence);
 	if (rsp->off < 0) {
 		qtfs_err("llseek ksys lseek return :%lld failed, req fd:%d off:%lld whence:%d.",
 					rsp->off, req->fd, req->off, req->whence);

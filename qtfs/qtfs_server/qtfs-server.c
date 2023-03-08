@@ -10,6 +10,7 @@
 #include "comm.h"
 #include "log.h"
 #include "req.h"
+#include "symbol_wrapper.h"
 
 #define QTFS_EPOLL_TIMEO 1000 // unit ms
 
@@ -60,7 +61,7 @@ long qtfs_server_epoll_thread(struct qtfs_sock_var_s *pvar)
 	rsp = qtfs_sock_msg_buf(pvar, QTFS_RECV);
 	head = pvar->vec_send.iov_base;
 	do {
-		n = qtfs_kern_syms.do_epoll_wait(qtfs_epoll.epfd, qtfs_epoll.events, qtfs_epoll.event_nums, 0);
+		n = qtfs_syscall_epoll_wait(qtfs_epoll.epfd, qtfs_epoll.events, qtfs_epoll.event_nums, 0);
 		if (n == 0) {
 			msleep(1);
 			break;

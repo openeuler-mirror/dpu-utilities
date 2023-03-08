@@ -98,42 +98,6 @@ struct qtfs_conn_var_s {
 	int len_send;
 };
 
-typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
-extern kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
-
-struct qtfs_kallsyms {
-	/* global vars define */
-	unsigned long **sys_call_table;
-
-	/* functions define */
-	char * (*d_absolute_path)(const struct path *, char *, int);
-	long (*do_unlinkat)(int, struct filename *);
-	struct filename * (*getname_kernel)(const char *);
-	struct filename * (*filename_parentat)(int, struct filename *, unsigned int,
-				struct path *, struct qstr *, int *);
-	struct dentry * (*__lookup_hash)(const struct qstr *, struct dentry *, unsigned int);
-	long (*do_mount)(const char *, const char __user *, const char *, unsigned long, void *);
-	int (*ksys_umount)(char __user *name, int flags);
-	struct task_struct *(*find_get_task_by_vpid)(pid_t nr);
-	int (*do_readlinkat)(int, const char __user *, char __user *, int);
-	int (*do_renameat2)(int, const char __user *, int, const char __user *, unsigned int);
-	long (*do_mkdirat)(int, const char __user *, umode_t);
-	long (*do_rmdir)(int, struct filename *);
-	struct filename * (*getname)(const char __user *);
-	void (*ep_ptable_queue_proc)(struct file *, wait_queue_head_t *, struct poll_table_struct *);
-	int (*user_statfs)(const char __user *, struct kstatfs *);
-	int (*__close_fd)(struct files_struct *, int);
-	int (*do_sys_open)(int, const char __user *, int ,umode_t);
-	int (*do_epoll_ctl)(int, int, int, struct epoll_event *, bool);
-	int (*do_epoll_wait)(int, struct epoll_event __user *, int, int);
-	int (*do_linkat)(int, const char __user *, int, const char __user *, int);
-	int (*mnt_get_count)(void *);
-	long (*do_mknodat)(int, const char __user *, umode_t, unsigned int);
-	off_t (*ksys_lseek)(unsigned int, off_t, unsigned int);
-};
-
-extern struct qtfs_kallsyms qtfs_kern_syms;
-
 static inline bool qtfs_sock_connected(struct qtfs_sock_var_s *pvar)
 {
 	struct socket *sock = pvar->client_sock;
