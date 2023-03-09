@@ -172,7 +172,11 @@ WRAPPER_DEFINE(4, long, qtfs_syscall_mknodat(int x1, const char __user *x2, umod
 			unsigned int x4), __NR_mknodat);
 WRAPPER_DEFINE(3, off_t, qtfs_syscall_lseek(unsigned int x1, off_t x2, 
 			unsigned int x3), __NR_lseek);
-
+WRAPPER_DEFINE(2, long, qtfs_syscall_kill(pid_t x1, int x2), __NR_kill);
+WRAPPER_DEFINE(3, long, qtfs_syscall_sched_getaffinity(pid_t x1, unsigned int x2, 
+			unsigned long __user *x3), __NR_sched_getaffinity);
+WRAPPER_DEFINE(3, long, qtfs_syscall_sched_setaffinity(pid_t x1, unsigned int x2, 
+			unsigned long __user *x3), __NR_sched_setaffinity);
 #ifdef __aarch64__
 #define WRAPPER_DEFINE_A64(nargs, ret, func, nr)\
 	noinline ret func\

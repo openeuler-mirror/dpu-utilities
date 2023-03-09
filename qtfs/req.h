@@ -46,6 +46,11 @@ enum qtreq_type {
 
 	QTFS_REQ_LLSEEK,
 
+	// REMOTE SYSCALL
+	QTFS_SC_KILL,
+	QTFS_SC_SCHED_GETAFFINITY,
+	QTFS_SC_SCHED_SETAFFINITY,
+
 	QTFS_REQ_EXIT, // exit server thread
 	QTFS_REQ_INV,
 };
@@ -529,5 +534,32 @@ struct qtreq_llseek {
 struct qtrsp_llseek {
 	int ret;
 	loff_t off;
+};
+
+struct qtreq_sc_kill {
+	int pid;
+	int signum;
+};
+
+struct qtrsp_sc_kill {
+	long ret;
+};
+
+enum {
+	SC_GET = 0,
+	SC_SET,
+};
+#define AFFINITY_MAX_LEN (8192 / BITS_PER_LONG) // max cpu nums 8192
+struct qtreq_sc_sched_affinity {
+	int type; // 0-get or 1-set
+	int pid;
+	unsigned int len;
+	unsigned long user_mask_ptr[0];
+};
+
+struct qtrsp_sc_sched_affinity {
+	long ret;
+	int len;
+	unsigned long user_mask_ptr[0];
 };
 #endif
