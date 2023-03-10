@@ -192,6 +192,7 @@ struct qtrsp_readiter {
 		int ret;
 		ssize_t len;
 		int errno;
+		int end;
 	} d;
 	char readbuf[QTFS_TAIL_LEN(struct qtrsp_readiter_len)];
 };
@@ -203,6 +204,7 @@ struct qtreq_write {
 		int fd;
 		long long flags;
 		long long mode;
+		long long total_len;
 	} d;
 	// fullname and writebuf
 	char path_buf[QTFS_TAIL_LEN(struct qtreq_write_len)];

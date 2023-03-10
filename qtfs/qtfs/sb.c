@@ -304,7 +304,7 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 		}
 		if (rsp->d.ret == QTFS_ERR || rsp->d.len <= 0) {
 			if (rsp->d.len != 0)
-				qtfs_info("qtfs readiter error.");
+				qtfs_info("qtfs readiter error: %d.", rsp->d.len);
 			ret = (ssize_t)rsp->d.len;
 			qtfs_conn_put_param(pvar);
 			return ret;
@@ -318,7 +318,7 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 
 		leftlen -= rsp->d.len;
 		kio->ki_pos += rsp->d.len;
-	} while (leftlen > 0 && rsp->d.len >= sizeof(rsp->readbuf) - 1);
+	} while (leftlen > 0 && rsp->d.end == 0);
 	qtfs_info("qtfs readiter over, leftlen:%lu, reqlen:%lu, fullname:<%s>, ino:%lu, pos:%lld, iovcnt:%lu(%lu)\n", leftlen,
 				req->len, kio->ki_filp->f_path.dentry->d_iname, kio->ki_filp->f_inode->i_ino, kio->ki_pos, iov_iter_count(iov), iov->iov->iov_len);
 
@@ -370,6 +370,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 	wrbuf = req->path_buf;
 	maxbuflen = sizeof(req->path_buf);
 	do {
+		req->d.total_len = len;
 		wrbuflen = (leftlen >= maxbuflen) ? (maxbuflen - 1) : leftlen;
 		req->d.buflen = wrbuflen;
 		req->d.pos = kio->ki_pos;
@@ -390,10 +391,11 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 			return ret;
 		}
 		if (rsp->len != wrbuflen) {
-			WARN_ON(1);
+			iov->count -= (rsp->len - wrbuflen);
+			iov->iov_offset += (rsp->len - wrbuflen);
 		}
 		kio->ki_pos += rsp->len;
-		leftlen -= wrbuflen;
+		leftlen -= rsp->len;
 	} while (leftlen);
 
 	do {
@@ -738,6 +740,12 @@ static int qtfs_writepages(struct address_space *mapping,
 	return 0;
 }
 
+static ssize_t qtfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
+{
+	qtfs_info("qtfs direct IO.");
+    return 0;
+}
+
 static int qtfs_setpagedirty(struct page *page)
 {
 	qtfs_info("qtfs set page dirty.");
@@ -752,6 +760,7 @@ static const struct address_space_operations qtfs_aops = {
 #endif
 	.writepage = qtfs_writepage,
 	.writepages = qtfs_writepages,
+	.direct_IO      = qtfs_direct_IO,
 	.set_page_dirty = qtfs_setpagedirty,
 };
 

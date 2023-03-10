@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <glib.h>
+#include <malloc.h>
 
 #include <sys/epoll.h>
 
@@ -71,12 +72,12 @@ static struct qtfs_server_userp_s *qtfs_engine_thread_init(int fd, int thread_nu
 	}
 	for (int i = 0; i < thread_nums; i++) {
 		userp[i].size = psize;
-		userp[i].userp = (void *)malloc(psize);
+		userp[i].userp = (void *)memalign(sysconf(_SC_PAGESIZE), psize);
 		if (userp[i].userp == NULL) {
 			engine_out("engine userp malloc failed.");
 			goto rollback;
 		}
-		userp[i].userp2 = (void *)malloc(psize);
+		userp[i].userp2 = (void *)memalign(sysconf(_SC_PAGESIZE), psize);
 		if (userp[i].userp2 == NULL) {
 			engine_out("engine userp2 malloc failed.");
 			goto rollback;

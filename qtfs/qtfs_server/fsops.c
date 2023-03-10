@@ -12,6 +12,9 @@
 #include <asm-generic/termbits.h>
 #include <linux/syscalls.h>
 #include <linux/file.h>
+#include <linux/kernel.h>
+#include <linux/uio.h>
+#include <linux/blkdev.h>
 
 #include "conn.h"
 #include "qtfs-server.h"
@@ -289,12 +292,33 @@ static int handle_readiter(struct qtserver_arg *arg)
 {
 	struct file *file = NULL;
     char *pathbuf, *fullname;
+	int idx = 0;
+	int ret = 0;
+	int block_size;
+	size_t maxlen;
 	struct qtreq_readiter *req = (struct qtreq_readiter *)REQ(arg);
 	struct qtrsp_readiter *rsp = (struct qtrsp_readiter *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-	size_t maxlen = (req->len >= sizeof(rsp->readbuf)) ? (sizeof(rsp->readbuf) - 1) : req->len;
-
 	file = fget(req->fd);
+	if (file->f_flags & O_DIRECT) {
+		if (file->f_inode->i_sb->s_bdev != NULL && file->f_inode->i_sb->s_bdev->bd_disk != NULL 
+			&& file->f_inode->i_sb->s_bdev->bd_disk->queue != NULL) {
+				block_size = bdev_logical_block_size(file->f_inode->i_sb->s_bdev);
+		} else {
+			rsp->d.ret = QTFS_ERR;
+            rsp->d.len = -EINVAL;
+            return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+		}
+		if (req->len % block_size != 0) {
+			rsp->d.ret = QTFS_ERR;
+			rsp->d.len = -EINVAL;
+			return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+		}
+		maxlen = (req->len >= sizeof(rsp->readbuf)) ? (block_size * (sizeof(rsp->readbuf) /block_size)) : req->len;
+	} else {
+		maxlen = (req->len >= sizeof(rsp->readbuf)) ? (sizeof(rsp->readbuf) - 1) : req->len;
+	}
+
 	pathbuf = __getname();
     fullname = file_path(file, pathbuf, PATH_MAX);
 	if (!in_white_list(fullname, QTFS_WHITELIST_READ)) {
@@ -313,31 +337,39 @@ static int handle_readiter(struct qtserver_arg *arg)
 		rsp->d.errno = -ENOENT;
 		goto end;
 	}
-	if (file->f_op->read) {
-		int idx = 0;
-		int ret = 0;
-		do {
-			if (idx + userp->size < maxlen) {
-				ret = file->f_op->read(file, userp->userp, userp->size, &req->pos);
-			} else {
-				ret = file->f_op->read(file, userp->userp, maxlen - idx, &req->pos);
-			}
-			if (ret <= 0)
-				break;
-			if (copy_from_user(&rsp->readbuf[idx], userp->userp, ret)) {
-				qtfs_err("readiter copy from user failed.");
-				break;
-			}
-			rsp->d.len += ret;
-			idx += ret;
-		} while (ret > 0 && idx < maxlen);
-		if (ret < 0) {
-			qtfs_err("handle readiter ret:%d.", ret);
-			rsp->d.len = ret;
+	do {
+
+		int readsize = (userp->size < (maxlen - idx)) ? userp->size : (maxlen - idx);
+		if (file->f_op->read) {
+			ret = file->f_op->read(file, userp->userp, readsize, &req->pos);
+		} else {
+				struct kiocb kiocb;
+				struct iov_iter iter;
+				struct iovec iov = { .iov_base = userp->userp, .iov_len = readsize};
+				init_sync_kiocb(&kiocb, file);
+				kiocb.ki_pos = req->pos;
+				iov_iter_init(&iter, READ, &iov, 1, iov.iov_len);
+				ret = call_read_iter(file, &kiocb, &iter);
+				req->pos = kiocb.ki_pos;
 		}
-	} else {
-		rsp->d.len = kernel_read(file, rsp->readbuf, maxlen, &req->pos);
+		if (ret <= 0)
+			break;
+		if (copy_from_user(&rsp->readbuf[idx], userp->userp, ret)) {
+			qtfs_err("readiter copy from user failed.");
+			break;
+		}
+		rsp->d.len += ret;
+		idx += ret;
+		if (ret < readsize) {
+			rsp->d.end = 1;
+			break;
+		}
+	} while (ret > 0 && idx < maxlen);
+	if (ret < 0) {
+		qtfs_err("handle readiter ret:%d.", ret);
+		rsp->d.len = ret;
 	}
+
 	if (rsp->d.len > maxlen || rsp->d.len < 0) {
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = (int)rsp->d.len;
@@ -349,19 +381,38 @@ static int handle_readiter(struct qtserver_arg *arg)
 			file->f_path.dentry->d_iname, req->len, rsp->d.len, req->pos, rsp->d.ret, rsp->d.errno);
 end:
 	fput(file);
-	return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf) + rsp->d.len;
+	return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf) + ((rsp->d.len < 0) ? 0 : rsp->d.len);
 }
 
 static int handle_write(struct qtserver_arg *arg)
 {
 	struct file *file = NULL;
     char *pathbuf, *fullname;
+	int block_size;
 	struct qtreq_write *req = (struct qtreq_write *)REQ(arg);
 	struct qtrsp_write *rsp = (struct qtrsp_write *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 	int idx = 0, leftlen = 0, ret = 0, len = 0;
 
 	file = fget(req->d.fd);
+	if (file->f_flags & O_DIRECT) {
+		if (file->f_inode->i_sb->s_bdev != NULL && file->f_inode->i_sb->s_bdev->bd_disk != NULL 
+			&& file->f_inode->i_sb->s_bdev->bd_disk->queue != NULL){
+                    block_size = bdev_logical_block_size(file->f_inode->i_sb->s_bdev);
+        } else {
+            rsp->ret = QTFS_ERR;
+            rsp->len = -EINVAL;
+            return sizeof(struct qtrsp_write);
+        }
+		if (req->d.total_len % block_size != 0) {
+			rsp->ret = QTFS_ERR;
+			rsp->len = -EINVAL;
+			return sizeof(struct qtrsp_write);
+		}
+		leftlen = block_size * (req->d.buflen / block_size);
+	} else {
+		leftlen = req->d.buflen;
+	}
 	pathbuf = __getname();
 	fullname = file_path(file, pathbuf, PATH_MAX);
 	if (!in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
@@ -380,28 +431,41 @@ static int handle_write(struct qtserver_arg *arg)
 
 	file->f_mode = req->d.mode;
 	file->f_flags = req->d.flags;
-	if (file->f_op->write) {
-		leftlen = req->d.buflen;
-		rsp->len = 0;
-		while (leftlen > 0) {
-			len = leftlen > userp->size ? userp->size : leftlen;
-			if (copy_to_user(userp->userp, &req->path_buf[idx], len)) {
-				qtfs_err("write copy to userp failed.\n");
-				rsp->len = -EFAULT;
-				break;
-			}
-			ret = file->f_op->write(file, userp->userp, len, &req->d.pos);
-			if (ret < 0) {
-				rsp->len = ret;
-				break;
-			}
-			leftlen -= ret;
-			idx += ret;
-			rsp->len += ret;
+	rsp->len = 0;
+	file_start_write(file);
+	while (leftlen > 0) {
+		len = leftlen > userp->size ? userp->size : leftlen;
+		if (copy_to_user(userp->userp, &req->path_buf[idx], len)) {
+			qtfs_err("write copy to userp failed.\n");
+			rsp->len = -EFAULT;
+			break;
 		}
-	} else {
-		rsp->len = kernel_write(file, req->path_buf, req->d.buflen, &req->d.pos);
+		if (file->f_op->write) {
+			ret = file->f_op->write(file, userp->userp, len, &req->d.pos);
+		} else {
+			struct iovec iov = { .iov_base = (void __user *)userp->userp, .iov_len = len };
+			struct kiocb kiocb;
+			struct iov_iter iter;
+			init_sync_kiocb(&kiocb, file);
+			kiocb.ki_pos = req->d.pos;
+			iov_iter_init(&iter, WRITE, &iov, 1, len);
+			ret = call_write_iter(file, &kiocb, &iter);
+			if (ret > 0) {
+				qtfs_err("call_write_iter:%d %d %d %d", ret, len, leftlen, block_size * (req->d.buflen / block_size));
+				req->d.pos = kiocb.ki_pos;
+			} else {
+				qtfs_err("call_write_iter failed:%d %d %d %d", ret, len, leftlen, block_size * (req->d.buflen / block_size));
+			}
+		}
+		if (ret < 0) {
+			rsp->len = ret;
+			break;
+		}
+		leftlen -= ret;
+		idx += ret;
+		rsp->len += ret;
 	}
+	file_end_write(file);
 	rsp->ret = (rsp->len <= 0) ? QTFS_ERR : QTFS_OK;
 	qtfs_info("handle write file<%s> %s, write len:%ld pos:%lld mode:%o flags:%x.", file->f_path.dentry->d_iname,
 			(rsp->ret == QTFS_ERR) ? "failed" : "succeded", rsp->len, req->d.pos, file->f_mode, file->f_flags);
