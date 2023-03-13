@@ -1073,7 +1073,7 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	qtfs_info("handle umount path:%s\n", req->buf);
-	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1) <= 0) {
+	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1)) {
 		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
 	}
