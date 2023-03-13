@@ -166,6 +166,8 @@ int qtfs_misc_register(void);
 void qtfs_misc_destroy(void);
 long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int qtfs_missmsg_proc(struct qtfs_sock_var_s *pvar);
+int qtfs_utils_register(void);
+void qtfs_utils_destroy(void);
 
 #endif
 

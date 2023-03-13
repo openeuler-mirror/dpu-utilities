@@ -1232,6 +1232,75 @@ int handle_null(struct qtserver_arg *arg)
 	return 4;
 }
 
+int remotesc_kill(struct qtserver_arg *arg)
+{
+	struct qtreq_sc_kill *req = (struct qtreq_sc_kill *)REQ(arg);
+	struct qtrsp_sc_kill *rsp = (struct qtrsp_sc_kill *)RSP(arg);
+	rsp->ret = qtfs_syscall_kill(req->pid, req->signum);
+	qtfs_info("Recv remote kill request, pid:%d signum:%d ret:%ld", req->pid, req->signum, rsp->ret);
+	return sizeof(struct qtrsp_sc_kill);
+}
+
+int remotesc_sched_getaffinity(struct qtserver_arg *arg)
+{
+	struct qtreq_sc_sched_affinity *req = (struct qtreq_sc_sched_affinity *)REQ(arg);
+	struct qtrsp_sc_sched_affinity *rsp = (struct qtrsp_sc_sched_affinity *)RSP(arg);
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
+
+	if (req->len > AFFINITY_MAX_LEN) {
+		qtfs_err("invalid len:%u", req->len);
+		rsp->ret = -EINVAL;
+		rsp->len = 0;
+		goto end;
+	}
+	rsp->ret = qtfs_syscall_sched_getaffinity(req->pid, req->len, userp->userp);
+	if (rsp->ret < 0) {
+		qtfs_err("get affinity failed ret:%ld", rsp->ret);
+		rsp->len = 0;
+		goto end;
+	}
+	if (copy_from_user(rsp->user_mask_ptr, userp->userp, req->len)) {
+		qtfs_err("copy affinity failed");
+		rsp->len = 0;
+		rsp->ret = -EFAULT;
+		goto end;
+	}
+	rsp->len = req->len;
+	qtfs_info("pid:%d get affinity successed, %lx%lx", req->pid, rsp->user_mask_ptr[0], rsp->user_mask_ptr[1]);
+	return sizeof(struct qtrsp_sc_sched_affinity) + rsp->len * sizeof(unsigned long);
+
+end:
+	return sizeof(struct qtrsp_sc_sched_affinity);
+}
+
+int remotesc_sched_setaffinity(struct qtserver_arg *arg)
+{
+	struct qtreq_sc_sched_affinity *req = (struct qtreq_sc_sched_affinity *)REQ(arg);
+	struct qtrsp_sc_sched_affinity *rsp = (struct qtrsp_sc_sched_affinity *)RSP(arg);
+	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
+
+	if (req->len > AFFINITY_MAX_LEN) {
+		qtfs_err("invalid len:%u", req->len);
+		rsp->ret = -EINVAL;
+		rsp->len = 0;
+		goto end;
+	}
+	if (copy_to_user(userp->userp, req->user_mask_ptr, req->len)) {
+		qtfs_err("copy to user failed len:%u", req->len);
+		rsp->ret = -EFAULT;
+		rsp->len = 0;
+		goto end;
+	}
+	rsp->ret = qtfs_syscall_sched_setaffinity(req->pid, req->len, userp->userp);
+	if (rsp->ret < 0) {
+		qtfs_err("set affinity failed, ret:%ld pid:%d len:%u", rsp->ret, req->pid, req->len);
+		goto end;
+	}
+	qtfs_info("set affinity successed mask:%lx%lx", req->user_mask_ptr[0], req->user_mask_ptr[1]);
+end:
+	return sizeof(struct qtrsp_sc_sched_affinity);
+}
+
 static struct qtserver_ops qtfs_server_handles[] = {
 	{QTFS_REQ_NULL,			handle_null,		"null"},
 	{QTFS_REQ_MOUNT,		handle_mount,		"mount"},
@@ -1270,6 +1339,11 @@ static struct qtserver_ops qtfs_server_handles[] = {
 	{QTFS_REQ_EPOLL_EVENT,	NULL,			"epollevent"},
 
 	{QTFS_REQ_LLSEEK,		handle_llseek,		"llseek"},
+
+	// remote syscall or capability
+	{QTFS_SC_KILL,			remotesc_kill,		"remotesc_kill"},
+	{QTFS_SC_SCHED_GETAFFINITY,	remotesc_sched_getaffinity,	"sched_getaffinity"},
+	{QTFS_SC_SCHED_SETAFFINITY, remotesc_sched_setaffinity, "sched_setaffinity"},
 
 	{QTFS_REQ_EXIT,			handle_exit,	"exit"}, // keep this handle at the end
 };

@@ -216,7 +216,7 @@ static int __init qtfs_init(void)
 	qtfs_kallsyms_hack_init();
 	qtfs_conn_param_init();
 	qtfs_syscall_init();
-	
+	qtfs_utils_register();
 	qtfs_info("QTFS file system register success!\n");
 	return 0;
 }
@@ -251,7 +251,7 @@ static void __exit qtfs_exit(void)
 	if (ret != 0) {
 		qtfs_err("QTFS file system unregister failed, ret:%d.\n", ret);
 	}
-
+	qtfs_utils_destroy();
 	kmem_cache_destroy(qtfs_inode_priv_cache);
 	qtfs_info("QTFS file system unregister success!\n");
 	return;
