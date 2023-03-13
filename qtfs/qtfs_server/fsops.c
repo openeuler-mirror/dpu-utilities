@@ -1012,9 +1012,12 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 {
 	struct qtreq_sysmount *req = (struct qtreq_sysmount *)REQ(arg);
 	struct qtrsp_sysmount *rsp = (struct qtrsp_sysmount *)RSP(arg);
-	char *dev_name, *dir_name, *type, *udir_name;
+	char *dev_name, *dir_name, *type;
+	char *udir_name = NULL;
 	void *data_page;
-	char *udev_name, *utype, *udata;
+	char *udev_name = NULL;
+	char *utype = NULL;
+	char *udata = NULL;
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	dev_name = req->d.dev_len == 0 ? NULL : req->buf;
@@ -1026,23 +1029,26 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 		data_page = NULL;
 
 	if (strlen(dir_name) >= (userp->size / 2) ||
-		strlen(dev_name) >= (userp->size / 2) ||
-		strlen(type) >= (userp->size / 2) ||
-		strlen(data_page) >= (userp->size / 2)) {
+		(dev_name != NULL && strlen(dev_name) >= (userp->size / 2)) ||
+		(type != NULL && strlen(type) >= (userp->size / 2)) ||
+		(data_page != NULL && strlen(data_page) >= (userp->size / 2))) {
 		qtfs_err("mount str len is too big dirname:%lu devname:%lu type:%lu data:%lu",
-				strlen(dir_name), strlen(dev_name), strlen(type), strlen(data_page));
+				strlen(dir_name), (dev_name == NULL) ? 0 : strlen(dev_name),
+				(type == NULL) ? 0 : strlen(type),
+				(data_page == NULL) ? 0 : strlen(data_page));
 		rsp->errno = -EINVAL;
 		goto end;
 	}
 	udir_name = userp->userp;
-	udev_name = udir_name + userp->size / 2;
-	utype = userp->userp2;
-	udata = utype + userp->size / 2;
+	udev_name = (dev_name == NULL) ? NULL : ((char *)userp->userp + userp->size / 2);
+	utype = (type == NULL) ? NULL : userp->userp2;
+	udata = (data_page == NULL) ? NULL : ((char *)userp->userp + userp->size / 2);
+
 	qtfs_info("udir name:%lx udev name:%lx utype:%lx udata:%lx",
 			(unsigned long)udir_name, (unsigned long)udev_name, (unsigned long)utype, (unsigned long)udata);
 	if (copy_to_user(udir_name, dir_name, strlen(dir_name) + 1) ||
-		copy_to_user(udev_name, dev_name, strlen(dev_name) + 1) ||
-		copy_to_user(utype, type, strlen(type) + 1) ||
+		(dev_name != NULL && copy_to_user(udev_name, dev_name, strlen(dev_name) + 1)) ||
+		(type != NULL && copy_to_user(utype, type, strlen(type) + 1)) ||
 		(data_page != NULL && copy_to_user(udata, data_page, strlen(data_page) + 1))) {
 		qtfs_err("syscall mount failed to copy to user");
 		rsp->errno = -ENOMEM;
@@ -1067,7 +1073,7 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	qtfs_info("handle umount path:%s\n", req->buf);
-	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1) <= 0) {
+	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1)) {
 		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
 	}
