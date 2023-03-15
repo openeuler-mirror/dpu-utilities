@@ -1,6 +1,7 @@
 #ifndef __QTFS_SYMBOL_WRAPPER_H__
 #define __QTFS_SYMBOL_WRAPPER_H__
 
+#include <linux/version.h>
 typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 extern kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
 
@@ -8,7 +9,9 @@ struct qtfs_kallsyms {
 	unsigned long **sys_call_table;
 
 	char *(*d_absolute_path)(const struct path *, char *, int);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 10, 0))
 	int (*__close_fd)(struct files_struct *, int);
+#endif
 	struct task_struct *(*find_get_task_by_vpid)(pid_t nr);
 };
 

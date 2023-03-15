@@ -15,6 +15,10 @@
 #include <linux/kernel.h>
 #include <linux/uio.h>
 #include <linux/blkdev.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
+#include <linux/fdtable.h>
+#endif
 
 #include "conn.h"
 #include "qtfs-server.h"
@@ -287,8 +291,11 @@ int handle_close(struct qtserver_arg *arg)
 		rsp->ret = QTFS_ERR;
 		return sizeof(struct qtrsp_close);
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0))
 	rsp->ret = qtfs_kern_syms.__close_fd(current->files, req->fd);
+#else
+	rsp->ret = close_fd(req->fd);
+#endif
 	qtfs_info("handle close file, fd:%d ret:%d", req->fd, rsp->ret);
 	return sizeof(struct qtrsp_close);
 }
@@ -350,10 +357,14 @@ static int handle_readiter(struct qtserver_arg *arg)
 		} else {
 				struct kiocb kiocb;
 				struct iov_iter iter;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+				iov_iter_ubuf(&iter, READ, userp->userp, readsize);
+#else
 				struct iovec iov = { .iov_base = userp->userp, .iov_len = readsize};
+				iov_iter_init(&iter, READ, &iov, 1, readsize);
+#endif
 				init_sync_kiocb(&kiocb, file);
 				kiocb.ki_pos = req->pos;
-				iov_iter_init(&iter, READ, &iov, 1, iov.iov_len);
 				ret = call_read_iter(file, &kiocb, &iter);
 				req->pos = kiocb.ki_pos;
 		}
@@ -407,12 +418,12 @@ static int handle_write(struct qtserver_arg *arg)
         } else {
             rsp->ret = QTFS_ERR;
             rsp->len = -EINVAL;
-            return sizeof(struct qtrsp_write);
+            goto end;
         }
 		if (req->d.total_len % block_size != 0) {
 			rsp->ret = QTFS_ERR;
 			rsp->len = -EINVAL;
-			return sizeof(struct qtrsp_write);
+			goto end;
 		}
 		leftlen = block_size * (req->d.buflen / block_size);
 	} else {
@@ -448,12 +459,16 @@ static int handle_write(struct qtserver_arg *arg)
 		if (file->f_op->write) {
 			ret = file->f_op->write(file, userp->userp, len, &req->d.pos);
 		} else {
-			struct iovec iov = { .iov_base = (void __user *)userp->userp, .iov_len = len };
 			struct kiocb kiocb;
 			struct iov_iter iter;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+			iov_iter_ubuf(&iter, WRITE, userp->userp, len);
+#else
+			struct iovec iov = { .iov_base = (void __user *)userp->userp, .iov_len = len };
+			iov_iter_init(&iter, WRITE, &iov, 1, len);
+#endif
 			init_sync_kiocb(&kiocb, file);
 			kiocb.ki_pos = req->d.pos;
-			iov_iter_init(&iter, WRITE, &iov, 1, len);
 			ret = call_write_iter(file, &kiocb, &iter);
 			if (ret > 0) {
 				qtfs_err("call_write_iter:%d %d %d %d", ret, len, leftlen, block_size * (req->d.buflen / block_size));
@@ -500,9 +515,13 @@ static int handle_lookup(struct qtserver_arg *arg)
 	}
 	return sizeof(struct qtrsp_lookup);
 }
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+static bool qtfs_filldir(struct dir_context *ctx, const char *name, int namelen,
+		loff_t offset, u64 ino, unsigned int d_type)
+#else
 static int qtfs_filldir(struct dir_context *ctx, const char *name, int namelen,
 		loff_t offset, u64 ino, unsigned int d_type)
+#endif
 {
 	struct qtfs_dirent64 *dirent, *prev;
 	struct qtfs_getdents *buf = container_of(ctx, struct qtfs_getdents, ctx);
@@ -510,7 +529,11 @@ static int qtfs_filldir(struct dir_context *ctx, const char *name, int namelen,
 	int prev_reclen;
 
 	if (reclen > buf->count)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+		return false;
+#else
 		return -EINVAL;
+#endif
 
 	prev_reclen = buf->prev_reclen;
 	dirent = buf->dir;
@@ -525,7 +548,11 @@ static int qtfs_filldir(struct dir_context *ctx, const char *name, int namelen,
 	buf->dir = (void *)dirent + reclen;
 	buf->count -= reclen;
 	buf->vldcnt++;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	return true;
+#else
 	return 0;
+#endif
 }
 
 static int handle_readdir(struct qtserver_arg *arg)
@@ -712,7 +739,11 @@ static int handle_setattr(struct qtserver_arg *arg)
 	}
 
 	inode_lock(inode);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+	rsp->errno = notify_change(&init_user_ns, path.dentry, &req->attr, NULL);
+#else
 	rsp->errno = notify_change(path.dentry, &req->attr, NULL);
+#endif
 	if (rsp->errno < 0) {
 		rsp->ret = QTFS_ERR;
 		qtfs_err("handle setattr, path:<%s> failed with %d.\n", req->path, ret);
@@ -786,7 +817,11 @@ retry:
 		req->mode &= ~current_umask();
 	error = security_path_mknod(&path, dent, req->mode, req->dev);
 	if (!error)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+		error = vfs_mknod(&init_user_ns, path.dentry->d_inode, dent, req->mode, req->dev);
+#else
 		error = vfs_mknod(path.dentry->d_inode, dent, req->mode, req->dev);
+#endif
 	done_path_create(&path, dent);
 	if (error == -ESTALE && !(flags & LOOKUP_REVAL)) {
 		flags |= LOOKUP_REVAL;
@@ -870,8 +905,11 @@ retry:
 		qtfs_err("handle_symlink: newname(%s), oldname(%s) in kern_path_create %d\n", newname, oldname, error);
 		return sizeof(struct qtrsp_symlink);
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+	rsp->errno = vfs_symlink(&init_user_ns, path.dentry->d_inode, dentry, oldname);
+#else
 	rsp->errno = vfs_symlink(path.dentry->d_inode, dentry, oldname);
+#endif
 	done_path_create(&path, dentry);
 	if (rsp->errno == -ESTALE && !(lookup_flags & LOOKUP_REVAL)) {
 		lookup_flags |= LOOKUP_REVAL;
@@ -998,8 +1036,11 @@ int handle_xattrset(struct qtserver_arg *arg)
 		rsp->ret = QTFS_ERR;
 		goto err_handle;
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+	rsp->errno = vfs_setxattr(&init_user_ns, path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.size, req->d.flags);
+#else
 	rsp->errno = vfs_setxattr(path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.size, req->d.flags);
+#endif
 	qtfs_info("handle xattrset path:%s name:%s value:%s ret:%d size:%lu flags:%d", req->buf,
 					&req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], rsp->errno,
 					req->d.size, req->d.flags);
@@ -1039,8 +1080,11 @@ int handle_xattrget(struct qtserver_arg *arg)
 			goto err_handle;
 		}
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+	error = vfs_getxattr(&init_user_ns, path.dentry, req->d.prefix_name, kvalue, req->d.size);
+#else
 	error = vfs_getxattr(path.dentry, req->d.prefix_name, kvalue, req->d.size);
+#endif
 	path_put(&path);
 	if (error > 0) {
 		if (req->d.pos >= error) {
