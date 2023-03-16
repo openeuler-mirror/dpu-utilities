@@ -1,5 +1,6 @@
 #include <linux/time.h>
 #include <linux/xattr.h>
+#include <linux/version.h>
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -58,29 +59,53 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		    size_t size, int flags);
 
 static int
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+qtfs_xattr_user_set(const struct xattr_handler *handler,
+			struct user_namespace *mnt_userns,
+		    struct dentry *unused, struct inode *inode,
+		    const char *name, const void *value,
+		    size_t size, int flags)
+#else
 qtfs_xattr_user_set(const struct xattr_handler *handler,
 		    struct dentry *unused, struct inode *inode,
 		    const char *name, const void *value,
 		    size_t size, int flags)
+#endif
 
 {
 	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
 }
 
 static int
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+qtfs_xattr_trusted_set(const struct xattr_handler *handler,
+			struct user_namespace *mnt_userns,
+		    struct dentry *unused, struct inode *inode,
+		    const char *name, const void *value,
+		    size_t size, int flags)
+#else
 qtfs_xattr_trusted_set(const struct xattr_handler *handler,
 		    struct dentry *unused, struct inode *inode,
 		    const char *name, const void *value,
 		    size_t size, int flags)
+#endif
 {
 	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
 }
 
 static int
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+qtfs_xattr_security_set(const struct xattr_handler *handler,
+			struct user_namespace *mnt_userns,
+		    struct dentry *unused, struct inode *inode,
+		    const char *name, const void *value,
+		    size_t size, int flags)
+#else
 qtfs_xattr_security_set(const struct xattr_handler *handler,
 		    struct dentry *unused, struct inode *inode,
 		    const char *name, const void *value,
 		    size_t size, int flags)
+#endif
 {
 	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
 }
@@ -225,10 +250,18 @@ const struct xattr_handler qtfs_xattr_security_handler = {
 
 #ifndef KVER_4_19
 static int
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+qtfs_xattr_hurd_set(const struct xattr_handler *handler,
+			struct user_namespace *mnt_userns,
+		    struct dentry *unused, struct inode *inode,
+		    const char *name, const void *value,
+		    size_t size, int flags)
+#else
 qtfs_xattr_hurd_set(const struct xattr_handler *handler,
 		    struct dentry *unused, struct inode *inode,
 		    const char *name, const void *value,
 		    size_t size, int flags)
+#endif
 {
 	return qtfs_xattr_set(handler, unused, inode, name, value, size, flags);
 }

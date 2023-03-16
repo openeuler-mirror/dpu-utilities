@@ -1,5 +1,6 @@
 #include <linux/time.h>
 #include <linux/fs_struct.h>
+#include <linux/version.h>
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -10,7 +11,12 @@
 
 struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags);
 const char *qtfs_proc_getlink(struct dentry *dentry, struct inode *inode, struct delayed_call *done);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_proc_getattr(struct user_namespace *mnt_userns, const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags);
+#else
 int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags);
+#endif
 
 enum qtfs_type qtfs_get_type(char *str)
 {
@@ -213,7 +219,11 @@ link_local:
 	return link;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_proc_getattr(struct user_namespace *mnt_userns, const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags)
+#else
 int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags)
+#endif
 {
 	char *cpath = NULL, *tmp = NULL, *local_path = NULL;
 	struct path spath;
@@ -267,5 +277,9 @@ remote:
 		kfree(tmp);
 	if (local_path)
 		kfree(local_path);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+return qtfs_getattr(NULL, path, stat, req_mask, flags);
+#else
 	return qtfs_getattr(path, stat, req_mask, flags);
+#endif
 }

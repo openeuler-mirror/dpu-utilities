@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/ktime.h>
 #include <linux/kthread.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+#include <linux/sched/task.h>
+#endif
 #include "conn.h"
 
 #include "qtfs-mod.h"
@@ -116,7 +120,7 @@ connecting:
 		msleep(500);
 	}
 	if (pvar == NULL) {
-		do_exit(0);
+		goto end;
 	}
 	qtfs_info("qtfs epoll thread establish a new connection.");
 	req = qtfs_sock_msg_buf(pvar, QTFS_RECV);
@@ -172,7 +176,13 @@ connecting:
 			qtfs_err("conn send failed, ret:%d\n", ret);
 	}
 	qtfs_epoll_cut_conn(pvar);
+end:
+	g_qtfs_epoll_thread = NULL;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0))
+	return 0;
+#else
 	do_exit(0);
+#endif
 }
 
 struct file_operations qtfs_misc_fops = {

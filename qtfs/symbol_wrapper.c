@@ -4,6 +4,7 @@
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/kprobes.h>
+#include <linux/version.h>
 #include <asm/unistd.h>
 
 #include "conn.h"
@@ -95,8 +96,11 @@ void qtfs_kallsyms_hack_init(void)
 	KSYMS_NULL_RETURN(qtfs_kern_syms.d_absolute_path);
 	KSYMS(find_get_task_by_vpid, struct task_struct *(*)(pid_t nr));
 	KSYMS_NULL_RETURN(qtfs_kern_syms.find_get_task_by_vpid);
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0))
 	KSYMS(__close_fd, int (*)(struct files_struct *, int));
 	KSYMS_NULL_RETURN(qtfs_kern_syms.__close_fd);
+#endif
 
 #ifdef __aarch64__
 #pragma GCC diagnostic ignored "-Wint-conversion"

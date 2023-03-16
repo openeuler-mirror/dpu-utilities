@@ -4,6 +4,7 @@
 #include <linux/pagemap.h>
 #include <linux/mpage.h>
 #include <linux/wait.h>
+#include <linux/version.h>
 #include <asm-generic/ioctls.h>
 #include <asm-generic/termbits.h>
 
@@ -320,8 +321,8 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 		leftlen -= rsp->d.len;
 		kio->ki_pos += rsp->d.len;
 	} while (leftlen > 0 && rsp->d.end == 0);
-	qtfs_info("qtfs readiter over, leftlen:%lu, reqlen:%lu, fullname:<%s>, ino:%lu, pos:%lld, iovcnt:%lu(%lu)\n", leftlen,
-				req->len, kio->ki_filp->f_path.dentry->d_iname, kio->ki_filp->f_inode->i_ino, kio->ki_pos, iov_iter_count(iov), iov->iov->iov_len);
+	qtfs_info("qtfs readiter over, leftlen:%lu, reqlen:%lu, fullname:<%s>, ino:%lu, pos:%lld, iovcnt:%lu\n", leftlen,
+				req->len, kio->ki_filp->f_path.dentry->d_iname, kio->ki_filp->f_inode->i_ino, kio->ki_pos, iov_iter_count(iov));
 
 	qtfs_conn_put_param(pvar);
 	return allcnt - leftlen;
@@ -469,6 +470,14 @@ static vm_fault_t qtfs_vm_fault(struct vm_fault *vmf)
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+static vm_fault_t qtfs_map_pages(struct vm_fault *vmf,
+ 		pgoff_t start_pgoff, pgoff_t end_pgoff)
+ {
+ 	qtfs_info("qtfs map pages enter, pgoff:%lu start:%lu end:%lu.", vmf->pgoff, start_pgoff, end_pgoff);
+	return filemap_map_pages(vmf, start_pgoff, end_pgoff);
+ }
+#else
 static void qtfs_map_pages(struct vm_fault *vmf,
 		pgoff_t start_pgoff, pgoff_t end_pgoff)
 {
@@ -477,6 +486,7 @@ static void qtfs_map_pages(struct vm_fault *vmf,
 	filemap_map_pages(vmf, start_pgoff, end_pgoff);
 	return;
 }
+#endif
 
 static vm_fault_t qtfs_page_mkwrite(struct vm_fault *vmf)
 {
@@ -695,6 +705,16 @@ static int qtfs_readpage(struct file *file, struct page *page)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+static int qtfs_read_folio(struct file *file, struct folio *folio)
+{
+	struct page *page = &folio->page;
+	qtfs_readpage(file, page);
+
+	return 0;
+}
+#endif
+
 #ifndef KVER_4_19
 static struct page **qtfs_alloc_pages(unsigned int nr)
 {
@@ -747,22 +767,38 @@ static ssize_t qtfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
     return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+static bool qtfs_dirty_folio(struct address_space *mapping, struct folio *folio)
+{
+	qtfs_info("qtfs set page dirty.");
+	return filemap_dirty_folio(mapping, folio);
+}
+#else
 static int qtfs_setpagedirty(struct page *page)
 {
 	qtfs_info("qtfs set page dirty.");
 	__set_page_dirty_nobuffers(page);
 	return 0;
 }
+#endif
 
 static const struct address_space_operations qtfs_aops = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
+	.read_folio = qtfs_read_folio,
+#else
 	.readpage = qtfs_readpage,
+#endif
 #ifndef KVER_4_19
 	.readahead = qtfs_readahead,
 #endif
 	.writepage = qtfs_writepage,
 	.writepages = qtfs_writepages,
 	.direct_IO      = qtfs_direct_IO,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	.dirty_folio = qtfs_dirty_folio,
+#else
 	.set_page_dirty = qtfs_setpagedirty,
+#endif
 };
 
 int qtfs_new_entry(struct inode *inode, struct dentry *dentry)
@@ -782,7 +818,11 @@ int qtfs_new_entry(struct inode *inode, struct dentry *dentry)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_mkdir(struct user_namespace *mnt_userns, struct inode *dir, struct dentry *dentry, umode_t mode)
+#else
 int qtfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_mkdir *req = NULL;
@@ -817,7 +857,11 @@ int qtfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_create(struct user_namespace *mnt_userns, struct inode *dir, struct dentry *dentry, umode_t mode, bool excl)
+#else
 int qtfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_icreate *req;
@@ -857,7 +901,11 @@ int qtfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool exc
 	return ret ? ret : ret2;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_mknod(struct user_namespace *mnt_userns, struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
+#else
 int qtfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_mknod *req;
@@ -1117,7 +1165,11 @@ err_end:
 	return error;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_symlink(struct user_namespace *mnt_userns, struct inode *dir, struct dentry *dentry, const char *symname)
+#else
 int qtfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_symlink *req;
@@ -1162,7 +1214,11 @@ err_end:
 	return error;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_getattr(struct user_namespace *mnt_userns, const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags)
+#else
 int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsigned int flags)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_getattr *req;
@@ -1206,7 +1262,11 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry, struct iattr *attr)
+#else
 int qtfs_setattr(struct dentry *dentry, struct iattr *attr)
+#endif
 {
 	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_setattr *req;
@@ -1300,10 +1360,16 @@ const char *qtfs_getlink(struct dentry *dentry,
 	qtfs_conn_put_param(pvar);
 	return link;
 }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+int qtfs_rename(struct user_namespace *mnt_userns, struct inode *old_dir,
+					struct dentry *old_dentry, struct inode *new_dir,
+					struct dentry *new_dentry, unsigned int flags)
 
+#else
 int qtfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 					struct inode *new_dir, struct dentry *new_dentry,
 					unsigned int flags)
+#endif
 {
 	struct qtreq_rename *req;
 	struct qtrsp_rename *rsp;
@@ -1389,8 +1455,11 @@ static int qtfs_fill_super(struct super_block *sb, void *priv_data, int silent)
 
 	root_inode = new_inode(sb);
 	root_inode->i_ino = 1;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+	inode_init_owner(&init_user_ns, root_inode, NULL, mode);
+#else
 	inode_init_owner(root_inode, NULL, mode);
+#endif
 	root_inode->i_sb = sb;
 	if (priv->type == QTFS_PROC) {
 		qtfs_info("qtfs type: proc\n");
