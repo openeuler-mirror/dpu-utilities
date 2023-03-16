@@ -421,7 +421,7 @@ static int handle_write(struct qtserver_arg *arg)
 	pathbuf = __getname();
 	fullname = file_path(file, pathbuf, PATH_MAX);
 	if (!in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
-		kfree(pathbuf);
+		__putname(pathbuf);
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
 		goto end;
