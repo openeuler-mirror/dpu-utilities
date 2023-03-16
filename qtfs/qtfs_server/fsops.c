@@ -471,10 +471,9 @@ static int handle_write(struct qtserver_arg *arg)
 			kiocb.ki_pos = req->d.pos;
 			ret = call_write_iter(file, &kiocb, &iter);
 			if (ret > 0) {
-				qtfs_err("call_write_iter:%d %d %d %d", ret, len, leftlen, block_size * (req->d.buflen / block_size));
 				req->d.pos = kiocb.ki_pos;
 			} else {
-				qtfs_err("call_write_iter failed:%d %d %d %d", ret, len, leftlen, block_size * (req->d.buflen / block_size));
+				qtfs_err("call_write_iter failed:%d %d %d", ret, len, leftlen);
 			}
 		}
 		if (ret < 0) {
