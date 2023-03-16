@@ -18,6 +18,8 @@ static struct file_system_type qtfs_fs_type = {
 	.kill_sb	= qtfs_kill_sb,
 };
 MODULE_ALIAS_FS("qtfs");
+struct kmem_cache *qtfs_inode_priv_cache;
+struct task_struct *g_qtfs_epoll_thread = NULL;
 
 /*
  * 转发框架层：
@@ -190,8 +192,6 @@ struct file_operations qtfs_misc_fops = {
 	.unlocked_ioctl	= qtfs_misc_ioctl,
 };
 
-struct kmem_cache *qtfs_inode_priv_cache;
-struct task_struct *g_qtfs_epoll_thread = NULL;
 static int __init qtfs_init(void)
 {
 	int ret;
