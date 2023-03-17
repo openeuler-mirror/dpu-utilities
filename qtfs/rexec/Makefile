@@ -3,10 +3,10 @@ DEPGLIB=-lglib-2.0 -I../ -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include
 all: rexec rexec_server
 
 rexec :
-	gcc -O2 -g -o rexec rexec.c rexec_sock.c cJSON.c
+	gcc -O2 -g -o rexec rexec.c rexec_sock.c -ljson-c
 
 rexec_server :
-	gcc -O2 -g -o rexec_server rexec_server.c rexec_sock.c rexec_shim.c cJSON.c $(DEPGLIB)
+	gcc -O2 -g -o rexec_server rexec_server.c rexec_sock.c rexec_shim.c -ljson-c $(DEPGLIB)
 test:
 	go test -v ./common_test.go ./common.go
 

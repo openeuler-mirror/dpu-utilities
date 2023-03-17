@@ -20,7 +20,6 @@
 #include <stdbool.h>
 #include <glib.h>
 
-#include "cJSON.h"
 #include "rexec_sock.h"
 #include "rexec.h"
 
