@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/ioctl.h>
-#include "cJSON.h"
+#include <json-c/json_object.h>
 
 #include "dirent.h"
 #include "rexec.h"
@@ -76,34 +76,40 @@ void rshim_reg_file_open(int fd_target, char *path, int perm, int offset)
 
 void rshim_reg_file_resume(const char * const json_buf)
 {
-    const cJSON *files;
-    const cJSON *file;
-    const cJSON *fd;
-    const cJSON *path;
-    const cJSON *perm;
-    const cJSON *offset;
+    const struct json_object *obj_files;
+    const struct json_object *obj_file;
+    const struct json_object *obj_fd;
+    const struct json_object *obj_path;
+    const struct json_object *obj_perm;
+    const struct json_object *obj_offset;
+    int fd, perm, offset;
+    char *path = NULL;
     int curfd = 3; // begin from 3
-    cJSON *fd_json = cJSON_Parse(json_buf);
+    struct json_object *fd_json = json_tokener_parse(json_buf);
     if (fd_json == NULL)
     {
-        const char *error_ptr = cJSON_GetErrorPtr();
-        if (error_ptr != NULL)
-            fprintf(stderr, "Error before: %s\n", error_ptr);
+        fprintf(stderr, "parse json error\n");
         goto end;
     }
-    files = cJSON_GetObjectItemCaseSensitive(fd_json, "Files");
-    cJSON_ArrayForEach(file, files) {
-        fd = cJSON_GetObjectItemCaseSensitive(file, "Fd");
-        path = cJSON_GetObjectItemCaseSensitive(file, "Path");
-        perm = cJSON_GetObjectItemCaseSensitive(file, "Perm");
-        offset = cJSON_GetObjectItemCaseSensitive(file, "Offset");
+    obj_files = json_object_object_get(fd_json, "Files");
+    int arraylen = json_object_array_length(obj_files);
+    for (int i=0; i< arraylen; i++){
+        obj_file = json_object_array_get_idx(obj_files, i);
+        obj_fd = json_object_object_get(obj_file, "Fd");
+        fd = json_object_get_int(obj_fd);
+        obj_path = json_object_object_get(obj_file, "Path");
+        path = json_object_get_string(obj_path);
+        obj_perm = json_object_object_get(obj_file, "Perm");
+        perm = json_object_get_int(obj_perm);
+        obj_offset = json_object_object_get(obj_file, "Offset");
+        offset = json_object_get_int(obj_offset);
         rshim_log("Get file from json fd:%d path:%s perm:%d offset:%d",
-                fd->valueint, path->valuestring, perm->valueint, offset->valueint);
-        rshim_reg_file_open(fd->valueint, path->valuestring, perm->valueint, offset->valueint);
+                fd, path, perm, offset);
+        rshim_reg_file_open(fd, path, perm, offset);
     }
 
 end:
-    cJSON_Delete(fd_json);
+    json_object_put(fd_json);
     return;
 }
 

@@ -17,10 +17,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
+#include <json-c/json_object.h>
 
 #include "dirent.h"
 
-#include "cJSON.h"
 #include "rexec_sock.h"
 #include "rexec.h"
 
@@ -329,13 +329,14 @@ static int rexec_get_fdinfo(struct dirent *fdentry, struct rexec_fdinfo *fdinfo)
 // 内容是本进程所有REG类型文件的信息
 static char *rexec_get_fds_jsonstr()
 {
-    cJSON *root = cJSON_CreateObject();
+    struct json_object *root = json_object_new_object();
     char *json_str;
+    int len;
     DIR *fddir = NULL;
     struct dirent *fdentry;
     struct rexec_fdinfo *fdinfo;
     if (root == NULL) {
-        rexec_err("create cjson root failed.");
+        rexec_err("create json-c root failed.");
         return NULL;
     }
     fdinfo = (struct rexec_fdinfo *)malloc(sizeof(struct rexec_fdinfo));
@@ -351,33 +352,32 @@ static char *rexec_get_fds_jsonstr()
         return NULL;
     }
 
-    cJSON *files_arr = cJSON_CreateArray();
+    struct json_object *files_arr = json_object_new_array();
 
     while (fdentry = readdir(fddir)) {
-        cJSON *fd_obj = cJSON_CreateObject();
-        cJSON *item = NULL;
+        struct json_object *fd_obj = json_object_new_object();
+        struct json_object *item = NULL;
 
         memset(fdinfo, 0, sizeof(struct rexec_fdinfo));
         if (rexec_get_fdinfo(fdentry, fdinfo) != 0)
             continue;
-        item = cJSON_CreateNumber(fdinfo->fd);
-        cJSON_AddItemToObject(fd_obj, "Fd", item);
-        item = cJSON_CreateString(fdinfo->path);
-        cJSON_AddItemToObject(fd_obj, "Path", item);
-        item = cJSON_CreateNumber(fdinfo->perm);
-        cJSON_AddItemToObject(fd_obj, "Perm", item);
-        item = cJSON_CreateNumber(fdinfo->offset);
-        cJSON_AddItemToObject(fd_obj, "Offset", item);
+        item = json_object_new_int(fdinfo->fd);
+        json_object_object_add(fd_obj, "Fd", item);
+        item = json_object_new_string(fdinfo->path);
+        json_object_object_add(fd_obj, "Path", item);
+        item = json_object_new_int(fdinfo->perm);
+        json_object_object_add(fd_obj, "Perm", item);
+        item = json_object_new_int(fdinfo->offset);
+        json_object_object_add(fd_obj, "Offset", item);
 
-        cJSON_AddItemToArray(files_arr, fd_obj);
+        json_object_array_add(files_arr, fd_obj);
     }
     closedir(fddir);
     free(fdinfo);
 
-    cJSON_AddItemToObject(root, "Files", files_arr);
-    json_str = cJSON_Print(root);
-
-    cJSON_Delete(root);
+    json_object_object_add(root, "Files", files_arr);
+    json_str = strdup(json_object_get_string(root));
+    json_object_put(root);
 
     return json_str;
 }
