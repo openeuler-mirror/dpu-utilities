@@ -21,7 +21,7 @@
 #include <glib.h>
 #include <sys/resource.h>
 
-#include "../comm.h"
+#include "comm.h"
 #include "uds_main.h"
 #include "uds_event.h"
 
