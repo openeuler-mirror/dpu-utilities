@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #include <linux/ktime.h>
 #include <linux/kthread.h>
 #include <linux/version.h>

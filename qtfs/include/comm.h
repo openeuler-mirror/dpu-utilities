@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #ifndef __QTFS_SERVER_COMM_H__
 #define __QTFS_SERVER_COMM_H__
 
