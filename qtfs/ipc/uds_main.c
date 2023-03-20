@@ -1,3 +1,18 @@
+/******************************************************************************
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023. All rights reserved.
+ * qtfs licensed under the Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ * http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+ * PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ * Author: Liqiang
+ * Create: 2023-03-20
+ * Description: 
+ *******************************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -21,7 +36,7 @@
 #include <glib.h>
 #include <sys/resource.h>
 
-#include "../comm.h"
+#include "comm.h"
 #include "uds_main.h"
 #include "uds_event.h"
 

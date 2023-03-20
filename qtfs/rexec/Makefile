@@ -1,4 +1,4 @@
-DEPGLIB=-lglib-2.0 -I../ -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include
+DEPGLIB=-lglib-2.0 -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include
 
 all: rexec rexec_server
 

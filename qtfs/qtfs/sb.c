@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #include <linux/time.h>
 #include <linux/fs_struct.h>
 #include <linux/statfs.h>

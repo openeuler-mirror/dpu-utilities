@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #include <linux/compiler_types.h>
 #include <linux/syscalls.h>
 #include <linux/trace_events.h>

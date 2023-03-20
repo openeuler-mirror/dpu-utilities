@@ -1,8 +1,10 @@
-ccflags-y += -I$(src)/../ -I$(src)/../utils/ -I$(src) -DQTFS_CLIENT
+ccflags-y += -I$(src)/../ -I$(src)/../utils/ -I$(src)/../include/ -I$(src) -DQTFS_CLIENT
 KBUILD=/lib/modules/$(shell uname -r)/build/
+COMM=../qtfs_common/
+COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o
 
 obj-m:=qtfs.o
-qtfs-objs:=qtfs-mod.o sb.o syscall.o ../conn.o xattr.o proc.o ../misc.o miss.o ../symbol_wrapper.o ../utils/utils.o
+qtfs-objs:=qtfs-mod.o sb.o syscall.o xattr.o proc.o miss.o $(COMMO) ../utils/utils.o
 
 all: qtfs
 
