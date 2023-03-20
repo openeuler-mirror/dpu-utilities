@@ -22,6 +22,7 @@
 #include <time.h>
 #include <sys/ioctl.h>
 #include <json-c/json_object.h>
+#include <json-c/json_tokener.h>
 
 #include "dirent.h"
 #include "rexec.h"
@@ -62,7 +63,7 @@ int rshim_get_file_size(char *file)
     return size;
 }
 
-void rshim_reg_file_open(int fd_target, char *path, int perm, int offset)
+void rshim_reg_file_open(int fd_target, const char *path, int perm, int offset)
 {
     int fd = open(path, perm);
     int fd2 = -1;
@@ -91,14 +92,14 @@ void rshim_reg_file_open(int fd_target, char *path, int perm, int offset)
 
 void rshim_reg_file_resume(const char * const json_buf)
 {
-    const struct json_object *obj_files;
-    const struct json_object *obj_file;
-    const struct json_object *obj_fd;
-    const struct json_object *obj_path;
-    const struct json_object *obj_perm;
-    const struct json_object *obj_offset;
+    struct json_object *obj_files;
+    struct json_object *obj_file;
+    struct json_object *obj_fd;
+    struct json_object *obj_path;
+    struct json_object *obj_perm;
+    struct json_object *obj_offset;
     int fd, perm, offset;
-    char *path = NULL;
+    const char *path = NULL;
     int curfd = 3; // begin from 3
     struct json_object *fd_json = json_tokener_parse(json_buf);
     if (fd_json == NULL)
