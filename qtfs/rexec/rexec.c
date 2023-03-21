@@ -122,7 +122,7 @@ static int rexec_conn_msg(int connfd, int *exit_status, int *pidfd)
                 return 0;
             }
             sprintf(path, "%s/%d", REXEC_PIDMAP_PATH, mypid);
-            fd = open(path, O_CREAT|O_WRONLY);
+            fd = open(path, O_CREAT|O_WRONLY, 0600);
             if (fd < 0) {
                 rexec_err("Rexec create pidmap:%d-%d failed, path:%s open failed:%d",
                             mypid, peerpid, path, fd);
