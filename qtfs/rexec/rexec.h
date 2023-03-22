@@ -36,6 +36,7 @@ enum {
 
 // rexec client与server之间建联的sock文件路径
 #define REXEC_UDS_CONN "/var/run/rexec/rexec_uds.sock"
+#define REXEC_RUN_PATH    "/var/run/rexec/"
 
 enum rexec_msgtype {
     REXEC_EXEC = 0x5a5a,    // exec process

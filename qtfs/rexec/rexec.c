@@ -42,7 +42,6 @@
 #define REXEC_MSG_LEN 1024
 FILE *rexec_logfile = NULL;
 
-#define REXEC_RUN_PATH    "/var/run/rexec/"
 #define REXEC_PIDMAP_PATH "/var/run/rexec/pids"
 
 static int rexec_conn_to_server()

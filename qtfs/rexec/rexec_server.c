@@ -522,6 +522,9 @@ int main(int argc, char *argv[])
     if (rexec_whitelist_build(&rexec_wl) != 0) {
         return -1;
     }
+    if (access(REXEC_RUN_PATH, F_OK) != 0) {
+        mkdir(REXEC_RUN_PATH, 0755);
+    }
     if (rexec_pid_hashmap_init(&child_hash) != 0)
         return -1;
     rexec_server_mainloop();
