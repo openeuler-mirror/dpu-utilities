@@ -2,7 +2,7 @@
 | ---- | --------- | ---- | ------------------------------------------------------------ |
 | V1.0 | 2022/12/5 | 李强 | 创建文档                                                     |
 | V1.1 | 2023/2/6  | 李强 | 增加uds proxy组件部署介绍；增加rexec组件部署介绍；修改libvirt相关描述，适配uds proxy组件。 |
-
+| V1.2 | 2023/3/22 | 李强 | rexec重构后，更新rexec组件部署说明。                           |
 
 
 # **1** 硬件准备
@@ -72,32 +72,26 @@ peer port: 对端port
 
 ### 3.3.1 简介
 
-rexec是一个用go语言开发的远程执行组件，分为rexec client和rexec server。server端为一个常驻服务进程，client端为一个二进制文件，client端被执行后会根据配置或环境变量与server端连接，并由server常驻进程在server端拉起指定程序。在libvirt虚拟化卸载中，libvirtd卸载到DPU上，当它需要在HOST拉起虚拟机qemu进程时调起rexec client进行远程拉起。
+rexec是一个用c语言开发的远程执行组件，分为rexec client和rexec server。server端为一个常驻服务进程，client端为一个二进制文件，client端被执行后会基于udsproxyd服务与server端建立uds连接，并由server常驻进程在server端拉起指定程序。在libvirt虚拟化卸载中，libvirtd卸载到DPU上，当它需要在HOST拉起虚拟机qemu进程时调起rexec client进行远程拉起。
 
 
 ### 3.3.2 部署方法
 
 #### 3.3.2.1 配置环境变量与白名单
 
-在dpu侧配置rexec client配置文件，将下面的client.json中”Ipaddr”字段修改为host地址放在/etc/rexec/目录下：[client.json](./config/client.json)
-
-并修改权限为只读：
+在host侧配置rexec server的白名单，将文件whitelist放置在/etc/rexec/目录下： [whitelist](./config/whitelist)。并修改权限为只读：
 
 ```
-chmod 400 /etc/rexec/client.json。
-```
-
-
-在host侧配置rexec server的配置文件与白名单，将以下两个文件server.json、whitelist放置在/etc/rexec/目录下：[server.json](./config/server.json), [whitelist](./config/whitelist)。并修改权限为只读：
-
-```
-chmod 400 /etc/rexec/server.json
-
 chmod 400 /etc/rexec/whitelist。
 ```
+如果想仅用于测试，可以不进行白名单配置，删除此文件重启rexec_server进程后则没有白名单限制。
 
+下载dpu-utilities代码后，进入qtfs/rexec主目录下，执行：`make && make install`即可安装rexec所需全部二进制到/usr/bin目录下，包括了：`rexec、rexec_server`两个二进制可执行文件。
 
-下载dpu-utilities代码后，进入qtfs/rexec主目录下，执行：`make && make install`即可安装rexec所需全部二进制到/usr/bin目录下，包括了：`rexec、rexec_server、rexec_shim`三个二进制可执行文件。
+在server端启动rexec_server服务之前，检查是否存在/var/run/rexec目录，没有则创建：
+```
+mkdir /var/run/rexec
+```
 
 server端可以通过两种方式拉起rexec_server服务：
 
