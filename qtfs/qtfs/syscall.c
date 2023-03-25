@@ -219,26 +219,6 @@ __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 	return qtfs_syscall_umount(name, flags);
 }
 
-#ifdef __x86_64__
-// make the page writable
-int make_rw(unsigned long address)
-{
-	unsigned int level;
-	pte_t *pte = lookup_address(address, &level);
-	pte->pte |= _PAGE_RW;
-	return 0;
-}
-
-// make the page write protected
-int make_ro(unsigned long address)
-{
-	unsigned int level;
-	pte_t *pte = lookup_address(address, &level);
-	pte->pte &= ~_PAGE_RW;
-	return 0;
-}
-#endif
-
 int qtfs_dir_to_qtdir(char *dir, char *qtdir)
 {
 	int ret = 0;
@@ -464,10 +444,6 @@ int qtfs_syscall_init(void)
 	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
 #endif
 #ifdef __aarch64__
-	update_mapping_prot = (void *)qtfs_kallsyms_lookup_name("update_mapping_prot");
-	start_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__start_rodata");
-	end_rodata= (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
-
 	// disable write protection
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)__arm64_sys_qtfs_mount;

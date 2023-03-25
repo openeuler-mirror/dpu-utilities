@@ -395,6 +395,69 @@ void qtinfo_opt_s()
 
 }
 
+#define PATH_MAX 4096
+void qtinfo_opt_x(int fd, char *path)
+{
+	int ret;
+	int index = 0;
+	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
+	if (item == NULL) {
+		qtinfo_err("malloc failed");
+		return;
+	}
+	memset(item, 0, PATH_MAX);
+	item->len = strlen(path);
+	if (item->len > PATH_MAX - sizeof(struct qtsock_whitelist)) {
+		qtinfo_err("item len:%d str:%s error", item->len, path);
+		free(item);
+		return;
+	}
+	memcpy(item->data, path, item->len);
+	ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_ADD, item);
+	if (ret != QTOK) {
+		qtinfo_err("ioctl add white list failed");
+	} else {
+		qtinfo_out("successed to add white list item:%s successed", path);
+	}
+	free(item);
+	return;
+}
+
+void qtinfo_opt_y(int fd, char *index)
+{
+	int idx = atoi(index);
+	int ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_DEL, &idx);
+	if (ret != QTOK) {
+		qtinfo_err("failed to delete white list index:%d", idx);
+	} else {
+		qtinfo_out("successed to delete white list index:%d", idx);
+	}
+	return;
+}
+
+void qtinfo_opt_z(int fd)
+{
+	int ret;
+	int index = 0;
+	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
+	if (item == NULL) {
+		qtinfo_err("malloc failed");
+		return;
+	}
+	qtinfo_out("Get remote uds white list:");
+	while (index < QTSOCK_WL_MAX_NUM) {
+		memset(item, 0, PATH_MAX);
+		item->len = index;
+		ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_GET, item);
+		if (ret != QTOK)
+			break;
+		qtinfo_out("  [index:%d][path:%s]", index, item->data);
+		index++;
+	}
+	free(item);
+	return;
+}
+
 static void qtinfo_help(char *exec)
 {
 	qtinfo_out("Usage: %s [OPTION].", exec);
@@ -406,6 +469,9 @@ static void qtinfo_help(char *exec)
 	qtinfo_out("  -p, Epoll support file mode(1: any files; 0: only fifo).");
 	qtinfo_out("  -u, Display unix socket proxy diagnostic info");
 	qtinfo_out("  -s, Set unix socket proxy log level(Increase by 1 each time)");
+	qtinfo_out("  -x, Add a uds white list path(example: -x /home/)");
+	qtinfo_out("  -y, Delete a uds white list with index(example: -y 1)");
+	qtinfo_out("  -z, Get all uds white list");
 }
 
 int main(int argc, char *argv[])
@@ -416,9 +482,8 @@ int main(int argc, char *argv[])
 	int fd = open(QTFS_DEV_NAME, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
-		return 0;
 	}
-	while ((ch = getopt(argc, argv, "acl:tp:us")) != -1) {
+	while ((ch = getopt(argc, argv, "acl:tp:usx:y:z")) != -1) {
 		switch (ch) {
 			case 'a':
 				qtinfo_opt_a(fd);
@@ -440,6 +505,15 @@ int main(int argc, char *argv[])
 				break;
 			case 's':
 				qtinfo_opt_s();
+				break;
+			case 'x':
+				qtinfo_opt_x(fd, optarg);
+				break;
+			case 'y':
+				qtinfo_opt_y(fd, optarg);
+				break;
+			case 'z':
+				qtinfo_opt_z(fd);
 				break;
 			default:
 				qtinfo_help(argv[0]);

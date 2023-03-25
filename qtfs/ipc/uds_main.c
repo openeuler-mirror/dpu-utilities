@@ -35,6 +35,7 @@
 #include <dirent.h>
 #include <glib.h>
 #include <sys/resource.h>
+#include <sys/prctl.h>
 
 #include "comm.h"
 #include "uds_main.h"
@@ -360,6 +361,8 @@ void uds_thread_diag_init(struct uds_thread_info *info)
 void *uds_proxy_thread(void *arg)
 {
 	struct uds_thread_arg *parg = (struct uds_thread_arg *)arg;
+	// set thread name to "udsproxyd"
+	prctl(PR_SET_NAME, (unsigned long)"udsproxyd");
 	uds_thread_diag_init(&parg->info);
 	uds_main_loop(parg->efd, parg);
 	return NULL;
@@ -467,42 +470,6 @@ end:
 	return;
 }
 
-int uds_set_pid()
-{
-	int fd = -1;
-	if (access(QTFS_CLIENT_DEV, 0) == 0) {
-		fd = open(QTFS_CLIENT_DEV, O_RDONLY | O_NONBLOCK);
-		if (fd < 0)
-			goto open_failed;
-		goto set;
-	}
-	if (access(QTFS_SERVER_DEV, 0) == 0) {
-		fd = open(QTFS_SERVER_DEV, O_RDONLY | O_NONBLOCK);
-		if (fd < 0)
-			goto open_failed;
-		goto set;
-	}
-	uds_err("qtfs dev(<%s> or <%s>) both not exist", QTFS_CLIENT_DEV, QTFS_SERVER_DEV);
-	return EVENT_ERR;
-
-open_failed:
-	uds_err("open %s failed, ret:%d", QTFS_CLIENT_DEV, fd);
-	return EVENT_ERR;
-
-set:
-	do {
-		int pid = getpid();
-		int ret = ioctl(fd, QTFS_IOCTL_UDS_PROXY_PID, &pid);
-		if (ret < 0) {
-			uds_err("ioctl failed to set pid:%d ret:%d", pid, ret);
-			return EVENT_ERR;
-		}
-		uds_log("set proxy pid:%d to qtfs successed.", pid);
-	} while (0);
-	close(fd);
-	return EVENT_OK;
-}
-
 int uds_env_prepare()
 {
 	DIR *dir;
@@ -606,10 +573,6 @@ int main(int argc, char *argv[])
 #define ARG_NUM 6
 	if (argc != ARG_NUM) {
 		uds_helpinfo(argv);
-		return -1;
-	}
-	if (uds_set_pid() != EVENT_OK) {
-		uds_err("proxy failed to set pid.");
 		return -1;
 	}
 	if (uds_env_prepare() != EVENT_OK) {

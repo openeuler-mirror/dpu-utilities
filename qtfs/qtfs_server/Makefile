@@ -1,4 +1,4 @@
-ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../include/ -DQTFS_SERVER
+ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../ipc/ -I$(src)/../include/ -DQTFS_SERVER
 KBUILD=/lib/modules/$(shell uname -r)/build/
 COMM=../qtfs_common/
 COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o

@@ -239,7 +239,9 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_CLEARALL:
 		case QTFS_IOCTL_LOGLEVEL:
-		case QTFS_IOCTL_UDS_PROXY_PID:
+		case QTFS_IOCTL_QTSOCK_WL_ADD:
+		case QTFS_IOCTL_QTSOCK_WL_DEL:
+		case QTFS_IOCTL_QTSOCK_WL_GET:
 			ret = qtfs_misc_ioctl(file, cmd, arg);
 			break;
 		default:
@@ -270,7 +272,9 @@ static int __init qtfs_server_init(void)
 		memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
 	qtfs_conn_param_init();
 	qtfs_kallsyms_hack_init();
+	qtfs_syscall_replace_start();
 	qtfs_misc_register();
+	qtfs_uds_remote_init();
 	return 0;
 }
 
@@ -306,6 +310,8 @@ static void __exit qtfs_server_exit(void)
 		}
 	}
 	qtfs_misc_destroy();
+	qtfs_uds_remote_exit();
+	qtfs_syscall_replace_stop();
 	qtfs_info("qtfs server exit done.\n");
 	return;
 }

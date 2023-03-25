@@ -1,4 +1,4 @@
-ccflags-y += -I$(src)/../ -I$(src)/../utils/ -I$(src)/../include/ -I$(src) -DQTFS_CLIENT
+ccflags-y += -I$(src)/../ -I$(src)/../utils/ -I$(src)/../include/ -I$(src)/../ipc/ -I$(src) -DQTFS_CLIENT
 KBUILD=/lib/modules/$(shell uname -r)/build/
 COMM=../qtfs_common/
 COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o
