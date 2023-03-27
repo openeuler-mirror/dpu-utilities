@@ -25,10 +25,40 @@ enum {
 	SYMBOL_SYSCALL_MOUNT,
 	SYMBOL_SYSCALL_UMOUNT,
 	SYMBOL_SYSCALL_EPOLL_CTL,
+	SYMBOL_SYSCALL_CONNECT,
 	SYMBOL_MAX_NUM,
 };
-extern unsigned long *symbols_origin[SYMBOL_MAX_NUM];
 #endif
+#ifdef QTFS_SERVER
+enum {
+	SYMBOL_SYSCALL_CONNECT,
+	SYMBOL_MAX_NUM,
+};
+#endif
+extern unsigned long *symbols_origin[SYMBOL_MAX_NUM];
+
+#ifdef __x86_64__
+// make the page writeable
+static inline int make_rw(unsigned long address)
+{
+	unsigned int level;
+	pte_t *pte = lookup_address(address, &level);
+	pte->pte |= _PAGE_RW;
+	return 0;
+}
+
+// make the page write protected
+static inline int make_ro(unsigned long address)
+{
+	unsigned int level;
+	pte_t *pte = lookup_address(address, &level);
+	pte->pte &= ~_PAGE_RW;
+	return 0;
+}
+#endif
+
+int qtfs_syscall_replace_start(void);
+void qtfs_syscall_replace_stop(void);
 
 noinline long qtfs_syscall_umount(char __user *name, int flags);
 noinline long qtfs_syscall_mount(char __user *dev_name, char __user *dir_name,
@@ -54,5 +84,6 @@ noinline off_t qtfs_syscall_lseek(unsigned int fd, off_t offset, unsigned int wh
 long qtfs_syscall_kill(pid_t pid, int sig);
 long qtfs_syscall_sched_getaffinity(pid_t pid, unsigned int len, unsigned long __user *user_mask_ptr);
 long qtfs_syscall_sched_setaffinity(pid_t pid, unsigned int len, unsigned long __user *user_mask_ptr);
+long qtfs_syscall_connect(int fd, struct sockaddr __user *uservaddr, int addrlen);
 #endif
 

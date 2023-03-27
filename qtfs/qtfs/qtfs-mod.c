@@ -225,9 +225,11 @@ static int __init qtfs_init(void)
 
 	qtfs_misc_register();
 	qtfs_kallsyms_hack_init();
+	qtfs_syscall_replace_start();
 	qtfs_conn_param_init();
 	qtfs_syscall_init();
 	qtfs_utils_register();
+	qtfs_uds_remote_init();
 	qtfs_info("QTFS file system register success!\n");
 	return 0;
 }
@@ -264,6 +266,8 @@ static void __exit qtfs_exit(void)
 	}
 	qtfs_utils_destroy();
 	kmem_cache_destroy(qtfs_inode_priv_cache);
+	qtfs_uds_remote_exit();
+	qtfs_syscall_replace_stop();
 	qtfs_info("QTFS file system unregister success!\n");
 	return;
 }

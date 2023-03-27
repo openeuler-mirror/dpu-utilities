@@ -28,8 +28,7 @@ extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
 extern int log_level;
 extern struct qtinfo *qtfs_diag_info;
 extern bool qtfs_epoll_mode;
-extern int qtfs_uds_proxy_pid;
-
+extern struct qtsock_wl_stru qtsock_wl;
 #define qtfs_conn_get_param(void) _qtfs_conn_get_param(__func__)
 
 static inline bool err_ptr(void *ptr)
@@ -100,6 +99,12 @@ struct qtfs_conn_var_s {
 	int len_send;
 };
 
+struct qtsock_wl_stru {
+	int nums;
+	char **wl;
+	rwlock_t rwlock;
+};
+
 static inline bool qtfs_sock_connected(struct qtfs_sock_var_s *pvar)
 {
 	struct socket *sock = pvar->client_sock;
@@ -139,5 +144,10 @@ int qtfs_sm_exit(struct qtfs_sock_var_s *pvar);
 
 void qtfs_kallsyms_hack_init(void);
 void qtfs_conn_list_cnt(void);
+
+int qtfs_uds_remote_init(void);
+void qtfs_uds_remote_exit(void);
+
+int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len);
 
 #endif

@@ -473,7 +473,8 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	}
 	close(scmfd);
 	p_msg->msgtype = MSG_SCM_RIGHTS;
-	ret = write(tcpfd, p_msg, sizeof(struct uds_tcp2tcp) + sizeof(struct uds_msg_scmrights));
+	p_msg->msglen = sizeof(struct uds_msg_scmrights) - sizeof(p_scmr->path) + strlen(p_scmr->path) + 1;
+	ret = write(tcpfd, p_msg, sizeof(struct uds_tcp2tcp) + p_msg->msglen);
 	if (ret <= 0) {
 		uds_err("send scm rights msg to tcp failed, ret:%d", ret);
 		return EVENT_ERR;
@@ -623,7 +624,7 @@ static int uds_msg_cmsg2uds(struct uds_tcp2tcp *msg, struct uds_event *evt)
 		case MSG_SCM_RIGHTS: {
 			struct uds_msg_scmrights *p_scmr = (struct uds_msg_scmrights *)&msg->data;
 			int ret;
-			int scmfd = open(p_scmr->path, p_scmr->flags);
+			scmfd = open(p_scmr->path, p_scmr->flags);
 			if (scmfd < 0) {
 				uds_err("scm rights send fd failed, scmfd:%d path:%s flags:%d", scmfd, p_scmr->path, p_scmr->flags);
 				return -1;

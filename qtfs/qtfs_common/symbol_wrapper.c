@@ -12,6 +12,8 @@
 #include "conn.h"
 #include "symbol_wrapper.h"
 
+unsigned long *symbols_origin[SYMBOL_MAX_NUM];
+
 static struct kprobe kp = {
 	.symbol_name = "kallsyms_lookup_name"
 };
@@ -41,6 +43,10 @@ struct pt_regs;
 	regs->r9 = (unsigned long)x6;
 #endif
 #ifdef __aarch64__
+void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
+unsigned long start_rodata, end_rodata;
+#define section_size (end_rodata - start_rodata)
+
 // symbols not finded in sys call table
 enum qtfs_sym_a64 {
 	A64_NR_UNLINK = 0,
@@ -105,6 +111,10 @@ void qtfs_kallsyms_hack_init(void)
 #endif
 
 #ifdef __aarch64__
+	update_mapping_prot = (void *)qtfs_kallsyms_lookup_name("update_mapping_prot");
+	start_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__start_rodata");
+	end_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
+
 #pragma GCC diagnostic ignored "-Wint-conversion"
 	symbols_a64[A64_NR_UNLINK] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_unlink");
 	KSYMS_NULL_RETURN(symbols_a64[A64_NR_UNLINK]);
@@ -121,11 +131,47 @@ void qtfs_kallsyms_hack_init(void)
 	return;
 }
 
+__SYSCALL_DEFINEx(3, _qtfs_connect, int, fd, struct sockaddr __user *, uservaddr, int, addrlen)
+{
+	return qtfs_uds_remote_connect_user(fd, uservaddr, addrlen);
+}
+
+int qtfs_syscall_replace_start(void)
+{
+	symbols_origin[SYMBOL_SYSCALL_CONNECT] = qtfs_kern_syms.sys_call_table[__NR_connect];
+#ifdef __x86_64__
+	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)__x64_sys_qtfs_connect;
+	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
+#endif
+
+#ifdef __aarch64__
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)__arm64_sys_qtfs_connect;
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
+#endif
+	return 0;
+}
+
+void qtfs_syscall_replace_stop(void)
+{
+#ifdef __x86_64__
+	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_CONNECT];
+	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
+#endif
+
+#ifdef __aarch64__
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_CONNECT];
+	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
+#endif
+	return;
+}
+
 #define SYSCALL_TYPE (long (*)(const struct pt_regs *))
 
-#ifdef QTFS_CLIENT
-unsigned long *symbols_origin[SYMBOL_MAX_NUM];
-#define WRAPPER_DEFINE_CLIENT(nargs, ret, func, nr)\
+#define WRAPPER_DEFINE_BYORIGIN(nargs, ret, func, nr)\
 	noinline ret func\
 	{\
 		struct pt_regs _regs;\
@@ -135,10 +181,12 @@ unsigned long *symbols_origin[SYMBOL_MAX_NUM];
 		retval = (SYSCALL_TYPE symbols_origin[nr])(regs);\
 		return retval;\
 	}
-WRAPPER_DEFINE_CLIENT(2, long, qtfs_syscall_umount(char __user *x1, int x2), SYMBOL_SYSCALL_UMOUNT);
-WRAPPER_DEFINE_CLIENT(5, long, qtfs_syscall_mount(char __user *x1, char __user *x2,
+
+#ifdef QTFS_CLIENT
+WRAPPER_DEFINE_BYORIGIN(2, long, qtfs_syscall_umount(char __user *x1, int x2), SYMBOL_SYSCALL_UMOUNT);
+WRAPPER_DEFINE_BYORIGIN(5, long, qtfs_syscall_mount(char __user *x1, char __user *x2,
 			char __user *x3, unsigned long x4, void __user *x5), SYMBOL_SYSCALL_MOUNT);
-WRAPPER_DEFINE_CLIENT(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3, 
+WRAPPER_DEFINE_BYORIGIN(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3, 
 			struct epoll_event __user *x4), SYMBOL_SYSCALL_EPOLL_CTL);
 #endif
 
@@ -156,6 +204,11 @@ WRAPPER_DEFINE_CLIENT(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3,
 		return retval;\
 	}
 
+//common syscall wrapper
+WRAPPER_DEFINE_BYORIGIN(3, long, qtfs_syscall_connect(int x1, struct sockaddr __user *x2,
+			int x3), SYMBOL_SYSCALL_CONNECT);
+
+// only use in server syscall wrapper
 #ifdef QTFS_SERVER
 WRAPPER_DEFINE(2, long, qtfs_syscall_umount(char __user *x1, int x2), __NR_umount2);
 WRAPPER_DEFINE(5, long, qtfs_syscall_mount(char __user *x1, char __user *x2,

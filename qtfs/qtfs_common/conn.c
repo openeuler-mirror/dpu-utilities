@@ -3,11 +3,14 @@
 #include <linux/kallsyms.h>
 #include <linux/tcp.h>
 #include <net/tcp.h>
+#include <linux/un.h>
 
 #include "comm.h"
 #include "conn.h"
 #include "log.h"
 #include "req.h"
+#include "symbol_wrapper.h"
+#include "uds_module.h"
 
 char qtfs_log_level[QTFS_LOGLEVEL_STRLEN] = {0};
 char qtfs_server_ip[20] = "127.0.0.1";
@@ -29,7 +32,7 @@ struct qtfs_sock_var_s *qtfs_epoll_var = NULL;
 struct socket *qtfs_server_main_sock = NULL;
 struct qtfs_server_userp_s *qtfs_userps = NULL;
 #endif
-int qtfs_uds_proxy_pid = -1;
+struct qtsock_wl_stru qtsock_wl;
 #define QTFS_EPOLL_THREADIDX (QTFS_MAX_THREADS + 4)
 
 #ifdef KVER_4_19
@@ -122,6 +125,165 @@ void sock_set_reuseaddr(struct sock *sk)
 static int qtfs_conn_sock_recv(struct qtfs_sock_var_s *pvar, bool block);
 static int qtfs_conn_sock_send(struct qtfs_sock_var_s *pvar);
 static void qtfs_conn_sock_fini(struct qtfs_sock_var_s *pvar);
+
+// try to connect remote uds server, only for unix domain socket
+#define QTFS_UDS_PROXY_SUFFIX ".proxy"
+int qtfs_uds_proxy_build(struct socket *sock, struct sockaddr_un *addr, int len)
+{
+	int ret;
+	struct uds_proxy_remote_conn_req req;
+	struct uds_proxy_remote_conn_rsp rsp;
+	struct sockaddr_un proxy = {.sun_family = AF_UNIX};
+	struct socket *proxy_sock;
+	struct msghdr msgs;
+	struct msghdr msgr;
+	struct kvec vec;
+
+	ret = sock_create_kern(&init_net, AF_UNIX, SOCK_STREAM, 0, &proxy_sock);
+	if (ret) {
+		qtfs_err("create proxy sock failed sun path:%s", addr->sun_path);
+		return -EFAULT;
+	}
+	memset(proxy.sun_path, 0, sizeof(proxy.sun_path));
+	strncpy(proxy.sun_path, UDS_BUILD_CONN_ADDR, strlen(UDS_BUILD_CONN_ADDR));
+	ret = sock->ops->connect(proxy_sock, (struct sockaddr *)&proxy, sizeof(proxy), SOCK_NONBLOCK);
+	if (ret < 0) {
+		qtfs_err("connect to uds proxy failed");
+		goto end;
+	}
+	memset(req.sun_path, 0, sizeof(req.sun_path));
+	strncpy(req.sun_path, addr->sun_path, sizeof(req.sun_path));
+	memset(&msgs, 0, sizeof(struct msghdr));
+	memset(&msgr, 0, sizeof(struct msghdr));
+	req.type = sock->sk->sk_type;
+	vec.iov_base = &req;
+	vec.iov_len = sizeof(req);
+	ret = kernel_sendmsg(proxy_sock, &msgs, &vec, 1, vec.iov_len);
+	if (ret < 0) {
+		qtfs_err("send remote connect request failed:%d", ret);
+		goto end;
+	}
+	vec.iov_base = &rsp;
+	vec.iov_len = sizeof(rsp);
+	ret = kernel_recvmsg(proxy_sock, &msgr, &vec, 1, vec.iov_len, MSG_WAITALL);
+	if (ret <= 0) {
+		qtfs_err("recv remote connect response failed:%d", ret);
+		goto end;
+	}
+	if (rsp.ret == 0) {
+		goto end;
+	}
+	qtfs_info("try to build uds proxy successed, sun path:%s", addr->sun_path);
+
+end:
+	sock_release(proxy_sock);
+	return 0;
+}
+
+static int qtfs_uds_remote_whitelist(const char *path)
+{
+	int i;
+	int ret = 1;
+	read_lock(&qtsock_wl.rwlock);
+	for (i = 0; i < qtsock_wl.nums; i++) {
+		if (strncmp(path, qtsock_wl.wl[i], strlen(qtsock_wl.wl[i])) == 0) {
+			ret = 0;
+			break;
+		}
+	}
+	read_unlock(&qtsock_wl.rwlock);
+	return ret;
+}
+
+static inline int qtfs_uds_is_proxy(void)
+{
+#define UDS_PROXYD_PRNAME "udsproxyd"
+	if (strlen(current->comm) == strlen(UDS_PROXYD_PRNAME) &&
+			strncmp(current->comm, UDS_PROXYD_PRNAME, strlen(UDS_PROXYD_PRNAME)) == 0)
+		return 1;
+	return 0;
+}
+
+int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
+{
+	int sysret;
+	int ret;
+	int err;
+	int slen;
+	struct fd f;
+	struct socket *sock;
+	struct sockaddr_un addr_un;
+
+	sysret = qtfs_syscall_connect(fd, addr, len);
+	// don't try remote uds connect if: 1.local connect successed; 2.this process is udsproxyd
+	if (sysret == 0 || qtfs_uds_is_proxy())
+		return sysret;
+	if (copy_from_user(&addr_un, addr, sizeof(struct sockaddr_un))) {
+		qtfs_err("copy sockaddr failed.");
+		return sysret;
+	}
+	// don't try remote uds connect if sunpath not in whitelist
+	if (qtfs_uds_remote_whitelist(addr_un.sun_path) != 0)
+		return sysret;
+	if (addr_un.sun_family != AF_UNIX)
+		return sysret;
+	if (strlen(addr_un.sun_path) >= (UNIX_PATH_MAX - strlen(QTFS_UDS_PROXY_SUFFIX))) {
+		qtfs_err("failed to try connect remote uds server, sun path:%s too long to add suffix:%s",
+				addr_un.sun_path, QTFS_UDS_PROXY_SUFFIX);
+		return sysret;
+	}
+	qtfs_info("uds connect failed:%d try to remote connect:%s.", sysret, addr_un.sun_path);
+
+	f = fdget(fd);
+	if (f.file == NULL) {
+		return -EBADF;
+	}
+
+	sock = sock_from_file(f.file, &err);
+	if (!sock) {
+		goto end;
+	}
+	// try to connect remote uds's proxy
+	ret = qtfs_uds_proxy_build(sock, &addr_un, len);
+	if (ret == 0) {
+		slen = strlen(addr_un.sun_path);
+		strcat(addr_un.sun_path, QTFS_UDS_PROXY_SUFFIX);
+		addr_un.sun_path[slen + strlen(QTFS_UDS_PROXY_SUFFIX)] = '\0';
+		if (copy_to_user(addr, &addr_un, sizeof(struct sockaddr_un))) {
+			qtfs_err("copy to addr failed sunpath:%s", addr_un.sun_path);
+			goto end;
+		}
+		sysret = qtfs_syscall_connect(fd, addr, len);
+		qtfs_info("try remote connect sunpath:%s ret:%d", addr_un.sun_path, sysret);
+	}
+
+end:
+	fdput(f);
+	return sysret;
+}
+
+int qtfs_uds_remote_init(void)
+{
+	qtsock_wl.nums = 0;
+	qtsock_wl.wl = (char **)kmalloc(sizeof(char *) * QTSOCK_WL_MAX_NUM, GFP_KERNEL);
+	if (qtsock_wl.wl == NULL) {
+		qtfs_err("failed to kmalloc wl, max num:%d", QTSOCK_WL_MAX_NUM);
+		return -1;
+	}
+	rwlock_init(&qtsock_wl.rwlock);
+	return 0;
+}
+
+void qtfs_uds_remote_exit(void)
+{
+	read_lock(&qtsock_wl.rwlock);
+	if (qtsock_wl.wl) {
+		kfree(qtsock_wl.wl);
+	}
+	qtsock_wl.nums = 0;
+	read_unlock(&qtsock_wl.rwlock);
+	return;
+}
 
 #ifdef QTFS_SERVER
 static int qtfs_conn_server_accept(struct qtfs_sock_var_s *pvar)
