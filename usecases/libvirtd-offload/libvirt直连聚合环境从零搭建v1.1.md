@@ -3,6 +3,7 @@
 | V1.0 | 2022/12/5 | 李强 | 创建文档                                                     |
 | V1.1 | 2023/2/6  | 李强 | 增加uds proxy组件部署介绍；增加rexec组件部署介绍；修改libvirt相关描述，适配uds proxy组件。 |
 | V1.2 | 2023/3/22 | 李强 | rexec重构后，更新rexec组件部署说明。                           |
+| V1.3 | 2023/3/27 | 李强 | qtfs为connect syscall适配uds做改动                            |
 
 
 # **1** 硬件准备
@@ -30,7 +31,7 @@ QTFS建联需要关闭防火墙。
 
 ### 3.2.1 简介
 
-udsproxyd是一个跨主机的unix domain socket代理服务，需要分别部署在host和dpu上，在host和dpu上的udsproxyd组件是对等的关系，可以实现分布在host与dpu上的2个进程之间的uds通信，通信进程是无感的，也就是说如果这两个进程在同一主机内通过uds正常通信的功能，拉远到host和dpu之间也可以，不需要做代码适配，只需要作为client的一端加一个环境变量`LD_PRELOAD=libudsproxy.so`。
+udsproxyd是一个跨主机的unix domain socket代理服务，需要分别部署在host和dpu上，在host和dpu上的udsproxyd组件是对等的关系，可以实现分布在host与dpu上的2个进程之间的uds通信，通信进程是无感的，也就是说如果这两个进程在同一主机内通过uds正常通信的功能，拉远到host和dpu之间也可以，不需要做代码适配，只需要作为client的一端加一个环境变量`LD_PRELOAD=libudsproxy.so`。udsproxyd作为一个跨主机的unix socket服务，本身可以用LD_PRELOAD=libudsproxy.so的方式对接使用，在qtfs的支持下也可以无感应用，这需要提前做好白名单相关配置，具体有两种方式，将在后面详述。
 
 ### 3.2.2 部署方式
 
@@ -66,7 +67,44 @@ peer port: 对端port
 
 如果未拉起qtfs的engine服务，想单独测试udsproxyd，则在server端也对等拉起udsproxyd即可：`nohup /usr/bin/udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &`
 
-然后将libudsproxy.so拷贝到libvirt的chroot目录下的/usr/lib64中以提供给libvirtd服务使用，这一步在后面介绍。
+### 3.2.3 应用方式
+
+#### 3.2.3.1 独立使用udsproxyd服务
+
+需要在使用uds服务的unix socket应用程序的client端进程启动时添加LD_PRELOAD=libudsproxy.so环境变量，以接管glibc的connect api进行uds对接，在libvirt卸载场景中可以将libudsproxy.so拷贝到libvirt的chroot目录下的/usr/lib64中以提供给libvirtd服务使用，这一步在后面介绍。
+
+#### 3.2.3.2 无感使用udsproxyd服务
+
+首先为qtfs配置uds服务的白名单，这里说的白名单是unix socket的server端bind的sock文件地址，例如libvirt的虚机建立的unix socket的服务端文件地址都在/var/lib/libvirt下，则我们需要增加一条白名单路径为/var/lib/libvirt/，提供两种方式供选择：
+
+a) 通过配置工具qtcfg加载，进入qtfs/qtinfo目录编译工具：
+在qtfs的client端执行
+```
+make role=client 
+make install
+```
+在qtfs的server端执行
+```
+make role=server
+make install
+```
+配置工具将会自动安装，然后使用qtcfg命令配置白名单，假设需要增加的白名单为"/var/lib/libvirt/"，输入：
+```
+qtcfg -x /var/lib/libvirt/
+```
+查询白名单为：
+```
+qtcfg -z
+```
+删除白名单为:
+```
+qtcfg -y 0
+```
+删除白名单时，参数为查询白名单时列出来的index序号。
+
+b) 通过配置文件增加，这需要在qtfs或qtfs_server内核模块加载前配置，通过内核模块初始化时读取该文件进行白名单配置。
+
+注意，白名单是为了防止不相干的unix socket链接也进行远程连接产生错误，或者浪费不必要的资源，所以白名单尽量设置得精确一些，比如本文中针对libvirt场景设置为/var/lib/libvirt/比较好，而直接将/var/lib/或/var/或直接将根目录假如的做法是有较大风险的。
 
 ## **3.3** REXEC服务部署
 
@@ -187,7 +225,7 @@ libvirt直连聚合卸载模式，需要从chroot内启动libvirtd服务，首�
 
 a) 放置虚机跳板脚本在chroot环境下的/usr/bin和/usr/libexec下：[qemu-kvm](./scripts/qemu-kvm)。替换原同名二进制，这个跳板脚本就是用于调用rexec拉起远端虚机。注意，virsh使用的xml中，<devices>下面的<emulator>需要填qemu-kvm，如果是填的其他，则需要修改为qemu-kvm，或者将跳板脚本替换<emulator>指代的二进制，且跳板脚本内容需要对应地更改。
 
-b) 将udsproxyd编译时附带产生的libudsproxy.so拷贝到本chroot目录下/usr/lib64下。
+b) 将udsproxyd编译时附带产生的libudsproxy.so拷贝到本chroot目录下/usr/lib64下，如果配置qtfs的uds白名单方式使用udsproxyd服务，则不需要。
 
 c) 将前面rexec编译产生的rexec二进制放置到本chroot的/usr/bin/目录下。
 
@@ -196,13 +234,25 @@ d) 配置chroot的挂载环境，需要挂载一些目录，使用如下配置�
 e) 脚本中挂载目录位置都是按照本文档前文创建目录位置与名称为准，如果有修改需要同步适配修改脚本。
 
 f) 配置好chroot环境后，进入chroot环境，手动拉起libvirtd：
+未配置qtfs使用udsproxyd白名单的拉起方式：
 
 ```
 LD_PRELOAD=/usr/lib64/libudsproxy.so virtlogd -d；
 
 LD_PRELOAD=/usr/lib64/libudsproxy.so libvirtd -d。
 ````
+如果已配置qtfs使用udsproxyd白名单，则不需要增加LD_PRELOAD前缀：
+```
+virtlogd -d
+libvirtd -d
+```
 
+查看是否已配置白名单的方式，在chroot之外的窗口，执行：
+```
+qtcfg -z
+```
+
+查看列举出来的白名单是否包含"/var/lib/libvirt/"
 
 ## **3.5** 拉起虚机
 
