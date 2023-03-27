@@ -462,12 +462,14 @@ static void qtinfo_help(char *exec)
 {
 	qtinfo_out("Usage: %s [OPTION].", exec);
 	qtinfo_out("Display qtfs client/server diagnostic information.");
+#ifndef QTINFO_RELEASE
 	qtinfo_out("  -a, All diag info.");
 	qtinfo_out("  -c, Clear all diag info.");
 	qtinfo_out("  -l, Set log level(valid param: \"NONE\", \"ERROR\", \"WARN\", \"INFO\", \"DEBUG\").");
 	qtinfo_out("  -t, For test informations.");
 	qtinfo_out("  -p, Epoll support file mode(1: any files; 0: only fifo).");
 	qtinfo_out("  -u, Display unix socket proxy diagnostic info");
+#endif
 	qtinfo_out("  -s, Set unix socket proxy log level(Increase by 1 each time)");
 	qtinfo_out("  -x, Add a uds white list path(example: -x /home/)");
 	qtinfo_out("  -y, Delete a uds white list with index(example: -y 1)");
@@ -477,14 +479,21 @@ static void qtinfo_help(char *exec)
 int main(int argc, char *argv[])
 {
 	int ch;
-	if ((argc == 1) || (argc == 2 && strcmp(argv[1], "--help") == 0))
+	if ((argc == 1) || (argc == 2 && strcmp(argv[1], "--help") == 0)) {
 		qtinfo_help(argv[0]);
+		return 0;
+	}
 	int fd = open(QTFS_DEV_NAME, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
 	}
+#ifndef QTINFO_RELEASE
 	while ((ch = getopt(argc, argv, "acl:tp:usx:y:z")) != -1) {
+#else
+	while ((ch = getopt(argc, argv, "sx:y:z")) != -1) {
+#endif
 		switch (ch) {
+#ifndef QTINFO_RELEASE
 			case 'a':
 				qtinfo_opt_a(fd);
 				break;
@@ -503,6 +512,7 @@ int main(int argc, char *argv[])
 			case 'u':
 				qtinfo_opt_u();
 				break;
+#endif
 			case 's':
 				qtinfo_opt_s();
 				break;
