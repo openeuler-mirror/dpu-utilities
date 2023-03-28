@@ -45,7 +45,6 @@ struct pt_regs;
 #ifdef __aarch64__
 void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
 unsigned long start_rodata, end_rodata;
-#define section_size (end_rodata - start_rodata)
 
 // symbols not finded in sys call table
 enum qtfs_sym_a64 {

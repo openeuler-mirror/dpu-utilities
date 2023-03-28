@@ -15,12 +15,6 @@ static long qtfs_remote_mount(char __user *dev_name, char __user *dir_name, char
 		unsigned long flags, void __user *data);
 static int qtfs_remote_umount(char __user *name, int flags);
 
-#ifdef __aarch64__
-void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
-unsigned long start_rodata, end_rodata;
-#define section_size  (end_rodata - start_rodata)
-#endif
-
 static char *qtfs_copy_mount_string(const void __user *data)
 {
 	return data ? strndup_user(data, PATH_MAX) : NULL;
