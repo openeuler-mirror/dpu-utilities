@@ -57,6 +57,12 @@ static inline int make_ro(unsigned long address)
 }
 #endif
 
+#ifdef __aarch64__
+extern void (*update_mapping_prot)(phys_addr_t phys, unsigned long virt, phys_addr_t size, pgprot_t prot);
+extern unsigned long start_rodata, end_rodata;
+#define section_size (end_rodata - start_rodata)
+#endif
+
 int qtfs_syscall_replace_start(void);
 void qtfs_syscall_replace_stop(void);
 
