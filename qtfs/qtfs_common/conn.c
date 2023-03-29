@@ -149,7 +149,7 @@ int qtfs_uds_proxy_build(struct socket *sock, struct sockaddr_un *addr, int len)
 	ret = sock->ops->connect(proxy_sock, (struct sockaddr *)&proxy, sizeof(proxy), SOCK_NONBLOCK);
 	if (ret < 0) {
 		qtfs_err("connect to uds proxy failed");
-		goto end;
+		goto err_end;
 	}
 	memset(req.sun_path, 0, sizeof(req.sun_path));
 	strncpy(req.sun_path, addr->sun_path, sizeof(req.sun_path));
@@ -161,23 +161,25 @@ int qtfs_uds_proxy_build(struct socket *sock, struct sockaddr_un *addr, int len)
 	ret = kernel_sendmsg(proxy_sock, &msgs, &vec, 1, vec.iov_len);
 	if (ret < 0) {
 		qtfs_err("send remote connect request failed:%d", ret);
-		goto end;
+		goto err_end;
 	}
 	vec.iov_base = &rsp;
 	vec.iov_len = sizeof(rsp);
 	ret = kernel_recvmsg(proxy_sock, &msgr, &vec, 1, vec.iov_len, MSG_WAITALL);
 	if (ret <= 0) {
 		qtfs_err("recv remote connect response failed:%d", ret);
-		goto end;
+		goto err_end;
 	}
 	if (rsp.ret == 0) {
-		goto end;
+		goto err_end;
 	}
 	qtfs_info("try to build uds proxy successed, sun path:%s", addr->sun_path);
 
-end:
 	sock_release(proxy_sock);
 	return 0;
+err_end:
+	sock_release(proxy_sock);
+	return -ECONNREFUSED;
 }
 
 static int qtfs_uds_remote_whitelist(const char *path)
