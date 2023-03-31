@@ -163,11 +163,11 @@ void qtfs_kill_sb(struct super_block *sb);
 struct dentry *qtfs_fs_mount(struct file_system_type *fs_type,
 							int flags, const char *dev_name,
 							void *data);
-void *qtfs_remote_run(struct qtfs_sock_var_s *pvar, unsigned int type, unsigned int len);
+void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned int len);
 int qtfs_misc_register(void);
 void qtfs_misc_destroy(void);
 long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-int qtfs_missmsg_proc(struct qtfs_sock_var_s *pvar);
+int qtfs_missmsg_proc(struct qtfs_conn_var_s *pvar);
 int qtfs_utils_register(void);
 void qtfs_utils_destroy(void);
 

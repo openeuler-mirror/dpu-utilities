@@ -18,7 +18,7 @@ static int miss_open(struct qtreq *miss)
 	struct qtrsp_open *missrsp = (struct qtrsp_open *)miss->data;
 	struct qtreq_close *req;
 	struct qtrsp_close *rsp;
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 
 	if (missrsp->ret == QTFS_ERR)
 		return QTFS_OK; // no need to close
@@ -27,7 +27,7 @@ static int miss_open(struct qtreq *miss)
 		qtfs_err("qtfs miss open pvar invalid.");
 		return QTFS_ERR;
 	}
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
 	req->fd = missrsp->fd;
 	qtfs_err("miss open proc fd:%d.", req->fd);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_CLOSE, sizeof(struct qtreq_close));
@@ -46,7 +46,7 @@ static struct qtmiss_ops qtfs_miss_handles[] = {
 	{QTFS_REQ_OPEN,			miss_open,	"open"},
 };
 
-int qtfs_missmsg_proc(struct qtfs_sock_var_s *pvar)
+int qtfs_missmsg_proc(struct qtfs_conn_var_s *pvar)
 {
 	struct qtreq *req = (struct qtreq *)pvar->vec_send.iov_base;
 	struct qtreq *rsp = (struct qtreq *)pvar->vec_recv.iov_base;

@@ -1457,7 +1457,7 @@ static struct qtserver_ops qtfs_server_handles[] = {
 	{QTFS_REQ_EXIT,			handle_exit,	"exit"}, // keep this handle at the end
 };
 
-int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar)
+int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 {
 	int ret;
 	struct qtreq *req;
@@ -1519,7 +1519,7 @@ int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar)
 		qtinfo_sendinc(rsp->type);
 	} while(0);
 
-	qtfs_sock_msg_clear(pvar);
+	qtfs_conn_msg_clear(pvar);
 	return (ret < 0) ? QTERROR : QTOK;
 }
 

@@ -16,7 +16,7 @@ char qtfs_log_level[QTFS_LOGLEVEL_STRLEN] = {0};
 char qtfs_server_ip[20] = "127.0.0.1";
 int log_level = LOG_ERROR;
 int qtfs_server_port = 12345;
-int qtfs_sock_max_conn = QTFS_MAX_THREADS;
+int qtfs_conn_max_conn = QTFS_MAX_THREADS;
 struct qtinfo *qtfs_diag_info = NULL;
 bool qtfs_epoll_mode = false; // true: support any mode; false: only support fifo
 
@@ -26,8 +26,8 @@ static struct list_head g_busy_lst;
 static struct llist_head g_lazy_put_llst;
 static struct mutex g_param_mutex;
 int qtfs_mod_exiting = false;
-struct qtfs_sock_var_s *qtfs_thread_var[QTFS_MAX_THREADS] = {NULL};
-struct qtfs_sock_var_s *qtfs_epoll_var = NULL;
+struct qtfs_conn_var_s *qtfs_thread_var[QTFS_MAX_THREADS] = {NULL};
+struct qtfs_conn_var_s *qtfs_epoll_var = NULL;
 #ifdef QTFS_SERVER
 struct socket *qtfs_server_main_sock = NULL;
 struct qtfs_server_userp_s *qtfs_userps = NULL;
@@ -122,9 +122,9 @@ void sock_set_reuseaddr(struct sock *sk)
 
 #define QTFS_SERVER_MAXCONN 2
 
-static int qtfs_conn_sock_recv(struct qtfs_sock_var_s *pvar, bool block);
-static int qtfs_conn_sock_send(struct qtfs_sock_var_s *pvar);
-static void qtfs_conn_sock_fini(struct qtfs_sock_var_s *pvar);
+static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block);
+static int qtfs_conn_sock_send(struct qtfs_conn_var_s *pvar);
+static void qtfs_conn_sock_fini(struct qtfs_conn_var_s *pvar);
 
 // try to connect remote uds server, only for unix domain socket
 #define QTFS_UDS_PROXY_SUFFIX ".proxy"
@@ -288,7 +288,7 @@ void qtfs_uds_remote_exit(void)
 }
 
 #ifdef QTFS_SERVER
-static int qtfs_conn_server_accept(struct qtfs_sock_var_s *pvar)
+static int qtfs_conn_server_accept(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock = NULL;
 	int ret;
@@ -314,7 +314,7 @@ static int qtfs_conn_server_accept(struct qtfs_sock_var_s *pvar)
 	return 0;
 }
 
-static int qtfs_conn_sockserver_init(struct qtfs_sock_var_s *pvar)
+static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock;
 	int ret;
@@ -371,7 +371,7 @@ err_end:
 }
 #endif
 #ifdef QTFS_CLIENT
-static int qtfs_conn_client_conn(struct qtfs_sock_var_s *pvar)
+static int qtfs_conn_client_conn(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock = pvar->client_sock;
 	int ret;
@@ -389,7 +389,7 @@ static int qtfs_conn_client_conn(struct qtfs_sock_var_s *pvar)
 
 	return 0;
 }
-static int qtfs_conn_sockclient_init(struct qtfs_sock_var_s *pvar)
+static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock;
 	int ret;
@@ -409,7 +409,7 @@ err_end:
 }
 #endif
 
-int qtfs_conn_init(int msg_mode, struct qtfs_sock_var_s *pvar)
+int qtfs_conn_init(int msg_mode, struct qtfs_conn_var_s *pvar)
 {
 	int ret = -EINVAL;
 
@@ -431,7 +431,7 @@ int qtfs_conn_init(int msg_mode, struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-void qtfs_conn_fini(int msg_mode, struct qtfs_sock_var_s *pvar)
+void qtfs_conn_fini(int msg_mode, struct qtfs_conn_var_s *pvar)
 {
 	switch (msg_mode) {
 		case QTFS_CONN_SOCKET:
@@ -445,7 +445,7 @@ void qtfs_conn_fini(int msg_mode, struct qtfs_sock_var_s *pvar)
 	return;
 }
 
-int qtfs_conn_send(int msg_mode, struct qtfs_sock_var_s *pvar)
+int qtfs_conn_send(int msg_mode, struct qtfs_conn_var_s *pvar)
 {
 	int ret = -EINVAL;
 	switch (msg_mode) {
@@ -459,7 +459,7 @@ int qtfs_conn_send(int msg_mode, struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-int do_qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar, bool block)
+int do_qtfs_conn_recv(int msg_mode, struct qtfs_conn_var_s *pvar, bool block)
 {
 	int ret = -EINVAL;
 	switch (msg_mode) {
@@ -474,12 +474,12 @@ int do_qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar, bool block)
 	return ret;
 }
 
-int qtfs_conn_recv_block(int msg_mode, struct qtfs_sock_var_s *pvar)
+int qtfs_conn_recv_block(int msg_mode, struct qtfs_conn_var_s *pvar)
 {
 	return do_qtfs_conn_recv(msg_mode, pvar, true);
 }
 
-int qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar)
+int qtfs_conn_recv(int msg_mode, struct qtfs_conn_var_s *pvar)
 {
 	int ret = do_qtfs_conn_recv(msg_mode, pvar, false);
 	if (ret <= 0) {
@@ -517,7 +517,7 @@ void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 	}
 }
 
-static int qtfs_conn_sock_recv(struct qtfs_sock_var_s *pvar, bool block)
+static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block)
 {
 	int ret;
 	int headlen = 0;
@@ -564,7 +564,7 @@ static int qtfs_conn_sock_recv(struct qtfs_sock_var_s *pvar, bool block)
 	return total + headlen;
 }
 
-static int qtfs_conn_sock_send(struct qtfs_sock_var_s *pvar)
+static int qtfs_conn_sock_send(struct qtfs_conn_var_s *pvar)
 {
 	int ret = kernel_sendmsg(pvar->client_sock, &pvar->msg_send, &pvar->vec_send, 1,
 							pvar->vec_send.iov_len);
@@ -574,7 +574,7 @@ static int qtfs_conn_sock_send(struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-static void qtfs_conn_sock_fini(struct qtfs_sock_var_s *pvar)
+static void qtfs_conn_sock_fini(struct qtfs_conn_var_s *pvar)
 {
 	if (pvar->client_sock != NULL) {
 		qtfs_err("qtfs conn sock finish threadidx:%d, client:%lx.", pvar->cur_threadidx, (unsigned long)pvar->client_sock);
@@ -585,9 +585,9 @@ static void qtfs_conn_sock_fini(struct qtfs_sock_var_s *pvar)
 	return;
 }
 
-int qtfs_sock_var_init(struct qtfs_sock_var_s *pvar)
+int qtfs_conn_var_init(struct qtfs_conn_var_s *pvar)
 {
-	memset(pvar, 0, sizeof(struct qtfs_sock_var_s));
+	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	pvar->vec_recv.iov_base = kmalloc(QTFS_MSG_LEN, GFP_KERNEL);
 	if (pvar->vec_recv.iov_base == NULL) {
 		qtfs_err("qtfs recv kmalloc failed, len:%lu.\n", QTFS_MSG_LEN);
@@ -608,7 +608,7 @@ int qtfs_sock_var_init(struct qtfs_sock_var_s *pvar)
 	return QTFS_OK;
 }
 
-void qtfs_sock_var_fini(struct qtfs_sock_var_s *pvar)
+void qtfs_conn_var_fini(struct qtfs_conn_var_s *pvar)
 {
 	if (pvar->vec_recv.iov_base != NULL) {
 		kfree(pvar->vec_recv.iov_base);
@@ -622,7 +622,7 @@ void qtfs_sock_var_fini(struct qtfs_sock_var_s *pvar)
 	return ;
 }
 
-void qtfs_sock_msg_clear(struct qtfs_sock_var_s *pvar)
+void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar)
 {
 	memset(pvar->vec_recv.iov_base, 0, QTFS_MSG_LEN);
 	memset(pvar->vec_send.iov_base, 0, QTFS_MSG_LEN);
@@ -634,7 +634,7 @@ void qtfs_sock_msg_clear(struct qtfs_sock_var_s *pvar)
 	return;
 }
 
-void *qtfs_sock_msg_buf(struct qtfs_sock_var_s *pvar, int dir)
+void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir)
 {
 	struct qtreq *req = (dir == QTFS_SEND) ? pvar->vec_send.iov_base : pvar->vec_recv.iov_base;
 	if (!req) {
@@ -649,7 +649,7 @@ void *qtfs_sock_msg_buf(struct qtfs_sock_var_s *pvar, int dir)
 														((pvar->state == QTCONN_CONNECTING) ? "CONNECTING" : \
 														((pvar->state == QTCONN_ACTIVE) ? "ACTIVE" : "UNKNOWN")))
 
-static int qtfs_sm_connecting(struct qtfs_sock_var_s *pvar)
+static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 {
 	int ret = QTERROR;
 
@@ -683,7 +683,7 @@ static int qtfs_sm_connecting(struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-int qtfs_sm_active(struct qtfs_sock_var_s *pvar)
+int qtfs_sm_active(struct qtfs_conn_var_s *pvar)
 {
 	int ret = 0;
 
@@ -722,7 +722,7 @@ int qtfs_sm_active(struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-int qtfs_sm_reconnect(struct qtfs_sock_var_s *pvar)
+int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar)
 {
 	int ret = QTOK;
 	switch (pvar->state) {
@@ -762,7 +762,7 @@ int qtfs_sm_reconnect(struct qtfs_sock_var_s *pvar)
 	return ret;
 }
 
-int qtfs_sm_exit(struct qtfs_sock_var_s *pvar)
+int qtfs_sm_exit(struct qtfs_conn_var_s *pvar)
 {
 	int ret = QTOK;
 	switch (pvar->state) {
@@ -802,11 +802,11 @@ int qtfs_mutex_lock_interruptible(struct mutex *lock)
 		// mutex lock successed, proc lazy put
 		while (1) {
 			struct llist_node *toput = llist_del_first(&g_lazy_put_llst);
-			struct qtfs_sock_var_s *pvar;
+			struct qtfs_conn_var_s *pvar;
 			if (toput == NULL)
 				break;
-			pvar = llist_entry(toput, struct qtfs_sock_var_s, lazy_put);
-			qtfs_sock_msg_clear(pvar);
+			pvar = llist_entry(toput, struct qtfs_conn_var_s, lazy_put);
+			qtfs_conn_msg_clear(pvar);
 			list_move_tail(&pvar->lst, &g_vld_lst);
 			qtfs_warn("qtfs pvar lazy put idx:%d.", pvar->cur_threadidx);
 		}
@@ -841,9 +841,9 @@ void qtfs_conn_param_fini(void)
 	}
 
 	list_for_each_safe(plst, n, &g_vld_lst) {
-		struct qtfs_sock_var_s *pvar = (struct qtfs_sock_var_s *)plst;
-		qtfs_sock_var_fini((struct qtfs_sock_var_s *)plst);
-		qtfs_sm_exit((struct qtfs_sock_var_s *)plst);
+		struct qtfs_conn_var_s *pvar = (struct qtfs_conn_var_s *)plst;
+		qtfs_conn_var_fini((struct qtfs_conn_var_s *)plst);
+		qtfs_sm_exit((struct qtfs_conn_var_s *)plst);
 		kfree(plst);
 		if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS) {
 			qtfs_err("qtfs free unknown threadidx %d", pvar->cur_threadidx);
@@ -869,9 +869,9 @@ void qtfs_conn_param_fini(void)
 #endif
 }
 
-struct qtfs_sock_var_s *_qtfs_conn_get_param(const char *func)
+struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *func)
 {
-	struct qtfs_sock_var_s *pvar = NULL;
+	struct qtfs_conn_var_s *pvar = NULL;
 	int ret;
 	int cnt = 0;
 
@@ -887,7 +887,7 @@ retry:
 		return NULL;
 	}
 	if (!list_empty(&g_vld_lst))
-		pvar = list_last_entry(&g_vld_lst, struct qtfs_sock_var_s, lst);
+		pvar = list_last_entry(&g_vld_lst, struct qtfs_conn_var_s, lst);
 	if (pvar != NULL) {
 		list_move_tail(&pvar->lst, &g_busy_lst);
 	}
@@ -895,7 +895,7 @@ retry:
 
 	if (pvar != NULL) {
 		int ret;
-		if (pvar->state == QTCONN_ACTIVE && qtfs_sock_connected(pvar) == false) {
+		if (pvar->state == QTCONN_ACTIVE && qtfs_conn_connected(pvar) == false) {
 			qtfs_warn("qtfs get param thread:%d disconnected, try to reconnect.", pvar->cur_threadidx);
 			ret = qtfs_sm_reconnect(pvar);
 		} else {
@@ -914,7 +914,7 @@ retry:
 		qtfs_err("qtfs conn get param mutex lock interrup failed, ret:%d.", ret);
 		return NULL;
 	}
-	if (atomic_read(&g_qtfs_conn_num) >= qtfs_sock_max_conn) {
+	if (atomic_read(&g_qtfs_conn_num) >= qtfs_conn_max_conn) {
 		mutex_unlock(&g_param_mutex);
 		cnt++;
 		msleep(1);
@@ -923,13 +923,13 @@ retry:
 		qtfs_err("qtfs get param failed, the concurrency specification has reached the upper limit");
 		return NULL;
 	}
-	pvar = kmalloc(sizeof(struct qtfs_sock_var_s), GFP_KERNEL);
+	pvar = kmalloc(sizeof(struct qtfs_conn_var_s), GFP_KERNEL);
 	if (pvar == NULL) {
 		qtfs_err("qtfs get param kmalloc failed.\n");
 		mutex_unlock(&g_param_mutex);
 		return NULL;
 	}
-	if (QTFS_OK != qtfs_sock_var_init(pvar)) {
+	if (QTFS_OK != qtfs_conn_var_init(pvar)) {
 		qtfs_err("qtfs sock var init failed.\n");
 		kfree(pvar);
 		mutex_unlock(&g_param_mutex);
@@ -988,14 +988,14 @@ retry:
 	return pvar;
 }
 
-struct qtfs_sock_var_s *qtfs_epoll_establish_conn(void)
+struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 {
-	struct qtfs_sock_var_s *pvar = NULL;
+	struct qtfs_conn_var_s *pvar = NULL;
 	int ret;
 
 	pvar = qtfs_epoll_var;
 	if (pvar) {
-		if (pvar->state == QTCONN_ACTIVE && qtfs_sock_connected(pvar) == false) {
+		if (pvar->state == QTCONN_ACTIVE && qtfs_conn_connected(pvar) == false) {
 			qtfs_warn("qtfs epoll get param thread:%d disconnected, try to reconnect.", pvar->cur_threadidx);
 			ret = qtfs_sm_reconnect(pvar);
 		} else {
@@ -1007,12 +1007,12 @@ struct qtfs_sock_var_s *qtfs_epoll_establish_conn(void)
 		return pvar;
 	}
 
-	pvar = kmalloc(sizeof(struct qtfs_sock_var_s), GFP_KERNEL);
+	pvar = kmalloc(sizeof(struct qtfs_conn_var_s), GFP_KERNEL);
 	if (pvar == NULL) {
 		qtfs_err("qtfs get param kmalloc failed.\n");
 		return NULL;
 	}
-	if (QTFS_OK != qtfs_sock_var_init(pvar)) {
+	if (QTFS_OK != qtfs_conn_var_init(pvar)) {
 		qtfs_err("qtfs sock var init failed.\n");
 		kfree(pvar);
 		return NULL;
@@ -1038,7 +1038,7 @@ struct qtfs_sock_var_s *qtfs_epoll_establish_conn(void)
 	return pvar;
 }
 
-void qtfs_conn_put_param(struct qtfs_sock_var_s *pvar)
+void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 {
 	int ret;
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
@@ -1047,13 +1047,13 @@ void qtfs_conn_put_param(struct qtfs_sock_var_s *pvar)
 		qtfs_warn("qtfs conn put param add to lazy list idx:%d, ret:%d.", pvar->cur_threadidx, ret);
 		return;
 	}
-	qtfs_sock_msg_clear(pvar);
+	qtfs_conn_msg_clear(pvar);
 	list_move_tail(&pvar->lst, &g_vld_lst);
 	mutex_unlock(&g_param_mutex);
 	return;
 }
 
-void qtfs_epoll_cut_conn(struct qtfs_sock_var_s *pvar)
+void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar)
 {
 	int ret = qtfs_sm_exit(pvar);
 	if (ret < 0) {
@@ -1065,7 +1065,7 @@ void qtfs_epoll_cut_conn(struct qtfs_sock_var_s *pvar)
 void qtfs_conn_list_cnt(void)
 {
 	struct list_head *entry;
-	struct qtfs_sock_var_s *pvar;
+	struct qtfs_conn_var_s *pvar;
 #ifdef QTFS_CLIENT
 	int ret = 0;
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
@@ -1079,7 +1079,7 @@ void qtfs_conn_list_cnt(void)
 	memset(qtfs_diag_info->who_using, 0, sizeof(qtfs_diag_info->who_using));
 	list_for_each(entry, &g_busy_lst) {
 		qtfs_diag_info->pvar_busy++;
-		pvar = (struct qtfs_sock_var_s *)entry;
+		pvar = (struct qtfs_conn_var_s *)entry;
 		if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS)
 			continue;
 		strncpy(qtfs_diag_info->who_using[pvar->cur_threadidx],

@@ -29,7 +29,7 @@ struct task_struct *g_qtfs_epoll_thread = NULL;
  				3. 等待对端执行完回复。
  				4. 将接收buf的私有数据段首指针返回给调用者，完成文件操作层的通信。
  */
-void *qtfs_remote_run(struct qtfs_sock_var_s *pvar, unsigned int type, unsigned int len)
+void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned int len)
 {
 	int ret;
 	unsigned long retrytimes = 0;
@@ -101,12 +101,12 @@ retry:
 		qtfs_err("qtfs remote run error, req errcode:%d type:%u len:%lu\n", req->err, req->type, req->len);
 		return NULL;
 	}
-	return qtfs_sock_msg_buf(pvar, QTFS_RECV);
+	return qtfs_conn_msg_buf(pvar, QTFS_RECV);
 }
 
 static int qtfs_epoll_thread(void *data)
 {
-	struct qtfs_sock_var_s *pvar = NULL;
+	struct qtfs_conn_var_s *pvar = NULL;
 	struct qtreq_epollevt *req;
 	struct qtrsp_epollevt *rsp;
 	struct qtreq *head;
@@ -126,8 +126,8 @@ connecting:
 		goto end;
 	}
 	qtfs_info("qtfs epoll thread establish a new connection.");
-	req = qtfs_sock_msg_buf(pvar, QTFS_RECV);
-	rsp = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = qtfs_conn_msg_buf(pvar, QTFS_RECV);
+	rsp = qtfs_conn_msg_buf(pvar, QTFS_SEND);
 
 	// init ack head only once
 	do {
@@ -140,7 +140,7 @@ connecting:
 
 	while (!kthread_should_stop()) {
 		ret = qtfs_conn_recv(QTFS_CONN_SOCKET, pvar);
-		if (ret == -EPIPE || qtfs_sock_connected(pvar) == false)
+		if (ret == -EPIPE || qtfs_conn_connected(pvar) == false)
 			goto connecting;
 		if (ret < 0 || req->event_nums <= 0) {
 			continue;
@@ -251,7 +251,7 @@ static void __exit qtfs_exit(void)
 			sock_release(qtfs_epoll_var->sock);
 			qtfs_epoll_var->sock = NULL;
 		}
-		qtfs_sock_var_fini(qtfs_epoll_var);
+		qtfs_conn_var_fini(qtfs_epoll_var);
 		kfree(qtfs_epoll_var);
 		qtfs_epoll_var = NULL;
 	}
@@ -275,7 +275,7 @@ static void __exit qtfs_exit(void)
 module_param_string(qtfs_server_ip, qtfs_server_ip, sizeof(qtfs_server_ip), 0600);
 MODULE_PARM_DESC(qtfs_server_ip, "qtfs server ip");
 module_param(qtfs_server_port, int, 0644);
-module_param(qtfs_sock_max_conn, int, 0644);
+module_param(qtfs_conn_max_conn, int, 0644);
 module_param_string(qtfs_log_level, qtfs_log_level, sizeof(qtfs_log_level), 0600);
 
 module_init(qtfs_init);

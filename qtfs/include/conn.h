@@ -20,10 +20,10 @@ extern struct qtfs_server_userp_s *qtfs_userps;
 #endif
 extern char qtfs_server_ip[20];
 extern int qtfs_server_port;
-extern int qtfs_sock_max_conn;
+extern int qtfs_conn_max_conn;
 extern struct socket *qtfs_server_main_sock;
-extern struct qtfs_sock_var_s *qtfs_thread_var[QTFS_MAX_THREADS];
-extern struct qtfs_sock_var_s *qtfs_epoll_var;
+extern struct qtfs_conn_var_s *qtfs_thread_var[QTFS_MAX_THREADS];
+extern struct qtfs_conn_var_s *qtfs_epoll_var;
 extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
 extern int log_level;
 extern struct qtinfo *qtfs_diag_info;
@@ -65,7 +65,7 @@ struct qtfs_pcie_var_s {
 	int dstid;
 };
 
-struct qtfs_sock_var_s {
+struct qtfs_conn_var_s {
 	struct list_head lst;
 	struct llist_node lazy_put;
 	int cs;
@@ -88,24 +88,13 @@ struct qtfs_sock_var_s {
 	struct msghdr msg_send;
 };
 
-struct qtfs_conn_var_s {
-	union {
-		struct qtfs_pcie_var_s pcie;
-		struct qtfs_sock_var_s sock;
-	} mode;
-	char *buf_recv;
-	char *buf_send;
-	int len_recv;
-	int len_send;
-};
-
 struct qtsock_wl_stru {
 	int nums;
 	char **wl;
 	rwlock_t rwlock;
 };
 
-static inline bool qtfs_sock_connected(struct qtfs_sock_var_s *pvar)
+static inline bool qtfs_conn_connected(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock = pvar->client_sock;
 	__u8 tcpi_state;
@@ -119,28 +108,28 @@ static inline bool qtfs_sock_connected(struct qtfs_sock_var_s *pvar)
 	return false;
 }
 
-int qtfs_conn_init(int msg_mode, struct qtfs_sock_var_s *pvar);
-void qtfs_conn_fini(int msg_mode, struct qtfs_sock_var_s *pvar);
-int qtfs_conn_send(int msg_mode, struct qtfs_sock_var_s *pvar);
-int qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar);
-int qtfs_conn_recv_block(int msg_mode, struct qtfs_sock_var_s *pvar);
+int qtfs_conn_init(int msg_mode, struct qtfs_conn_var_s *pvar);
+void qtfs_conn_fini(int msg_mode, struct qtfs_conn_var_s *pvar);
+int qtfs_conn_send(int msg_mode, struct qtfs_conn_var_s *pvar);
+int qtfs_conn_recv(int msg_mode, struct qtfs_conn_var_s *pvar);
+int qtfs_conn_recv_block(int msg_mode, struct qtfs_conn_var_s *pvar);
 
-int qtfs_sock_var_init(struct qtfs_sock_var_s *pvar);
-void qtfs_sock_var_fini(struct qtfs_sock_var_s *pvar);
-void qtfs_sock_msg_clear(struct qtfs_sock_var_s *pvar);
-void *qtfs_sock_msg_buf(struct qtfs_sock_var_s *pvar, int dir);
+int qtfs_conn_var_init(struct qtfs_conn_var_s *pvar);
+void qtfs_conn_var_fini(struct qtfs_conn_var_s *pvar);
+void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar);
+void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir);
 
 void qtfs_conn_param_init(void);
 void qtfs_conn_param_fini(void);
 
-struct qtfs_sock_var_s *_qtfs_conn_get_param(const char *);
-void qtfs_conn_put_param(struct qtfs_sock_var_s *pvar);
-struct qtfs_sock_var_s *qtfs_epoll_establish_conn(void);
-void qtfs_epoll_cut_conn(struct qtfs_sock_var_s *pvar);
+struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *);
+void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar);
+struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void);
+void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar);
 
-int qtfs_sm_active(struct qtfs_sock_var_s *pvar);
-int qtfs_sm_reconnect(struct qtfs_sock_var_s *pvar);
-int qtfs_sm_exit(struct qtfs_sock_var_s *pvar);
+int qtfs_sm_active(struct qtfs_conn_var_s *pvar);
+int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar);
+int qtfs_sm_exit(struct qtfs_conn_var_s *pvar);
 
 void qtfs_kallsyms_hack_init(void);
 void qtfs_conn_list_cnt(void);

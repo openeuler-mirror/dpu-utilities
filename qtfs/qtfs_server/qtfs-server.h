@@ -21,7 +21,7 @@ struct qtserver_ops {
 	char str[32];
 };
 
-int qtfs_sock_server_run(struct qtfs_sock_var_s *pvar);
+int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar);
 long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int qtfs_misc_register(void);
 void qtfs_misc_destroy(void);
