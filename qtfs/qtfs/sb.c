@@ -733,6 +733,7 @@ static void qtfs_free_pages(struct page **pages)
 	kfree(pages);
 }
 
+#ifndef KVER_5_4
 static void qtfs_readahead(struct readahead_control *rac)
 {
 	int i;
@@ -748,6 +749,7 @@ static void qtfs_readahead(struct readahead_control *rac)
 	qtfs_free_pages(pages);
 	return;
 }
+#endif
 #endif
 
 static int qtfs_writepage(struct page *page, struct writeback_control *wbc)
@@ -790,7 +792,7 @@ static const struct address_space_operations qtfs_aops = {
 #else
 	.readpage = qtfs_readpage,
 #endif
-#ifndef KVER_4_19
+#if (!defined KVER_4_19) && (!defined KVER_5_4)
 	.readahead = qtfs_readahead,
 #endif
 	.writepage = qtfs_writepage,
@@ -1442,7 +1444,7 @@ const struct xattr_handler *qtfs_xattr_handlers[] = {
 	&qtfs_xattr_user_handler,
 	&qtfs_xattr_trusted_handler,
 	&qtfs_xattr_security_handler,
-#ifndef KVER_4_19
+#if (!defined KVER_4_19) && (!defined KVER_5_4)
 	&qtfs_xattr_hurd_handler,
 #endif
 	NULL

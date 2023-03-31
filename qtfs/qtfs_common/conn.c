@@ -35,7 +35,7 @@ struct qtfs_server_userp_s *qtfs_userps = NULL;
 struct qtsock_wl_stru qtsock_wl;
 #define QTFS_EPOLL_THREADIDX (QTFS_MAX_THREADS + 4)
 
-#ifdef KVER_4_19
+#if (defined KVER_4_19) || (defined KVER_5_4)
 static inline void sock_valbool_flag(struct sock *sk, enum sock_flags bit,
 				     int valbool)
 {
@@ -491,7 +491,7 @@ int qtfs_conn_recv(int msg_mode, struct qtfs_sock_var_s *pvar)
 void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 {
 	int error;
-#ifdef KVER_4_19
+#if (defined KVER_4_19) || (defined KVER_5_4)
 	struct timeval tv;
 #else
 	struct __kernel_sock_timeval tv;
@@ -505,8 +505,8 @@ void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 		return;
 	}
 
-#ifdef KVER_4_19
-	error = sock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+#if (defined KVER_4_19) || (defined KVER_5_4)
+	error = sock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO_OLD,
 			(char *)&tv, sizeof(tv));
 #else
 	error = sock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO_OLD,

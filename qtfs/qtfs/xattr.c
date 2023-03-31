@@ -250,7 +250,7 @@ const struct xattr_handler qtfs_xattr_security_handler = {
 	.set	= qtfs_xattr_security_set,
 };
 
-#ifndef KVER_4_19
+#if (!defined KVER_4_19) && (!defined KVER_5_4)
 static int
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
 qtfs_xattr_hurd_set(const struct xattr_handler *handler,

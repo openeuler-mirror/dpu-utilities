@@ -9,6 +9,10 @@
 #define KVER_4_19 1
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0) && LINUX_VERSION_CODE < KERNEL_VERSION(5,5,0))
+#define KVER_5_4 1
+#endif
+
 #define QTSOCK_WL_MAX_NUM 64
 
 extern struct qtinfo *qtfs_diag_info;
