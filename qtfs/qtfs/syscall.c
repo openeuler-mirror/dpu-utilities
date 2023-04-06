@@ -70,7 +70,7 @@ static void do_epoll_ctl_remote(int op, struct epoll_event __user *event, struct
 		qtfs_err("qtfs do epoll ctl remote get pvar failed.");
 		return;
 	}
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->fd = priv->fd;
 	req->op = op;
 	if (ep_op_has_event(op) && copy_from_user(&tmp, event, sizeof(struct epoll_event))) {
@@ -335,7 +335,7 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 	}
 
 	// data = qtfs_mount_datapage_modify(type, data);
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (dev_name != NULL) {
 		qtfs_dir_to_qtdir(dev_name, req->buf);
 		req->d.dev_len = strlen(dev_name) + 1;
@@ -400,7 +400,7 @@ static int qtfs_remote_umount(char __user *name, int flags)
 		qtfs_err("qtfs remote umount get pvar failed.");
 		return -EINVAL;
 	}
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	kernel_name = qtfs_copy_mount_string(name);
 	req->flags = flags;
 	qtfs_dir_to_qtdir(kernel_name, req->buf);

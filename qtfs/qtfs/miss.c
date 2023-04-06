@@ -27,7 +27,7 @@ static int miss_open(struct qtreq *miss)
 		qtfs_err("qtfs miss open pvar invalid.");
 		return QTFS_ERR;
 	}
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->fd = missrsp->fd;
 	qtfs_err("miss open proc fd:%d.", req->fd);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_CLOSE, sizeof(struct qtreq_close));

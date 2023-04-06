@@ -1467,7 +1467,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 	req = pvar->vec_recv.iov_base;
 	rsp = pvar->vec_send.iov_base;
 	do {
-		ret = qtfs_conn_recv_block(QTFS_CONN_SOCKET, pvar);
+		ret = qtfs_conn_recv_block(pvar);
 		if (ret == -EPIPE) {
 			qtfs_err("qtfs server thread recv EPIPE, restart the connection.");
 			qtfs_sm_reconnect(pvar);
@@ -1506,7 +1506,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		qtfs_debug("Server thread:%d count:%lu recv len:%d type:%d(%s) seq_num:%lu, reqlen:%lu, resp len:%lu, rsp threadidx:%d.\n",
 				pvar->cur_threadidx, totalproc, ret, req->type, qtfs_server_handles[req->type].str, req->seq_num,
 				req->len, pvar->vec_send.iov_len, pvar->cur_threadidx);
-		ret = qtfs_conn_send(QTFS_CONN_SOCKET, pvar);
+		ret = qtfs_conn_send(pvar);
 		if (ret == -EPIPE) {
 			qtfs_err("qtfs server send get EPIPE, just restart the connection\n");
 			qtfs_sm_reconnect(pvar);
@@ -1519,7 +1519,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		qtinfo_sendinc(rsp->type);
 	} while(0);
 
-	qtfs_conn_msg_clear(pvar);
+	pvar->conn_ops->conn_msg_clear(pvar);
 	return (ret < 0) ? QTERROR : QTOK;
 }
 

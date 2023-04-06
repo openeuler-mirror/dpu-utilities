@@ -27,7 +27,7 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 		return 0;
 	}
 
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->path, dentry) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
@@ -130,7 +130,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		qtfs_conn_put_param(pvar);
 		return -ENOENT;
 	}
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->buf, dentry) < 0) {
 		qtfs_err("xattr set get fullname failed.");
 		qtfs_conn_put_param(pvar);
@@ -185,7 +185,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		return 0;
 	}
 
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->path, dentry) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
@@ -201,7 +201,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		return 0;
 	}
 
-	rsp = qtfs_conn_msg_buf(pvar, QTFS_RECV);
+	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 	do {
 		req->d.pos = rsp->d.pos;
 		req->d.size = size;

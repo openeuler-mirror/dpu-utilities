@@ -50,7 +50,7 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 	// 给server发一个消息
 	pvar->vec_send.iov_len = QTFS_MSG_LEN - (QTFS_REQ_MAX_LEN - len);
 	pvar->send_valid = pvar->vec_send.iov_len + 1;
-	ret = qtfs_conn_send(QTFS_CONN_SOCKET, pvar);
+	ret = qtfs_conn_send(pvar);
 	if (ret == -EPIPE) {
 		qtfs_err("qtfs remote run thread:%d send get EPIPE, try reconnect.", pvar->cur_threadidx);
 		qtfs_sm_reconnect(pvar);
@@ -63,7 +63,7 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 
 	// wait for response
 retry:
-	ret = qtfs_conn_recv_block(QTFS_CONN_SOCKET, pvar);
+	ret = qtfs_conn_recv_block(pvar);
 	if (ret == -EAGAIN)
 		goto retry;
 	if (ret > 0 && req->seq_num != rsp->seq_num) {
@@ -101,7 +101,7 @@ retry:
 		qtfs_err("qtfs remote run error, req errcode:%d type:%u len:%lu\n", req->err, req->type, req->len);
 		return NULL;
 	}
-	return qtfs_conn_msg_buf(pvar, QTFS_RECV);
+	return pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 }
 
 static int qtfs_epoll_thread(void *data)
@@ -126,8 +126,8 @@ connecting:
 		goto end;
 	}
 	qtfs_info("qtfs epoll thread establish a new connection.");
-	req = qtfs_conn_msg_buf(pvar, QTFS_RECV);
-	rsp = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
+	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 
 	// init ack head only once
 	do {
@@ -139,8 +139,8 @@ connecting:
 	} while (0);
 
 	while (!kthread_should_stop()) {
-		ret = qtfs_conn_recv(QTFS_CONN_SOCKET, pvar);
-		if (ret == -EPIPE || qtfs_conn_connected(pvar) == false)
+		ret = qtfs_conn_recv(pvar);
+		if (ret == -EPIPE || pvar->conn_ops->conn_connected(pvar) == false)
 			goto connecting;
 		if (ret < 0 || req->event_nums <= 0) {
 			continue;
@@ -174,11 +174,10 @@ connecting:
 				}
 			} while (0);
 		}
-		ret = qtfs_conn_send(QTFS_CONN_SOCKET, pvar);
+		ret = qtfs_conn_send(pvar);
 		if (ret < 0)
 			qtfs_err("conn send failed, ret:%d\n", ret);
 	}
-	qtfs_epoll_cut_conn(pvar);
 end:
 	g_qtfs_epoll_thread = NULL;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0))
@@ -204,14 +203,15 @@ static int __init qtfs_init(void)
 		return -1;
 	}
 	qtfs_inode_priv_cache = kmem_cache_create("qtfs_inode_priv",
-												sizeof(struct qtfs_inode_priv),
-												0,
-												(SLAB_RECLAIM_ACCOUNT| SLAB_MEM_SPREAD),
-												NULL);
+					sizeof(struct qtfs_inode_priv),
+					0,
+					(SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD),
+					NULL);
 	if (!qtfs_inode_priv_cache) {
 		qtfs_err("qtfs inode priv cache create failed.\n");
 		return -ENOMEM;
 	}
+	qtfs_conn_param_init();
 	g_qtfs_epoll_thread = kthread_run(qtfs_epoll_thread, NULL, "qtfs_epoll");
 	if (IS_ERR(g_qtfs_epoll_thread)) {
 		qtfs_err("qtfs epoll thread run failed.\n");
@@ -226,7 +226,6 @@ static int __init qtfs_init(void)
 	qtfs_misc_register();
 	qtfs_kallsyms_hack_init();
 	qtfs_syscall_replace_start();
-	qtfs_conn_param_init();
 	qtfs_syscall_init();
 	qtfs_utils_register();
 	qtfs_uds_remote_init();
@@ -247,11 +246,7 @@ static void __exit qtfs_exit(void)
 	qtfs_misc_destroy();
 	if (qtfs_epoll_var != NULL) {
 		qtfs_epoll_cut_conn(qtfs_epoll_var);
-		if (qtfs_epoll_var->sock != NULL) {
-			sock_release(qtfs_epoll_var->sock);
-			qtfs_epoll_var->sock = NULL;
-		}
-		qtfs_conn_var_fini(qtfs_epoll_var);
+		qtfs_epoll_var->conn_ops->conn_var_fini(qtfs_epoll_var);
 		kfree(qtfs_epoll_var);
 		qtfs_epoll_var = NULL;
 	}
@@ -277,6 +272,7 @@ MODULE_PARM_DESC(qtfs_server_ip, "qtfs server ip");
 module_param(qtfs_server_port, int, 0644);
 module_param(qtfs_conn_max_conn, int, 0644);
 module_param_string(qtfs_log_level, qtfs_log_level, sizeof(qtfs_log_level), 0600);
+module_param_string(qtfs_conn_type, qtfs_conn_type, sizeof(qtfs_conn_type), 0600);
 
 module_init(qtfs_init);
 module_exit(qtfs_exit);

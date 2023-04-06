@@ -92,7 +92,7 @@ static long qtfs_sc_kill(struct qtfs_conn_var_s *pvar, unsigned long arg)
 		qtfs_err("copy args failed.");
 		return -EINVAL;
 	}
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->pid = karg.pid;
 	req->signum = karg.signum;
 	rsp = qtfs_remote_run(pvar, QTFS_SC_KILL, sizeof(struct qtreq_sc_kill));
@@ -115,7 +115,7 @@ static long qtfs_sc_setaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 		return -EINVAL;
 	}
 
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->type = SC_SET;
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
@@ -142,7 +142,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 		return -EINVAL;
 	}
 
-	req = qtfs_conn_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->type = SC_GET;
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
