@@ -20,8 +20,8 @@
 #endif
 
 long qtfs_utils_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-long qtfs_capability_ioctl(struct qtfs_sock_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg);
-long qtfs_syscall_ioctl(struct qtfs_sock_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg);
+long qtfs_capability_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg);
+long qtfs_syscall_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg);
 
 struct file_operations qtfs_utils_fops = {
 	.owner = THIS_MODULE,
@@ -53,7 +53,7 @@ void qtfs_utils_destroy(void)
 long qtfs_utils_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = -EINVAL;
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	if (pvar == NULL) {
 		qtfs_err("utils ioctl get pvar failed, cmd type:%c nr:%d", _IOC_TYPE(cmd), _IOC_NR(cmd));
 		return -EFAULT;
@@ -77,13 +77,13 @@ long qtfs_utils_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
-long qtfs_capability_ioctl(struct qtfs_sock_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
+long qtfs_capability_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = -EINVAL;
 	return ret;
 }
 
-static long qtfs_sc_kill(struct qtfs_sock_var_s *pvar, unsigned long arg)
+static long qtfs_sc_kill(struct qtfs_conn_var_s *pvar, unsigned long arg)
 {
 	struct qtreq_sc_kill *req;
 	struct qtrsp_sc_kill *rsp;
@@ -92,7 +92,7 @@ static long qtfs_sc_kill(struct qtfs_sock_var_s *pvar, unsigned long arg)
 		qtfs_err("copy args failed.");
 		return -EINVAL;
 	}
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->pid = karg.pid;
 	req->signum = karg.signum;
 	rsp = qtfs_remote_run(pvar, QTFS_SC_KILL, sizeof(struct qtreq_sc_kill));
@@ -105,7 +105,7 @@ static long qtfs_sc_kill(struct qtfs_sock_var_s *pvar, unsigned long arg)
 	return rsp->ret;
 }
 
-static long qtfs_sc_setaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
+static long qtfs_sc_setaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 {
 	struct qtreq_sc_sched_affinity *req;
 	struct qtrsp_sc_sched_affinity *rsp;
@@ -115,7 +115,7 @@ static long qtfs_sc_setaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
 		return -EINVAL;
 	}
 
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->type = SC_SET;
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
@@ -132,7 +132,7 @@ static long qtfs_sc_setaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
 	return rsp->ret;
 }
 
-static long qtfs_sc_getaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
+static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 {
 	struct qtreq_sc_sched_affinity *req;
 	struct qtrsp_sc_sched_affinity *rsp;
@@ -142,7 +142,7 @@ static long qtfs_sc_getaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
 		return -EINVAL;
 	}
 
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->type = SC_GET;
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
@@ -159,7 +159,7 @@ static long qtfs_sc_getaffinity(struct qtfs_sock_var_s *pvar, unsigned long arg)
 	return rsp->ret;
 }
 
-long qtfs_syscall_ioctl(struct qtfs_sock_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
+long qtfs_syscall_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = -EINVAL;
 	switch (cmd) {

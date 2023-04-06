@@ -13,7 +13,7 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 {
 	struct qtreq_xattrlist *req;
 	struct qtrsp_xattrlist *rsp;
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	ssize_t ret;
 
 	if (!pvar) {
@@ -27,7 +27,7 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 		return 0;
 	}
 
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->path, dentry) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
@@ -119,7 +119,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 {
 	struct qtreq_xattrset *req;
 	struct qtrsp_xattrset *rsp;
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	int ret;
 
 	if (!pvar) {
@@ -130,7 +130,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		qtfs_conn_put_param(pvar);
 		return -ENOENT;
 	}
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->buf, dentry) < 0) {
 		qtfs_err("xattr set get fullname failed.");
 		qtfs_conn_put_param(pvar);
@@ -170,7 +170,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 {
 	struct qtreq_xattrget *req;
 	struct qtrsp_xattrget *rsp;
-	struct qtfs_sock_var_s *pvar = qtfs_conn_get_param();
+	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	size_t leftlen = size;
 	char *buf = (char *)buffer;
 
@@ -185,7 +185,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		return 0;
 	}
 
-	req = qtfs_sock_msg_buf(pvar, QTFS_SEND);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (qtfs_fullname(req->path, dentry) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
@@ -201,7 +201,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		return 0;
 	}
 
-	rsp = qtfs_sock_msg_buf(pvar, QTFS_RECV);
+	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 	do {
 		req->d.pos = rsp->d.pos;
 		req->d.size = size;

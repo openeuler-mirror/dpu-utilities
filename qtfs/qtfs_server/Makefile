@@ -1,7 +1,7 @@
 ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../ipc/ -I$(src)/../include/ -DQTFS_SERVER
 KBUILD=/lib/modules/$(shell uname -r)/build/
 COMM=../qtfs_common/
-COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o
+COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o $(COMM)/socket.o
 
 obj-m:=qtfs_server.o
 qtfs_server-objs:=fsops.o qtfs-server.o $(COMMO)
@@ -29,3 +29,4 @@ clean:
 	make -C $(KBUILD) M=$(PWD) clean
 	rm -rf engine
 	rm -rf ../*.o
+	rm -rf $(COMMO) $(COMM).*.o.cmd
