@@ -58,6 +58,11 @@ static inline int qtfs_root_judgment(char __user *dir)
 	return ret;
 }
 
+static inline int ep_op_has_event(int op)
+{
+	return op != EPOLL_CTL_DEL;
+}
+
 static void do_epoll_ctl_remote(int op, struct epoll_event __user *event, struct file *file)
 {
 	struct qtreq_epollctl *req;
