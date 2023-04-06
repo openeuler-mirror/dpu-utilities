@@ -4,6 +4,7 @@
 #include <linux/tcp.h>
 #include <net/tcp.h>
 #include <linux/un.h>
+#include <linux/file.h>
 
 #include "comm.h"
 #include "conn.h"

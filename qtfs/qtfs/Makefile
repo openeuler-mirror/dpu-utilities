@@ -14,5 +14,5 @@ qtfs:
 clean:
 	make -C $(KBUILD) M=$(PWD) clean
 	rm -rf ../*.o ../.*.o.cmd
-	rm -rf $(COMMO)*.o $(COMM).*.o.cmd
+	rm -rf $(COMMO) $(COMM).*.o.cmd
 	rm -rf ../utils/*.o ../utils/.*.o.cmd
