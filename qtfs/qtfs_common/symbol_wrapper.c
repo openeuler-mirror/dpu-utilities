@@ -79,23 +79,18 @@ unsigned long *symbols_a64[A64_NR_MAX];
 #endif
 
 #define KSYMS(sym, type) \
-			qtfs_kern_syms.sym = (type)qtfs_kallsyms_lookup_name(#sym);\
+			qtfs_kern_syms.sym = (type)kallsyms_lookup_name(#sym);\
 			qtfs_info("qtfs kallsyms get %s:0x%lx.", #sym, (unsigned long)qtfs_kern_syms.sym);
 
 #define KSYMS_NULL_RETURN(sym)\
 		if (sym == NULL) {\
 			qtfs_err("symbol:%s not finded", #sym);\
-			return;\
+			return -1;\
 		}
 
 struct qtfs_kallsyms qtfs_kern_syms;
-kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
-void qtfs_kallsyms_hack_init(void)
+int qtfs_kallsyms_hack_init(void)
 {
-	register_kprobe(&kp);
-	qtfs_kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
-	unregister_kprobe(&kp);
-
 	KSYMS(sys_call_table, unsigned long **);
 	KSYMS_NULL_RETURN(qtfs_kern_syms.sys_call_table);
 
@@ -110,16 +105,16 @@ void qtfs_kallsyms_hack_init(void)
 #endif
 
 #ifdef __aarch64__
-	update_mapping_prot = (void *)qtfs_kallsyms_lookup_name("update_mapping_prot");
-	start_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__start_rodata");
-	end_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
+	update_mapping_prot = (void *)kallsyms_lookup_name("update_mapping_prot");
+	start_rodata = (unsigned long)kallsyms_lookup_name("__start_rodata");
+	end_rodata = (unsigned long)kallsyms_lookup_name("__end_rodata");
 
 #pragma GCC diagnostic ignored "-Wint-conversion"
-	symbols_a64[A64_NR_UNLINK] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_unlink");
+	symbols_a64[A64_NR_UNLINK] = (unsigned long)kallsyms_lookup_name("__arm64_sys_unlink");
 	KSYMS_NULL_RETURN(symbols_a64[A64_NR_UNLINK]);
-	symbols_a64[A64_NR_RMDIR] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_rmdir");
+	symbols_a64[A64_NR_RMDIR] = (unsigned long)kallsyms_lookup_name("__arm64_sys_rmdir");
 	KSYMS_NULL_RETURN(symbols_a64[A64_NR_RMDIR]);
-	symbols_a64[A64_NR_EPOLL_WAIT] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_epoll_wait");
+	symbols_a64[A64_NR_EPOLL_WAIT] = (unsigned long)kallsyms_lookup_name("__arm64_sys_epoll_wait");
 	KSYMS_NULL_RETURN(symbols_a64[A64_NR_EPOLL_WAIT]);
 #pragma GCC diagnostic pop
 	qtfs_info("finded __arm64_sys_unlink addr:%lx", (unsigned long)symbols_a64[A64_NR_UNLINK]);
@@ -127,7 +122,7 @@ void qtfs_kallsyms_hack_init(void)
 	qtfs_info("finded __arm64_sys_epoll_wait addr:%lx", (unsigned long)symbols_a64[A64_NR_EPOLL_WAIT]);
 #endif
 
-	return;
+	return 0;
 }
 
 __SYSCALL_DEFINEx(3, _qtfs_connect, int, fd, struct sockaddr __user *, uservaddr, int, addrlen)

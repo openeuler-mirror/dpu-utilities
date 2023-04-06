@@ -197,7 +197,8 @@ static int __init qtfs_init(void)
 {
 	int ret;
 	qtfs_log_init(qtfs_log_level);
-
+	if (qtfs_kallsyms_hack_init() != 0)
+                return -EFAULT;
 	ret = register_filesystem(&qtfs_fs_type);
 	if (ret != 0) {
 		qtfs_err("QTFS file system register failed, ret:%d.\n", ret);
@@ -224,7 +225,6 @@ static int __init qtfs_init(void)
 	}
 
 	qtfs_misc_register();
-	qtfs_kallsyms_hack_init();
 	qtfs_syscall_replace_start();
 	qtfs_conn_param_init();
 	qtfs_syscall_init();
