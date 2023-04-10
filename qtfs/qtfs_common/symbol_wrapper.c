@@ -85,16 +85,24 @@ unsigned long *symbols_a64[A64_NR_MAX];
 #define KSYMS_NULL_RETURN(sym)\
 		if (sym == NULL) {\
 			qtfs_err("symbol:%s not finded", #sym);\
-			return;\
+			return -1;\
 		}
 
 struct qtfs_kallsyms qtfs_kern_syms;
 kallsyms_lookup_name_t qtfs_kallsyms_lookup_name;
-void qtfs_kallsyms_hack_init(void)
+int qtfs_kallsyms_hack_init(void)
 {
-	register_kprobe(&kp);
+	int ret = register_kprobe(&kp);
+	if (ret < 0) {
+		qtfs_err("register kprobe failed, Please confirm whether kprobe is enabled, ret:%d", ret);
+		return -1;
+	}
 	qtfs_kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
 	unregister_kprobe(&kp);
+	if (qtfs_kallsyms_lookup_name == NULL) {
+		qtfs_err("get kallsyms function by kprobe failed.");
+		return -1;
+	}
 
 	KSYMS(sys_call_table, unsigned long **);
 	KSYMS_NULL_RETURN(qtfs_kern_syms.sys_call_table);
@@ -113,6 +121,12 @@ void qtfs_kallsyms_hack_init(void)
 	update_mapping_prot = (void *)qtfs_kallsyms_lookup_name("update_mapping_prot");
 	start_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__start_rodata");
 	end_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
+	if (update_mapping_prot == NULL || start_rodata == NULL || end_rodata == NULL) {
+		qtfs_err("failed to init memory protect handler:%lx %lx %lx",
+			(unsigned long)update_mapping_prot, (unsigned long)start_rodata,
+			(unsigned long)end_rodata);
+		return -1;
+	}
 
 #pragma GCC diagnostic ignored "-Wint-conversion"
 	symbols_a64[A64_NR_UNLINK] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_unlink");
@@ -127,7 +141,7 @@ void qtfs_kallsyms_hack_init(void)
 	qtfs_info("finded __arm64_sys_epoll_wait addr:%lx", (unsigned long)symbols_a64[A64_NR_EPOLL_WAIT]);
 #endif
 
-	return;
+	return 0;
 }
 
 __SYSCALL_DEFINEx(3, _qtfs_connect, int, fd, struct sockaddr __user *, uservaddr, int, addrlen)

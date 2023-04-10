@@ -18,7 +18,7 @@ struct qtfs_kallsyms {
 };
 
 extern struct qtfs_kallsyms qtfs_kern_syms;
-void qtfs_kallsyms_hack_init(void);
+int qtfs_kallsyms_hack_init(void);
 
 #ifdef QTFS_CLIENT
 enum {

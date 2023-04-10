@@ -255,6 +255,8 @@ static int __init qtfs_server_init(void)
 {
 	int i;
 	qtfs_log_init(qtfs_log_level);
+	if (qtfs_kallsyms_hack_init() != 0)
+		return -1;
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
 		whitelist[i] = NULL;
 	}
@@ -270,7 +272,6 @@ static int __init qtfs_server_init(void)
 	else
 		memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
 	qtfs_conn_param_init();
-	qtfs_kallsyms_hack_init();
 	qtfs_syscall_replace_start();
 	qtfs_misc_register();
 	qtfs_uds_remote_init();
