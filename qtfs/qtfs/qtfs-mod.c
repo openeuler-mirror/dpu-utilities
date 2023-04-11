@@ -142,7 +142,7 @@ connecting:
 		ret = qtfs_conn_recv(pvar);
 		if (ret == -EPIPE || pvar->conn_ops->conn_connected(pvar) == false)
 			goto connecting;
-		if (ret < 0 || req->event_nums <= 0) {
+		if (ret < 0 || req->event_nums <= 0 || req->event_nums > QTFS_MAX_EPEVENTS_NUM) {
 			continue;
 		}
 		qtfs_debug("epoll thread recv %d events.", req->event_nums);
@@ -156,7 +156,7 @@ connecting:
 			inode = file->f_inode;
 			// 暂时只支持fifo文件的epoll
 			if (inode == NULL || !qtfs_support_epoll(inode->i_mode)) {
-				qtfs_err("epoll thread event file:%lx not a fifo.", (unsigned long)file);
+				qtfs_err("epoll thread event file not a fifo.");
 				continue;
 			}
 			do {
@@ -167,7 +167,7 @@ connecting:
 				else
 					key = EPOLLIN | EPOLLRDNORM;
 				if (priv == NULL) {
-					qtfs_err("epoll epoll wake up file:%lx error, inode priv is invalid.", (unsigned long)file);
+					qtfs_err("epoll epoll wake up file error, inode priv is invalid.");
 					WARN_ON(1);
 				} else {
 					wake_up_interruptible_sync_poll(&priv->readq, key);

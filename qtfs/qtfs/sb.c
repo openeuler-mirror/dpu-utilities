@@ -143,6 +143,10 @@ int qtfs_readdir(struct file *filp, struct dir_context *ctx)
 	idx = 0;
 	dircnt = rsp->d.vldcnt;
 	while (dircnt--) {
+		if (idx >= sizeof(rsp->dirent)) {
+			qtfs_err("invalid idx:%d", idx);
+			break;
+		}
 		dirent = (struct qtfs_dirent64 *)&rsp->dirent[idx];
 		namelen = strlen(dirent->d_name);
 		ret = dir_emit(ctx, dirent->d_name, namelen,
@@ -549,7 +553,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 		req->d.offset = ALIGN(strlen(req->path) + 1, 64);
 		ret = copy_from_user(req->path + req->d.offset, (char __user *)arg, size);
 		if (ret) {
-			qtfs_err("%s: copy_from_user %p, 0x%lx, %u failed.", __func__, req->path + req->d.offset, arg, size);
+			qtfs_err("%s: copy_from_user, 0x%lx, %u failed.", __func__, arg, size);
 			goto out;
 		}
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + req->d.offset + size;
@@ -662,9 +666,7 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 	}
 	mask = rsp->mask;
 
-	qtfs_info("fifo poll success mask:%x, qproc:%lx key:%x head:%lx next:%lx pre:%lx",
-			mask, (unsigned long)wait->_qproc, (unsigned)wait->_key, (unsigned long)p,
-			(unsigned long)p->next, (unsigned long)p->prev);
+	qtfs_info("fifo poll success mask:%x", mask);
 	qtfs_conn_put_param(pvar);
 	return mask;
 }

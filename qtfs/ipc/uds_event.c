@@ -150,7 +150,7 @@ int uds_event_add_to_free(struct uds_event_global_var *p_event_var, struct uds_e
 		return -1;
 	}
 	peerevt->tofree = 1;
-	uds_log("event fd:%d addr:%lx add to free", peerevt->fd, peerevt);
+	uds_log("event fd:%d addr add to free", peerevt->fd);
 	p_event_var->tofree[p_event_var->cur] = peerevt;
 	p_event_var->cur++;
 	return 0;
@@ -290,7 +290,7 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	newevt->tmout = UDS_EVENT_WAIT_TMOUT;
 	uds_hash_insert_dirct(event_tmout_hash, evt->fd, evt);
 	uds_hash_insert_dirct(event_tmout_hash, newevt->fd, newevt);
-	uds_log("Add hash key:%d-->value:0x%lx and key:%d-->value:%lx", evt->fd, evt, newevt->fd, newevt);
+	uds_log("Add hash key:%d-->value and key:%d-->value", evt->fd, newevt->fd);
 
 	msg.ret = 1;
 	write(evt->peer->fd, &msg, sizeof(struct uds_proxy_remote_conn_rsp));
@@ -415,7 +415,7 @@ int uds_event_remote_build(void *arg, int epfd, struct uds_event_global_var *p_e
 	len = recv(evt->fd, bdmsg, sizeof(struct uds_tcp2tcp), MSG_WAITALL);
 	if (len <= 0) {
 		uds_err("read no msg from sock:%d, len:%d", evt->fd, len);
-		return EVENT_ERR;
+		return EVENT_DEL;
 	}
 
 	switch (bdmsg->msgtype) {
@@ -426,6 +426,7 @@ int uds_event_remote_build(void *arg, int epfd, struct uds_event_global_var *p_e
 			ret = uds_build_pipe_proxy(epfd, evt, (struct uds_stru_scm_pipe *)bdmsg->data);
 			break;
 		default:
+			ret = EVENT_DEL;
 			uds_err("remote build not support msgtype %d now", bdmsg->msgtype);
 			break;
 	}
@@ -453,7 +454,7 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	struct uds_msg_scmrights *p_scmr = (struct uds_msg_scmrights *)&p_msg->data;
 	char *fdproc = calloc(1, UDS_PATH_MAX);
 	if (fdproc == NULL) {
-		uds_err("failed to calloc memory:%lx %lx", fdproc);
+		uds_err("failed to calloc memory:%lx", fdproc);
 		return EVENT_ERR;
 	}
 	sprintf(fdproc, "/proc/self/fd/%d", scmfd);
@@ -639,7 +640,8 @@ static int uds_msg_cmsg2uds(struct uds_tcp2tcp *msg, struct uds_event *evt)
 	return scmfd;
 }
 
-int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt)
+// drop is 1, drop this msg
+int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt, int drop)
 {
 	int scmfd;
 	int fd[SCM_PIPE_NUM];
@@ -648,6 +650,10 @@ int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt)
 	if (len <= 0) {
 		uds_err("recv data failed, len:%d", len);
 		return EVENT_DEL;
+	}
+	if (drop) {
+		uds_err("just drop this msg.");
+		return EVENT_ERR;
 	}
 	if (p_pipe->dir != SCM_PIPE_READ && p_pipe->dir != SCM_PIPE_WRITE) {
 		uds_err("scm pipe recv invalid pipe dir:%d, srcfd:%d", p_pipe->dir, p_pipe->srcfd);
@@ -808,6 +814,14 @@ endmsg:
 	return uds_msg_tcp_end_msg(evt->peer->fd);
 }
 
+static inline void uds_close_fds(int *fds, int fdnum)
+{
+	for (int i = 0; i < fdnum; i++) {
+		close(fds[i]);
+	}
+	return;
+}
+
 int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_var)
 {
 #define MAX_FDS 64	
@@ -838,7 +852,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 			uds_err("recv no msg maybe sock is closed, delete this tcp2uds event, len:%d.", len);
 			goto close_event;
 		}
-		uds_log("pmsg:%lx type:%d len:%d iov_base:%lx len:%d", p_msg, p_msg->msgtype, p_msg->msglen, p_event_var->iov_base, len);
+		uds_log(" type:%d len:%d len:%d", p_msg->msgtype, p_msg->msglen, len);
 		if (p_msg->msgtype == MSG_END) {
 			break;
 		}
@@ -871,6 +885,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 					uds_err("recv data failed len:%d", p_msg->msglen);
 					return EVENT_DEL;
 				}
+				if (fdnum >= MAX_FDS) {
+					uds_err("Too many fds scm.");
+					continue;
+				}
 				scmfd = uds_msg_cmsg2uds(p_msg, evt);
 				if (scmfd == -1) {
 					goto err;
@@ -878,10 +896,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 				fds[fdnum++] = scmfd;
 				uds_msg_scmfd_combine_msg(&msg, &cmsg, &msg_controllen, scmfd);
 				break;
-				}
+			}
 			case MSG_SCM_PIPE: {
 				int scmfd;
-				scmfd = uds_msg_tcp2uds_scm_pipe(p_msg, evt);
+				scmfd = uds_msg_tcp2uds_scm_pipe(p_msg, evt, (fdnum >= MAX_FDS) ? 1 : 0);
 				if (scmfd == EVENT_DEL)
 					goto close_event;
 				if (scmfd < 0)
@@ -889,7 +907,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 				fds[fdnum++] = scmfd;
 				uds_msg_scmfd_combine_msg(&msg, &cmsg, &msg_controllen, scmfd);
 				break;
-				}
+			}
 			default:
 				uds_err("recv unsupport msg type:%d event fd:%d", p_msg->msgtype, evt->fd);
 				break;
@@ -901,14 +919,14 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 	if (iov.iov_len == 0) iov.iov_len = 1;
 	ret = sendmsg(evt->peer->fd, &msg, 0);
 	uds_log("evt:%d sendmsg len:%d, controllen:%d errno:%s", evt->fd, ret, msg_controllen, strerror(errno));
-	for (int i = 0; i < fdnum; i++) {
-		close(fds[i]);
-	}
+	uds_close_fds(fds, fdnum);
 	return EVENT_OK;
 err:
+	uds_close_fds(fds, fdnum);
 	return EVENT_ERR;
 
 close_event:
+	uds_close_fds(fds, fdnum);
 	uds_event_add_to_free(p_event_var, evt);
 	return EVENT_DEL;
 }

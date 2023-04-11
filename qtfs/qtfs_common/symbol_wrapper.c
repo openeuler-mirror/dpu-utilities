@@ -79,8 +79,7 @@ unsigned long *symbols_a64[A64_NR_MAX];
 #endif
 
 #define KSYMS(sym, type) \
-			qtfs_kern_syms.sym = (type)qtfs_kallsyms_lookup_name(#sym);\
-			qtfs_info("qtfs kallsyms get %s:0x%lx.", #sym, (unsigned long)qtfs_kern_syms.sym);
+			qtfs_kern_syms.sym = (type)qtfs_kallsyms_lookup_name(#sym);
 
 #define KSYMS_NULL_RETURN(sym)\
 		if (sym == NULL) {\
@@ -122,9 +121,9 @@ void qtfs_kallsyms_hack_init(void)
 	symbols_a64[A64_NR_EPOLL_WAIT] = (unsigned long)qtfs_kallsyms_lookup_name("__arm64_sys_epoll_wait");
 	KSYMS_NULL_RETURN(symbols_a64[A64_NR_EPOLL_WAIT]);
 #pragma GCC diagnostic pop
-	qtfs_info("finded __arm64_sys_unlink addr:%lx", (unsigned long)symbols_a64[A64_NR_UNLINK]);
-	qtfs_info("finded __arm64_sys_rmdir addr:%lx", (unsigned long)symbols_a64[A64_NR_RMDIR]);
-	qtfs_info("finded __arm64_sys_epoll_wait addr:%lx", (unsigned long)symbols_a64[A64_NR_EPOLL_WAIT]);
+	qtfs_info("finded __arm64_sys_unlink");
+	qtfs_info("finded __arm64_sys_rmdir");
+	qtfs_info("finded __arm64_sys_epoll_wait");
 #endif
 
 	return;
@@ -190,7 +189,7 @@ WRAPPER_DEFINE_BYORIGIN(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3,
 #endif
 
 #define CALL_SYSCALL_FN(nr, regs) (SYSCALL_TYPE qtfs_kern_syms.sys_call_table[nr])(regs);\
-			qtfs_info("qtfs syscall wrapper:%s ret:%d addr:%lx", __func__, retval, (unsigned long)qtfs_kern_syms.sys_call_table[nr]);
+			qtfs_info("qtfs syscall wrapper:%s ret:%d", __func__, retval);
 
 #define WRAPPER_DEFINE(nargs, ret, func, nr)\
 	noinline ret func\

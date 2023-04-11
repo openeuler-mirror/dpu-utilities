@@ -158,7 +158,6 @@ end:
 
 int qtfs_epoll_init(int fd)
 {
-#define MAX_EVENTS 64
 	int epfd = epoll_create1(0);
 	if (epfd < 0) {
 		engine_err("epoll create error, ret:%d.", epfd);
@@ -167,15 +166,15 @@ int qtfs_epoll_init(int fd)
 
 	struct qtfs_server_epoll_s ep;
 	struct epoll_event *evts;
-	evts = calloc(MAX_EVENTS, sizeof(struct epoll_event));
+	evts = calloc(QTFS_MAX_EPEVENTS_NUM, sizeof(struct epoll_event));
 	if (evts == NULL) {
 		engine_err("calloc events failed.");
 		close(epfd);
 		return -1;
 	}
-	engine_out("qtfs engine set epoll arg, fd:%d event nums:%d events:%lx.", epfd, MAX_EVENTS, evts);
+	engine_out("qtfs engine set epoll arg, fd:%d event nums:%d.", epfd, QTFS_MAX_EPEVENTS_NUM);
 	ep.epfd = epfd;
-	ep.event_nums = MAX_EVENTS;
+	ep.event_nums = QTFS_MAX_EPEVENTS_NUM;
 	ep.events = evts;
 	int ret = ioctl(fd, QTFS_IOCTL_EPFDSET, &ep);
 
