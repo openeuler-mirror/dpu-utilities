@@ -163,7 +163,6 @@ int qtfs_sm_active(struct qtfs_conn_var_s *pvar);
 int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar);
 int qtfs_sm_exit(struct qtfs_conn_var_s *pvar);
 
-void qtfs_kallsyms_hack_init(void);
 void qtfs_conn_list_cnt(void);
 
 int qtfs_uds_remote_init(void);

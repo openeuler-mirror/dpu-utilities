@@ -15,7 +15,7 @@ static long qtfs_remote_mount(char __user *dev_name, char __user *dir_name, char
 		unsigned long flags, void __user *data);
 static int qtfs_remote_umount(char __user *name, int flags);
 
-#if BEFORE_KVER_5_6
+#ifdef BEFORE_KVER_5_6
 static inline int ep_op_has_event(int op)
 {
 	return op != EPOLL_CTL_DEL;
