@@ -643,6 +643,7 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 		qtfs_err("qtfs get param kmalloc failed.\n");
 		return NULL;
 	}
+	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	qtfs_epoll_var = pvar;
 	pvar->cur_threadidx = QTFS_EPOLL_THREADIDX;
 	g_pvar_ops->pvar_init(pvar);
