@@ -207,7 +207,7 @@ static int rexec_whitelist_build(struct rexec_white_list_str *wl)
         rexec_err("white list file:%s permissions(%o) error, must be read-only(0400)", stats.st_mode, REXEC_WHITELIST_FILE);
         goto err_end;
     }
-    while (!feof(fwl)) {
+    while (!feof(fwl) && wl->wl_nums < REXEC_WHITELIST_MAX_ITEMS) {
         int len;
         char *fstr;
         memset(cmd, 0, MAX_CMD_LEN);
@@ -330,8 +330,9 @@ static int rexec_start_new_process(int newconnfd)
         rexec_log("Exec msgtype:0x%x msglen:%d argc:%d stdno:%d",
                     head.msgtype, head.msglen, head.argc, head.stdno);
         argc = head.argc;
-        if (head.msglen > REXEC_MSG_MAX || argc > REXEC_MSG_MAX / sizeof(uintptr_t)) {
-            rexec_err("msg len:%d is too large", head.msglen);
+        if (head.msglen > REXEC_MSG_MAX || argc > REXEC_MSG_MAX / sizeof(uintptr_t) ||
+            head.msglen <= 0 || argc < 0) {
+            rexec_err("msg len:%d or argc:%d is too large", head.msglen, argc);
             goto err_to_parent;
         }
         msgbuf = (char *)malloc(head.msglen + 1);

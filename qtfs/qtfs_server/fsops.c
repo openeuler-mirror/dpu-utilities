@@ -111,7 +111,8 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		filp_close(file, NULL);
 		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + sizeof(struct fsxattr);
 	case FS_IOC_FSSETXATTR:
-		if (req->d.size <= 0) {
+		if (req->d.size <= 0 || req->d.offset >= sizeof(req->path) ||
+			req->d.size > sizeof(req->path) - req->d.offset) {
 			rsp->errno = -EINVAL;
 			goto err;
 		}
@@ -153,7 +154,8 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		filp_close(file, NULL);
 		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + sizeof(struct ktermios);
 	case TCSETS:
-		if (req->d.size <= 0) {
+		if (req->d.size <= 0 || req->d.offset >= sizeof(req->path) ||
+			req->d.size > sizeof(req->path) - req->d.offset) {
 			rsp->errno = -EINVAL;
 			goto err;
 		}
@@ -193,6 +195,12 @@ static int handle_statfs(struct qtserver_arg *arg)
 	struct qtrsp_statfs *rsp = (struct qtrsp_statfs *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
+	if (strlen(req->path) + 1 > userp->size) {
+		qtfs_err("invalid msg");
+		rsp->ret = QTFS_ERR;
+		rsp->errno = -EINVAL;
+		return sizeof(struct qtrsp_statfs);
+	}
 	ret = copy_to_user(userp->userp, req->path, strlen(req->path)+1);
 	if (ret) {
 		rsp->ret = QTFS_ERR;
@@ -251,10 +259,16 @@ int handle_open(struct qtserver_arg *arg)
 		rsp->fd = -EACCES;
 		return sizeof(struct qtrsp_open);
 	}
+	if (strlen(req->path) + 1 > userp->size) {
+		qtfs_err("path len invalid.");
+		rsp->ret = QTFS_ERR;
+		rsp->fd = -EFAULT;
+		return sizeof(struct qtrsp_open);
+	}
 
 	ret = copy_to_user(userp->userp, req->path, strlen(req->path)+1);
 	if (ret) {
-		qtfs_err("handle open copy to user failed, ret:%d userp:%lx path:%s", ret, (unsigned long)userp->userp, req->path);
+		qtfs_err("handle open copy to user failed, ret:%d path:%s", ret, req->path);
 		rsp->ret = QTFS_ERR;
 		rsp->fd = -EFAULT;
 		return sizeof(struct qtrsp_open);
@@ -345,7 +359,7 @@ static int handle_readiter(struct qtserver_arg *arg)
 	}
 	__putname(pathbuf);
 	if (err_ptr(file)) {
-		qtfs_err("handle readiter error, open failed, file:%p.\n", file);
+		qtfs_err("handle readiter error, open failed.\n");
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.len = 0;
 		rsp->d.errno = -ENOENT;
@@ -431,6 +445,12 @@ static int handle_write(struct qtserver_arg *arg)
 	} else {
 		leftlen = req->d.buflen;
 	}
+	if (leftlen > sizeof(req->path_buf)) {
+		qtfs_err("invalid buflen :%d", leftlen);
+		rsp->ret = QTFS_ERR;
+		rsp->len = -EINVAL;
+		goto end;
+	}
 	pathbuf = __getname();
 	fullname = file_path(file, pathbuf, PATH_MAX);
 	if (!in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
@@ -441,7 +461,7 @@ static int handle_write(struct qtserver_arg *arg)
 	}
 	__putname(pathbuf);
 	if (err_ptr(file)) {
-		qtfs_err("qtfs handle write error, filp:<%p> open failed.\n", file);
+		qtfs_err("qtfs handle write error, open failed.\n");
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
 		goto end;
@@ -604,12 +624,20 @@ static int handle_mkdir(struct qtserver_arg *arg)
 	struct inode *inode;
 	struct path path;
 	int ret;
-	
+	int len;
+
 	if (!in_white_list(req->path, QTFS_WHITELIST_MKDIR)) {
 		rsp->errno = -EFAULT;
 		goto err;
 	}
-	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
+	len = strlen(req->path);
+	if (len + 1 > userp->size || len >= sizeof(req->path)) {
+		qtfs_err("path len invalid:%d.", len);
+		rsp->errno = -EFAULT;
+		goto err;
+		
+	}
+	if (copy_to_user(userp->userp, req->path, len + 1)) {
 		qtfs_err("handle mkdir copy to userp failed.\n");
 		rsp->errno = -EFAULT;
 		goto err;
@@ -641,12 +669,19 @@ static int handle_rmdir(struct qtserver_arg *arg)
 	struct qtreq_rmdir *req = (struct qtreq_rmdir *)REQ(arg);
 	struct qtrsp_rmdir *rsp = (struct qtrsp_rmdir *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
+	int len;
 	
 	if (!in_white_list(req->path, QTFS_WHITELIST_RMDIR)) {
 		rsp->errno = -EFAULT;
 		goto err;
 	}
-	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
+	len = strlen(req->path);
+	if (len + 1 > userp->size || len >= sizeof(req->path)) {
+		qtfs_err("len invalid:%d", len);
+		rsp->errno = -EFAULT;
+		goto err;
+	}
+	if (copy_to_user(userp->userp, req->path, len + 1)) {
 		qtfs_err("handle rmdir copy to userp failed.\n");
 		rsp->errno = -EFAULT;
 		goto err;
@@ -842,13 +877,19 @@ int handle_unlink(struct qtserver_arg *arg)
 	struct qtreq_unlink *req = (struct qtreq_unlink *)REQ(arg);
 	struct qtrsp_unlink *rsp = (struct qtrsp_unlink *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
+	int len;
 
 	if (!in_white_list(req->path, QTFS_WHITELIST_UNLINK)) {
 		rsp->errno = -ENOENT;
 		return sizeof(struct qtrsp_unlink);
 	}
-
-	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
+	len = strlen(req->path);
+	if (len + 1 > userp->size || len >= sizeof(req->path)) {
+		qtfs_err("len invalid:%d", len);
+		rsp->errno = -EFAULT;
+		return sizeof(struct qtrsp_unlink);
+	}
+	if (copy_to_user(userp->userp, req->path, len + 1)) {
 		qtfs_err("handle unlink copy to userp failed.");
 		rsp->errno = -EFAULT;
 		return sizeof(struct qtrsp_unlink);
@@ -872,6 +913,13 @@ int handle_link(struct qtserver_arg *arg)
 
 	oldname = req->path;
 	newname = req->path + req->d.oldlen;
+	if (strlen(oldname) >= sizeof(req->path) || req->d.oldlen >= sizeof(req->path) ||
+		strlen(oldname) + strlen(newname) >= sizeof(req->path)) {
+		qtfs_err("invalid path");
+		rsp->errno = -EFAULT;
+		rsp->ret = QTFS_ERR;
+		return sizeof(struct qtrsp_link);
+	}
 	if (copy_to_user(userp->userp, oldname, strlen(oldname) + 1) ||
 		copy_to_user(userp->userp2, newname, strlen(newname) + 1)) {
 		qtfs_err("handle link failed in copy to userp.\n");
@@ -896,6 +944,11 @@ int handle_symlink(struct qtserver_arg *arg)
 	struct path path;
 	unsigned int lookup_flags = 0;
 
+	if (req->d.newlen >= sizeof(req->path) || req->d.newlen + req->d.oldlen > sizeof(req->path)) {
+		qtfs_err("newlen:%d oldlen:%d is too big", req->d.newlen, req->d.oldlen);
+		rsp->ret = QTFS_ERR;
+		return sizeof(struct qtrsp_symlink);
+	}
 	newname = req->path;
 	oldname = &req->path[req->d.newlen];
 retry:
@@ -928,8 +981,7 @@ int handle_getlink(struct qtserver_arg *arg)
 	struct qtrsp_getlink *rsp = (struct qtrsp_getlink *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
-	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1) ||
-		copy_to_user(userp->userp2, rsp->path, (userp->size < MAX_PATH_LEN) ? userp->size : MAX_PATH_LEN)) {
+	if (strlen(req->path) + 1 > userp->size || copy_to_user(userp->userp, req->path, strlen(req->path) + 1)) {
 		qtfs_err("handle getlink<%s> copy to userp failed.\n", req->path);
 		rsp->errno = -EFAULT;
 		goto err_handle;
@@ -963,6 +1015,12 @@ int handle_rename(struct qtserver_arg *arg)
 		rsp->errno = -ENOENT;
 		goto err_handle;
 	}
+	if (strlen(req->path) + 1 > sizeof(req->path) || req->d.oldlen >= sizeof(req->path) ||
+		strlen(req->path) + strlen(&req->path[req->d.oldlen]) >= sizeof(req->path)) {
+		qtfs_err("invalid req msg");
+		rsp->errno = -EFAULT;
+		goto err_handle;
+	}
 	if (copy_to_user(userp->userp, req->path, strlen(req->path) + 1) ||
 		copy_to_user(userp->userp2, &req->path[req->d.oldlen], strlen(&req->path[req->d.oldlen]) + 1)) {
 		qtfs_err("handle rename copy to userp failed.\n");
@@ -987,7 +1045,7 @@ int handle_xattrlist(struct qtserver_arg *arg)
 	ssize_t size = 0, buffer_size = 0;
 	int i = 0;
 
-	buffer_size = req->buffer_size;
+	buffer_size = (req->buffer_size > sizeof(rsp->name)) ? sizeof(rsp->name) : req->buffer_size;
 	ret = kern_path(req->path, 0, &path);
 	if (ret) {
 		qtfs_err("handle xattr list path error.\n");
@@ -1026,7 +1084,6 @@ int handle_xattrset(struct qtserver_arg *arg)
 
 	if (!in_white_list(req->buf, QTFS_WHITELIST_SETXATTR)) {
 		rsp->errno = -ENOENT;
-		rsp->ret = QTFS_ERR;
 		goto err_handle;
 	}
 
@@ -1034,7 +1091,11 @@ int handle_xattrset(struct qtserver_arg *arg)
 	if (ret) {
 		qtfs_err("handle xattrset path error, file:%s.\n", req->buf);
 		rsp->errno = -ENOENT;
-		rsp->ret = QTFS_ERR;
+		goto err_handle;
+	}
+	if (req->d.pathlen + req->d.namelen + req->d.valuelen > sizeof(req->buf) - 3) {
+		qtfs_err("invalid len:%d %d %d", req->d.pathlen, req->d.namelen, req->d.valuelen);
+		rsp->errno = -EFAULT;
 		goto err_handle;
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
@@ -1049,6 +1110,7 @@ int handle_xattrset(struct qtserver_arg *arg)
 	return sizeof(struct qtrsp_xattrset);
 
 err_handle:
+	rsp->ret = QTFS_ERR;
 	return sizeof(struct qtrsp_xattrset);
 }
 
@@ -1129,6 +1191,11 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	char *udata = NULL;
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
+	if (req->d.dev_len + req->d.dir_len + req->d.type_len + req->d.data_len > sizeof(req->buf) - 4) {
+		qtfs_err("invalid msglen:%d %d %d %d", req->d.dev_len, req->d.dir_len, req->d.type_len, req->d.data_len);
+		rsp->errno = -EINVAL;
+		goto end;
+	}
 	dev_name = req->d.dev_len == 0 ? NULL : req->buf;
 	dir_name = &req->buf[req->d.dev_len];
 	type = req->d.type_len == 0 ? NULL : &req->buf[req->d.dev_len + req->d.dir_len];
@@ -1153,8 +1220,6 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	utype = (type == NULL) ? NULL : userp->userp2;
 	udata = (data_page == NULL) ? NULL : ((char *)userp->userp + userp->size / 2);
 
-	qtfs_info("udir name:%lx udev name:%lx utype:%lx udata:%lx",
-			(unsigned long)udir_name, (unsigned long)udev_name, (unsigned long)utype, (unsigned long)udata);
 	if (copy_to_user(udir_name, dir_name, strlen(dir_name) + 1) ||
 		(dev_name != NULL && copy_to_user(udev_name, dev_name, strlen(dev_name) + 1)) ||
 		(type != NULL && copy_to_user(utype, type, strlen(type) + 1)) ||
@@ -1182,6 +1247,11 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	qtfs_info("handle umount path:%s\n", req->buf);
+	if (strlen(req->buf) + 1 > userp->size || strlen(req->buf) >= sizeof(req->buf)) {
+		qtfs_err("invalid msg");
+		rsp->errno = -EINVAL;
+		return sizeof(struct qtrsp_sysumount);
+	}
 	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1)) {
 		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
@@ -1277,8 +1347,8 @@ end:
 	rsp->mask = mask;
 	rsp->ret = QTFS_OK;
 
-	qtfs_info("handle fifo poll f_mode:%o: %s get poll mask 0x%x poll:%lx\n",
-			filp->f_mode, filp->f_path.dentry->d_iname, rsp->mask, (unsigned long)filp->f_op->poll);
+	qtfs_info("handle fifo poll f_mode:%o: %s get poll mask 0x%x\n",
+			filp->f_mode, filp->f_path.dentry->d_iname, rsp->mask);
 	fput(filp);
 	return sizeof(struct qtrsp_poll);
 }
@@ -1487,7 +1557,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 			arg.out = rsp->data;
 			arg.userp = &qtfs_userps[pvar->cur_threadidx];
 			if (arg.userp->userp == NULL || arg.userp->userp2 == NULL)
-				qtfs_err("server run userp:%lx userp2:%lx", (unsigned long)arg.userp->userp, (unsigned long)arg.userp->userp2);
+				qtfs_err("server run userp or userp2 is invalid");
 			rsp->len = qtfs_server_handles[req->type].handle(&arg);
 			rsp->type = req->type;
 			rsp->err = QTFS_OK;
@@ -1504,8 +1574,8 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + rsp->len;
 		pvar->send_valid = pvar->vec_send.iov_len + 1;
 		qtfs_debug("Server thread:%d count:%lu recv len:%d type:%d(%s) seq_num:%lu, reqlen:%lu, resp len:%lu, rsp threadidx:%d.\n",
-				pvar->cur_threadidx, totalproc, ret, req->type, qtfs_server_handles[req->type].str, req->seq_num,
-				req->len, pvar->vec_send.iov_len, pvar->cur_threadidx);
+				pvar->cur_threadidx, totalproc, ret, req->type, (req->type >= QTFS_REQ_INV) ? "null" : qtfs_server_handles[req->type].str,
+				req->seq_num, req->len, pvar->vec_send.iov_len, pvar->cur_threadidx);
 		ret = qtfs_conn_send(pvar);
 		if (ret == -EPIPE) {
 			qtfs_err("qtfs server send get EPIPE, just restart the connection\n");

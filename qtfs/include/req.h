@@ -376,7 +376,7 @@ struct qtreq_link {
 		int newlen;
 		int oldlen;
 	} d;
-	char path[QTFS_TAIL_LEN(struct qtreq_symlink_len)];
+	char path[QTFS_TAIL_LEN(struct qtreq_link_len)];
 };
 
 struct qtrsp_link {

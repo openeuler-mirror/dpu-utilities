@@ -142,8 +142,8 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 		goto end;
 	}
 
-	qtfs_info("qtfs qtfs remote epoll file:%s mode:%x file can poll:%lx.",
-				file->f_path.dentry->d_iname, file->f_inode->i_mode, (unsigned long)file->f_op->poll);
+	qtfs_info("qtfs qtfs remote epoll file:%s mode:%x file can poll.",
+				file->f_path.dentry->d_iname, file->f_inode->i_mode);
 	do_epoll_ctl_remote(op, event, file);
 
 end:

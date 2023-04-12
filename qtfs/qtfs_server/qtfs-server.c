@@ -28,6 +28,7 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 	.epfd = -1,
 	.event_nums = 0,
 	.events = NULL,
+	.kevents = NULL,
 };
 
 struct whitelist* whitelist[QTFS_WHITELIST_MAX];
@@ -80,7 +81,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 		for (i = 0; i < n; i++) {
 			req->events[i].data = qtfs_epoll.kevents[i].data;
 			req->events[i].events = qtfs_epoll.kevents[i].events;
-			qtfs_info("epoll thread head:%lx req:%lx data:%lx(offset:%lx).", (unsigned long)pvar->vec_send.iov_base,
+			qtfs_info("epoll thread head req:%lx data:%lx(offset:%lx).",
 											(unsigned long)req, req->events[i].data, (unsigned long)&req->events[i].data);
 		}
 		req->event_nums = n;
@@ -135,8 +136,8 @@ long qtfs_server_epoll_init(void)
 									sizeof(struct qtreq_epollevt),
 									sizeof(req->events),
 									sizeof(struct qtreq_epoll_event));
-	qtfs_info("qtfs epoll wait thread, epfd:%d nums:%d events:%lx epoll var:%lx.",
-							qtfs_epoll.epfd, qtfs_epoll.event_nums, (unsigned long)qtfs_epoll.events, (unsigned long)qtfs_epoll_var);
+	qtfs_info("qtfs epoll wait thread, epfd:%d nums:%d.",
+							qtfs_epoll.epfd, qtfs_epoll.event_nums);
 
 	return QTOK;
 }
@@ -154,8 +155,8 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("qtfs ioctl thread init copy from user failed.");
 				return QTERROR;
 			}
-			if (qtfs_userps == NULL) {
-				qtfs_err("qtfs ioctl thread init userps invalid.");
+			if (qtfs_userps == NULL || init_userp.thread_nums > QTFS_MAX_THREADS) {
+				qtfs_err("qtfs ioctl thread init userps invalid thread nums:%d.", init_userp.thread_nums);
 				return QTERROR;
 			}
 			memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
@@ -165,8 +166,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				return QTERROR;
 			}
 			for (i = 0; i < init_userp.thread_nums; i++)
-				qtfs_info("userp set idx:%d size:%lu user pointer:%lx %lx", i, qtfs_userps[i].size,
-								(unsigned long)qtfs_userps[i].userp, (unsigned long)qtfs_userps[i].userp2);
+				qtfs_info("userp set idx:%d size:%lu user pointer", i, qtfs_userps[i].size);
 			break;
 		case QTFS_IOCTL_THREAD_RUN:
 			pvar = qtfs_conn_get_param();
@@ -181,12 +181,21 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			qtfs_conn_put_param(pvar);
 			break;
 		case QTFS_IOCTL_EPFDSET:
+			if (qtfs_epoll.kevents != NULL) {
+				kfree(qtfs_epoll.kevents);
+				qtfs_epoll.kevents = NULL;
+			}
 			if (copy_from_user(&qtfs_epoll, (void __user *)arg, sizeof(struct qtfs_server_epoll_s))) {
 				qtfs_err("copy epoll struct from arg failed.");
 				break;
 			}
-			qtfs_info("epoll arg set, epfd:%d event nums:%d events:%lx.",
-									qtfs_epoll.epfd, qtfs_epoll.event_nums, (unsigned long)qtfs_epoll.events);
+			if (qtfs_epoll.event_nums > QTFS_MAX_EPEVENTS_NUM) {
+				qtfs_err("epoll arg set failed, event nums:%d too big", qtfs_epoll.event_nums);
+				ret = QTERROR;
+				break;
+			}
+			qtfs_info("epoll arg set, epfd:%d event nums:%d events.",
+									qtfs_epoll.epfd, qtfs_epoll.event_nums);
 			qtfs_epoll.kevents = (struct epoll_event *)kmalloc(sizeof(struct epoll_event) *
 															qtfs_epoll.event_nums, GFP_KERNEL);
 			if (qtfs_epoll.kevents == NULL) {
@@ -220,13 +229,20 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("qtfs ioctl white init copy from user failed.");
 				return QTERROR;
 			}
+			if (len > QTFS_WL_MAX_NUM) {
+				qtfs_err("qtfs ioctl white list len:%d invalid", len);
+				return QTERROR;
+			}
 			tmp = (struct whitelist *)kmalloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len, GFP_KERNEL);
 			
 			if (copy_from_user(tmp, (void __user *)arg, sizeof(struct whitelist) + sizeof(struct wl_item) * len)) {
 				qtfs_err("qtfs ioctl white init copy from user failed.");
 				return QTERROR;
 			}
-			
+			if (tmp->type >= QTFS_WHITELIST_MAX) {
+				qtfs_err("qtfs white list type :%d invalid.", tmp->type);
+				return QTERROR;
+			}
 			if (whitelist[tmp->type] != NULL) {
 				kfree(whitelist[tmp->type]);
 			}

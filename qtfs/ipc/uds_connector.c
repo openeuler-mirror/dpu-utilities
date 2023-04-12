@@ -99,8 +99,7 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 		return libcret;
 	}
 
-	uds_log("enter uds connect fd:%d sunpath:%s family:%d len:%d connect function:0x%lx", fd, addr->sun_path,
-			addr->sun_family, len, libcconnect);
+	uds_log("enter uds connect fd:%d sunpath:%s family:%d len:%d ", fd, addr->sun_path, addr->sun_family, len);
     // 本地未连接，且是uds链接
 	if (!uds_conn_whitelist_check(addr->sun_path)) {
 		uds_err("path:%s not in white list", addr->sun_path);
@@ -153,7 +152,7 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 	memcpy(&addr_proxy, addr, sizeof(struct sockaddr_un));
 	memcpy(&addr_proxy.sun_path[sun_len], UDS_PROXY_SUFFIX, strlen(UDS_PROXY_SUFFIX));
 	addr_proxy.sun_path[sun_len + strlen(UDS_PROXY_SUFFIX)] = '\0';
-	return (*libcconnect)(fd, (const struct sockaddr *)&addr_proxy, len);
+	return (*libcconnect)(fd, (const struct sockaddr *)&addr_proxy, sizeof(struct sockaddr));
 
 err_end:
 	close(sock_fd);
