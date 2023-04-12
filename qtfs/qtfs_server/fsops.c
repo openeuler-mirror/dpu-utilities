@@ -1519,7 +1519,6 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		qtinfo_sendinc(rsp->type);
 	} while(0);
 
-	pvar->conn_ops->conn_msg_clear(pvar);
 	return (ret < 0) ? QTERROR : QTOK;
 }
 
