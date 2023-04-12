@@ -207,12 +207,19 @@ void qtfs_conn_fini(struct qtfs_conn_var_s *pvar)
 
 int qtfs_conn_send(struct qtfs_conn_var_s *pvar)
 {
+	if (pvar->vec_send.iov_len > QTFS_MSG_LEN)
+		return -EMSGSIZE;
+	pvar->send_valid = pvar->vec_send.iov_len;
 	return pvar->conn_ops->conn_send(pvar);
 }
 
 int do_qtfs_conn_recv(struct qtfs_conn_var_s *pvar, bool block)
 {
-	return pvar->conn_ops->conn_recv(pvar, block);
+	int ret = pvar->conn_ops->conn_recv(pvar, block);
+	if (ret > 0) {
+		pvar->recv_valid = ret;
+	}
+	return ret;
 }
 
 int qtfs_conn_recv_block(struct qtfs_conn_var_s *pvar)
@@ -247,6 +254,8 @@ int qtfs_conn_var_init(struct qtfs_conn_var_s *pvar)
 	pvar->vec_send.iov_len = 0;
 	memset(pvar->vec_recv.iov_base, 0, QTFS_MSG_LEN);
 	memset(pvar->vec_send.iov_base, 0, QTFS_MSG_LEN);
+	pvar->recv_valid = 0;
+	pvar->send_valid = 0;
 	INIT_LIST_HEAD(&pvar->lst);
 	return QTFS_OK;
 }
@@ -267,10 +276,10 @@ void qtfs_conn_var_fini(struct qtfs_conn_var_s *pvar)
 
 void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar)
 {
-	memset(pvar->vec_recv.iov_base, 0, QTFS_MSG_LEN);
-	memset(pvar->vec_send.iov_base, 0, QTFS_MSG_LEN);
-	pvar->recv_valid = QTFS_MSG_LEN;
-	pvar->send_valid = QTFS_MSG_LEN;
+	memset(pvar->vec_recv.iov_base, 0, pvar->recv_valid);
+	memset(pvar->vec_send.iov_base, 0, pvar->send_valid);
+	pvar->recv_valid = 0;
+	pvar->send_valid = 0;
 #ifdef QTFS_CLIENT
 	memset(pvar->who_using, 0, QTFS_FUNCTION_LEN);
 #endif

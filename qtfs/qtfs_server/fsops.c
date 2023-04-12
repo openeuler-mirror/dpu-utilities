@@ -1475,7 +1475,6 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		}
 		if (ret < 0)
 			break;
-		pvar->recv_valid = ret + 1;
 		if (req->type >= QTFS_REQ_INV) {
 			qtfs_err("qtfs server recv unknown operate type:%d\n", req->type);
 			rsp->type = req->type;
@@ -1502,7 +1501,6 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		}
 		rsp->seq_num = req->seq_num;
 		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + rsp->len;
-		pvar->send_valid = pvar->vec_send.iov_len + 1;
 		qtfs_debug("Server thread:%d count:%lu recv len:%d type:%d(%s) seq_num:%lu, reqlen:%lu, resp len:%lu, rsp threadidx:%d.\n",
 				pvar->cur_threadidx, totalproc, ret, req->type, qtfs_server_handles[req->type].str, req->seq_num,
 				req->len, pvar->vec_send.iov_len, pvar->cur_threadidx);
