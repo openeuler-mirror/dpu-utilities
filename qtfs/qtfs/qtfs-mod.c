@@ -49,7 +49,6 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 	// 都是struct qtreq *xx
 	// 给server发一个消息
 	pvar->vec_send.iov_len = QTFS_MSG_LEN - (QTFS_REQ_MAX_LEN - len);
-	pvar->send_valid = pvar->vec_send.iov_len + 1;
 	ret = qtfs_conn_send(pvar);
 	if (ret == -EPIPE) {
 		qtfs_err("qtfs remote run thread:%d send get EPIPE, try reconnect.", pvar->cur_threadidx);
@@ -94,7 +93,6 @@ retry:
 	}
 	if (retrytimes > 0)
 		qtfs_debug("qtfs remote run retry times:%lu.", retrytimes);
-	pvar->recv_valid = ret + 1;
 	qtinfo_recvinc(rsp->type);
 
 	if (rsp->err == QTFS_ERR) {
