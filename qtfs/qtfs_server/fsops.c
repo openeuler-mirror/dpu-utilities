@@ -418,6 +418,7 @@ static int handle_readiter(struct qtserver_arg *arg)
 		rsp->d.errno = (int)rsp->d.len;
 	} else {
 		rsp->d.ret = QTFS_OK;
+		file->f_pos = req->pos;
 	}
 
 	qtfs_info("handle readiter file:<%s>, len:%lu, rsplen:%ld, pos:%lld, ret:%d errno:%d.\n",
@@ -518,7 +519,13 @@ static int handle_write(struct qtserver_arg *arg)
 		rsp->len += ret;
 	}
 	file_end_write(file);
-	rsp->ret = (rsp->len <= 0) ? QTFS_ERR : QTFS_OK;
+	if (rsp->len <= 0) {
+		rsp->ret = QTFS_ERR;
+	} else {
+		rsp->ret = QTFS_OK;
+		file->f_pos = req->d.pos;
+	}
+
 	qtfs_info("handle write file<%s> %s, write len:%ld pos:%lld mode:%o flags:%x.", file->f_path.dentry->d_iname,
 			(rsp->ret == QTFS_ERR) ? "failed" : "succeded", rsp->len, req->d.pos, file->f_mode, file->f_flags);
 end:
