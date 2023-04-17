@@ -55,6 +55,7 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 	req->len = len;
 	req->seq_num = pvar->seq_num;
 
+	pvar->conn_ops->conn_recv_buff_drop(pvar);
 	// 调用qtfs_remote_run之前，调用者应该先把消息在iov_base里面封装好
 	// 如果不是socket通信，则是在其他通信模式定义的buf里，消息协议统一
 	// 都是struct qtreq *xx
