@@ -131,15 +131,17 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	int ret;
 	int err;
 	int slen;
+	int un_headlen;
 	struct fd f;
 	struct socket *sock;
 	struct sockaddr_un addr_un;
+	struct sockaddr_un addr_proxy;
 
 	sysret = qtfs_syscall_connect(fd, addr, len);
 	// don't try remote uds connect if: 1.local connect successed; 2.this process is udsproxyd
 	if (sysret == 0 || qtfs_uds_is_proxy())
 		return sysret;
-	if (copy_from_user(&addr_un, addr, sizeof(struct sockaddr_un))) {
+	if (copy_from_user(&addr_un, addr, len)) {
 		qtfs_err("copy sockaddr failed.");
 		return sysret;
 	}
@@ -148,7 +150,9 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 		return sysret;
 	if (addr_un.sun_family != AF_UNIX)
 		return sysret;
-	if (strlen(addr_un.sun_path) >= (UNIX_PATH_MAX - strlen(QTFS_UDS_PROXY_SUFFIX))) {
+	un_headlen = sizeof(struct sockaddr_un) - sizeof(addr_un.sun_path);
+	// 如果用户态给的参数长度不够，这里智能失败退出
+	if (len < un_headlen || strlen(addr_un.sun_path) >= (len - un_headlen - strlen(QTFS_UDS_PROXY_SUFFIX))) {
 		qtfs_err("failed to try connect remote uds server, sun path:%s too long to add suffix:%s",
 				addr_un.sun_path, QTFS_UDS_PROXY_SUFFIX);
 		return sysret;
@@ -167,15 +171,20 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	// try to connect remote uds's proxy
 	ret = qtfs_uds_proxy_build(sock, &addr_un, len);
 	if (ret == 0) {
-		slen = strlen(addr_un.sun_path);
-		strcat(addr_un.sun_path, QTFS_UDS_PROXY_SUFFIX);
-		addr_un.sun_path[slen + strlen(QTFS_UDS_PROXY_SUFFIX)] = '\0';
-		if (copy_to_user(addr, &addr_un, sizeof(struct sockaddr_un))) {
-			qtfs_err("copy to addr failed sunpath:%s", addr_un.sun_path);
+		memcpy(&addr_proxy, &addr_un, sizeof(struct sockaddr_un));
+		slen = strlen(addr_proxy.sun_path);
+		strcat(addr_proxy.sun_path, QTFS_UDS_PROXY_SUFFIX);
+		addr_proxy.sun_path[slen + strlen(QTFS_UDS_PROXY_SUFFIX)] = '\0';
+		if (copy_to_user(addr, &addr_proxy, (len > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : len)) {
+			qtfs_err("copy to addr failed sunpath:%s", addr_proxy.sun_path);
 			goto end;
 		}
 		sysret = qtfs_syscall_connect(fd, addr, len);
 		qtfs_info("try remote connect sunpath:%s ret:%d", addr_un.sun_path, sysret);
+		if (copy_to_user(addr, &addr_un, (len > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : len)) {
+			qtfs_err("resume addr failed");
+			goto end;
+		}
 	}
 
 end:
