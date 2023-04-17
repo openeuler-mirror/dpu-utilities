@@ -119,6 +119,7 @@ struct qtfs_conn_ops_s {
 	int (*conn_client_connect)(struct qtfs_conn_var_s *pvar);
 	bool (*conn_inited)(struct qtfs_conn_var_s *pvar);
 	bool (*conn_connected)(struct qtfs_conn_var_s *pvar);
+	void (*conn_recv_buff_drop)(struct qtfs_conn_var_s *pvar);
 };
 
 struct qtfs_conn_var_s {

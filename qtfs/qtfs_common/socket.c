@@ -365,6 +365,25 @@ static bool qtfs_conn_sock_connected(struct qtfs_conn_var_s *pvar)
 	return false;
 }
 
+void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
+{
+#define TMP_STACK_LEN 64
+	int ret = 0;
+	char buf[TMP_STACK_LEN];
+	struct kvec vec_recv;
+	struct msghdr msg_recv;
+	vec_recv.iov_base = buf;
+	vec_recv.iov_len = TMP_STACK_LEN;
+	do {
+		ret = kernel_recvmsg(pvar->conn_var.sock_var.client_sock, &msg_recv, &vec_recv, 1,
+					vec_recv.iov_len, MSG_DONTWAIT);
+		if (ret > 0) {
+			qtfs_err("drop invalid data len:%d", ret);
+		}
+	} while (ret > 0);
+	return;
+}
+
 #ifdef QTFS_SERVER
 static bool qtfs_conn_sock_inited(struct qtfs_conn_var_s *pvar)
 {
@@ -404,7 +423,8 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 #ifdef QTFS_CLIENT
 	.conn_client_connect = qtfs_conn_sock_client_connect,
 #endif
-	.conn_connected = qtfs_conn_sock_connected
+	.conn_connected = qtfs_conn_sock_connected,
+	.conn_recv_buff_drop = qtfs_sock_drop_recv_buf,
 };
 
 int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)

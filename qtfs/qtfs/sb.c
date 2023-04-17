@@ -463,8 +463,9 @@ loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 		return PTR_ERR(rsp);
 	}
 	if (rsp->ret != QTFS_OK) {
+		ret = rsp->off;
 		qtfs_conn_put_param(pvar);
-		return rsp->off;
+		return ret;
 	}
 	file->f_pos = rsp->off;
 	ret = rsp->off;
