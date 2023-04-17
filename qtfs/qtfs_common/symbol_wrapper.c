@@ -192,16 +192,16 @@ void qtfs_syscall_replace_stop(void)
 	return;
 }
 
-#define SYSCALL_TYPE (long (*)(const struct pt_regs *))
+#define SYSCALL_TYPE(type) (type (*)(const struct pt_regs *))
 
 #define WRAPPER_DEFINE_BYORIGIN(nargs, ret, func, nr)\
 	noinline ret func\
 	{\
 		struct pt_regs _regs;\
 		struct pt_regs *regs = &_regs;\
-		int retval;\
+		ret retval;\
 		WRAPPER_ARGS_TO_REGS##nargs(regs);\
-		retval = (SYSCALL_TYPE symbols_origin[nr])(regs);\
+		retval = (SYSCALL_TYPE(ret) symbols_origin[nr])(regs);\
 		return retval;\
 	}
 
@@ -213,17 +213,14 @@ WRAPPER_DEFINE_BYORIGIN(4, long, qtfs_syscall_epoll_ctl(int x1, int x2, int x3,
 			struct epoll_event __user *x4), SYMBOL_SYSCALL_EPOLL_CTL);
 #endif
 
-#define CALL_SYSCALL_FN(nr, regs) (SYSCALL_TYPE qtfs_kern_syms.sys_call_table[nr])(regs);\
-			qtfs_info("qtfs syscall wrapper:%s ret:%d", __func__, retval);
-
 #define WRAPPER_DEFINE(nargs, ret, func, nr)\
 	noinline ret func\
 	{\
 		struct pt_regs _regs;\
 		struct pt_regs *regs = &_regs;\
-		int retval;\
+		ret retval;\
 		WRAPPER_ARGS_TO_REGS##nargs(regs);\
-		retval = (SYSCALL_TYPE qtfs_kern_syms.sys_call_table[nr])(regs);\
+		retval = (SYSCALL_TYPE(ret) qtfs_kern_syms.sys_call_table[nr])(regs);\
 		return retval;\
 	}
 
@@ -265,9 +262,9 @@ WRAPPER_DEFINE(3, long, qtfs_syscall_sched_setaffinity(pid_t x1, unsigned int x2
 	{\
 		struct pt_regs _regs;\
 		struct pt_regs *regs = &_regs;\
-		int retval;\
+		ret retval;\
 		WRAPPER_ARGS_TO_REGS##nargs(regs);\
-		retval = (SYSCALL_TYPE symbols_a64[nr])(regs);\
+		retval = (SYSCALL_TYPE(ret) symbols_a64[nr])(regs);\
 		return retval;\
 	}
 
