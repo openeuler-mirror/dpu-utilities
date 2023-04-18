@@ -60,7 +60,7 @@ struct engine_arg {
 };
 
 #define QTFS_USERP_MAXSIZE 65536
-#define QTFS_USERP_SIZE 4096
+#define QTFS_USERP_SIZE QTFS_USERP_MAXSIZE
 #define QTFS_SERVER_FILE "/dev/qtfs_server"
 
 int qtfs_fd;

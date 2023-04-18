@@ -326,7 +326,7 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 				qtfs_info("qtfs readiter error: %ld.", rsp->d.len);
 			ret = (ssize_t)rsp->d.len;
 			qtfs_conn_put_param(pvar);
-			return ret;
+			return (ret > 0) ? allcnt - leftlen + ret : allcnt - leftlen;
 		}
 		tocnt = copy_to_iter(rsp->readbuf, rsp->d.len, iov);
 		if (rsp->d.len != tocnt) {
@@ -395,8 +395,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		req->d.pos = kio->ki_pos;
 		if (copy_from_iter(wrbuf, wrbuflen, iov) == 0) {
 			qtfs_err("qtfs write copy from iter failed, len:%d.", wrbuflen);
-			qtfs_conn_put_param(pvar);
-			return -EFAULT;
+			break;
 		}
 		rsp = qtfs_remote_run(pvar, QTFS_REQ_WRITE, sizeof(struct qtreq_write) - sizeof(req->path_buf) + wrbuflen);
 		if (IS_ERR(rsp) || rsp == NULL) {
@@ -405,9 +404,14 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		}
 		if (rsp->ret == QTFS_ERR || rsp->len <= 0) {
 			qtfs_err("qtfs write remote error, errno:%ld, leftlen:%lu.", rsp->len, leftlen);
+			if (rsp->len > 0) {
+				kio->ki_pos += rsp->len;
+				leftlen -= rsp->len;
+				break;
+			}
 			ret = rsp->len;
 			qtfs_conn_put_param(pvar);
-			return ret;
+			return (ret > 0) ? len - leftlen + ret : len - leftlen;
 		}
 		if (rsp->len != wrbuflen) {
 			iov->count -= (rsp->len - wrbuflen);
@@ -437,7 +441,7 @@ loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 	struct qtfs_conn_var_s *pvar = NULL;
 	struct qtreq_llseek *req;
 	struct qtrsp_llseek *rsp;
-	loff_t ret;
+	off_t ret;
 	struct private_data *priv = NULL;
 	
 	qtfs_info("qtfs llseek off:%lld, whence:%d cur pos:%lld.", off, whence, file->f_pos);
@@ -470,7 +474,7 @@ loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 	file->f_pos = rsp->off;
 	ret = rsp->off;
 	qtfs_conn_put_param(pvar);
-	qtfs_info("qtfs llseek successed, cur seek pos:%lld.", ret);
+	qtfs_info("qtfs llseek successed, cur seek pos:%ld.", ret);
 	return ret;
 }
 

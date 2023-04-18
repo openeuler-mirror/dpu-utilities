@@ -256,6 +256,11 @@ WRAPPER_DEFINE(3, long, qtfs_syscall_sched_getaffinity(pid_t x1, unsigned int x2
 			unsigned long __user *x3), __NR_sched_getaffinity);
 WRAPPER_DEFINE(3, long, qtfs_syscall_sched_setaffinity(pid_t x1, unsigned int x2, 
 			unsigned long __user *x3), __NR_sched_setaffinity);
+WRAPPER_DEFINE(3, long, qtfs_syscall_write(unsigned int x1, const char __user *x2,
+			size_t x3), __NR_write);
+WRAPPER_DEFINE(3, long, qtfs_syscall_read(unsigned int x1, char __user *x2,
+			size_t x3), __NR_read);
+
 #ifdef __aarch64__
 #define WRAPPER_DEFINE_A64(nargs, ret, func, nr)\
 	noinline ret func\
