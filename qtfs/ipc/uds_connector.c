@@ -152,7 +152,7 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 	memcpy(&addr_proxy, addr, sizeof(struct sockaddr_un));
 	memcpy(&addr_proxy.sun_path[sun_len], UDS_PROXY_SUFFIX, strlen(UDS_PROXY_SUFFIX));
 	addr_proxy.sun_path[sun_len + strlen(UDS_PROXY_SUFFIX)] = '\0';
-	return (*libcconnect)(fd, (const struct sockaddr *)&addr_proxy, sizeof(struct sockaddr));
+	return (*libcconnect)(fd, (const struct sockaddr *)&addr_proxy, sizeof(struct sockaddr_un));
 
 err_end:
 	close(sock_fd);
