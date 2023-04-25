@@ -111,7 +111,7 @@ static inline void qtfs_nbytes_print(unsigned char *buf, int bytes)
 // maximum possible length, can be increased according to the actual situation
 #define NAME_MAX	255
 #define MAX_PATH_LEN PATH_MAX
-#define MAX_ELSE_LEN 4096
+#define MAX_ELSE_LEN (1024 * 128)
 #define QTFS_REQ_MAX_LEN (MAX_PATH_LEN + MAX_ELSE_LEN)
 
 #define MAX_BUF 4096
@@ -548,7 +548,7 @@ struct qtreq_llseek {
 
 struct qtrsp_llseek {
 	int ret;
-	loff_t off;
+	off_t off;
 };
 
 struct qtreq_sc_kill {
