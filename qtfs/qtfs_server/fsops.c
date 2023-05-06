@@ -176,7 +176,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 			rsp->errno = ret;
 			goto err;
 		}
-		qtfs_err("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
+		qtfs_info("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
 		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("tcsets ioctl failed with %d\n", iret);
@@ -367,8 +367,14 @@ static int handle_readiter(struct qtserver_arg *arg)
 	}
 
 	pathbuf = __getname();
+	if (pathbuf == NULL) {
+		qtfs_err("readiter whitelist judge error: failed to get pathbuf.\n");
+		rsp->d.ret = QTFS_ERR;
+		rsp->d.errno = -ENOENT;
+		goto end;
+	}
     fullname = file_path(file, pathbuf, PATH_MAX);
-	if (!in_white_list(fullname, QTFS_WHITELIST_READ)) {
+	if (IS_ERR(fullname) || !in_white_list(fullname, QTFS_WHITELIST_READ)) {
 		qtfs_err("%s not in whitelist.\n", fullname);
 		__putname(pathbuf);
 		rsp->d.ret = QTFS_ERR;
@@ -465,8 +471,14 @@ static int handle_write(struct qtserver_arg *arg)
 		goto end;
 	}
 	pathbuf = __getname();
+	if (pathbuf == NULL) {
+		qtfs_err("write whitelist judge error: failed to get pathbuf.\n");
+		rsp->ret = QTFS_ERR;
+		rsp->len = 0;
+		goto end;
+	}
 	fullname = file_path(file, pathbuf, PATH_MAX);
-	if (!in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
+	if (IS_ERR(fullname) || !in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
 		__putname(pathbuf);
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
@@ -646,6 +658,8 @@ static int handle_mkdir(struct qtserver_arg *arg)
 	ret = kern_path(req->path, 0, &path);
 	if (ret) {
 		qtfs_err("handle mkdir failed in kern path, ret:%d.\n", ret);
+		rsp->errno = -EFAULT;
+		goto err;
 	} else {
 		inode = d_inode(path.dentry);
 		qtfs_inode_info_fill(&rsp->inode_info, inode);
@@ -1055,8 +1069,10 @@ int handle_xattrlist(struct qtserver_arg *arg)
 		rsp->d.size = size;
 		goto err_handle;
 	}
-	if (size == 0)
+	if (size == 0) {
+		rsp->d.size = size;
 		goto err_handle;
+	}
 	rsp->d.ret = QTFS_OK;
 	rsp->d.size = size;
 	while (i < size) {
@@ -1067,7 +1083,6 @@ int handle_xattrlist(struct qtserver_arg *arg)
 
 err_handle:
 	rsp->d.ret = QTFS_ERR;
-	rsp->d.size = size;
 	return sizeof(struct qtrsp_xattrlist);
 }
 
@@ -1133,7 +1148,6 @@ int handle_xattrget(struct qtserver_arg *arg)
 		kvalue = (char *)kvzalloc(req->d.size, GFP_KERNEL);
 		if (!kvalue) {
 			qtfs_err("handle xattrget kvzalloc failed, size:%d.\n", req->d.size);
-			rsp->d.ret = QTFS_ERR;
 			rsp->d.errno = -ENOMEM;
 			path_put(&path);
 			goto err_handle;
@@ -1159,7 +1173,6 @@ int handle_xattrget(struct qtserver_arg *arg)
 		}
 		rsp->d.pos = req->d.pos + len;
 	} else {
-		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = error;
 		kvfree(kvalue);
 		goto err_handle;
@@ -1171,6 +1184,7 @@ end:
 	return sizeof(struct qtrsp_xattrget) - sizeof(rsp->buf) + len;
 
 err_handle:
+	rsp->d.ret = QTFS_ERR;
 	qtfs_err("handle getxattr failed, file:%s", req->path);
 	return sizeof(struct qtrsp_xattrget) - sizeof(rsp->buf);
 }
@@ -1248,7 +1262,7 @@ int handle_syscall_umount(struct qtserver_arg *arg)
 		rsp->errno = -EINVAL;
 		return sizeof(struct qtrsp_sysumount);
 	}
-	if (copy_to_user(userp->userp, req->buf, strlen(req->buf)+1)) {
+	if (copy_to_user(userp->userp, req->buf, strlen(req->buf) + 1)) {
 		rsp->errno = -ENOMEM;
 		return sizeof(struct qtrsp_sysumount);
 	}
@@ -1309,6 +1323,11 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	poll_table *pt;
 
 	filp = fget(req->fd);
+	if (!filp) {
+		rsp->mask = EPOLLERR;
+		rsp->ret = QTFS_ERR;
+		return sizeof(struct qtrsp_poll);
+	}
 	inode = filp->f_inode;
 	if (!S_ISFIFO(inode->i_mode)) {
 		msleep(1);
@@ -1322,6 +1341,7 @@ int handle_fifopoll(struct qtserver_arg *arg)
 	if (pipe == NULL) {
 		qtfs_err("file :%s pipe data is NULL.", filp->f_path.dentry->d_iname);
 		rsp->ret = QTFS_ERR;
+		rsp->mask = EPOLLERR;
 		fput(filp);
 		return sizeof(struct qtrsp_poll);
 	}
@@ -1398,13 +1418,13 @@ end:
 
 int handle_exit(struct qtserver_arg *arg)
 {
-	return 4;
+	return 0;
 }
 
 int handle_null(struct qtserver_arg *arg)
 {
 	qtfs_err("unknown events.");
-	return 4;
+	return 0;
 }
 
 int remotesc_kill(struct qtserver_arg *arg)
