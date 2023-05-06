@@ -102,8 +102,7 @@ void rshim_reg_file_resume(const char * const json_buf)
     const char *path = NULL;
     int curfd = 3; // begin from 3
     struct json_object *fd_json = json_tokener_parse(json_buf);
-    if (fd_json == NULL)
-    {
+    if (fd_json == NULL) {
         fprintf(stderr, "parse json error\n");
         goto end;
     }
@@ -138,8 +137,6 @@ int rexec_shim_entry(int argc, char *argv[])
 {
     char *json_str = NULL;
     char **newarg = NULL;
-
-
 
     if (strcmp(argv[0], "-f") == 0) {
         json_str = argv[1];
