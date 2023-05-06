@@ -246,15 +246,12 @@ static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
 	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
 	if (ret) {
 		qtfs_err("qtfs sock client init create sock failed.\n");
-		goto err_end;
+		return -EFAULT;
 	}
 	QTSOCK_SET_KEEPX(sock, 5);
 	pvar->conn_var.sock_var.client_sock = sock;
 
 	return 0;
-err_end:
-	sock_release(sock);
-	return ret;
 }
 #endif
 
@@ -310,13 +307,12 @@ static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block)
 			qtfs_err("qtfs recv error, total:%d iov_base:%lx iovlen:%lu ret:%d rsplen:%lu", total,
 							(unsigned long)pvar->vec_recv.iov_base, pvar->vec_recv.iov_len, ret, rsp->len);
 			WARN_ON(1);
-			dump_stack();
 			break;
 		}
 	}
 	if (total > rsp->len) {
-		qtfs_err("recv total:%d msg len:%lu\n", total, rsp->len);
-		BUG();
+		qtfs_crit("recv total:%d msg len:%lu\n", total, rsp->len);
+		WARN_ON(1);
 	}
 
 	return total + headlen;

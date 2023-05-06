@@ -51,7 +51,7 @@ char wl_type_str[QTFS_WHITELIST_MAX][10] = {"Open", "Write", "Read", "Readdir", 
 
 #define WHITELIST_FILE "/etc/qtfs/whitelist"
 
-struct whitelist *whitelist[QTFS_WHITELIST_MAX];
+struct whitelist *whitelist[QTFS_WHITELIST_MAX] = {0};
 
 struct engine_arg {
 	int psize;
@@ -80,7 +80,7 @@ static void qtfs_engine_userp_free(struct qtfs_server_userp_s *userp, int thread
 static struct qtfs_server_userp_s *qtfs_engine_thread_init(int fd, int thread_nums, int psize)
 {
 	struct qtfs_server_userp_s *userp;
-	userp = (struct qtfs_server_userp_s *)malloc(thread_nums * sizeof(struct qtfs_server_userp_s));
+	userp = (struct qtfs_server_userp_s *)calloc(thread_nums, sizeof(struct qtfs_server_userp_s));
 	if (userp == NULL) {
 		engine_out("engine thread init malloc failed.");
 		return NULL;
@@ -136,6 +136,7 @@ static void qtfs_signal_int(int signum)
 		return;
 	}
 	long ret = ioctl(qtfs_fd, QTFS_IOCTL_EXIT, 0);
+	engine_out("qtfs engine send QTFS_IOCTL_EXIT to kernel, get return value:%d.", ret);
 	engine_run = 0;
 
 	return;
@@ -190,6 +191,11 @@ int qtfs_epoll_init(int fd)
 	ep.event_nums = QTFS_MAX_EPEVENTS_NUM;
 	ep.events = evts;
 	int ret = ioctl(fd, QTFS_IOCTL_EPFDSET, &ep);
+	if (ret != 0) {
+		engine_err("failed to set epoll fd, ret:%d.", ret);
+		close(epfd);
+		return -1;
+	}
 
 	return epfd;
 }
@@ -197,10 +203,15 @@ int qtfs_epoll_init(int fd)
 static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 {
 	int64_t i, len;
-	char **items = g_key_file_get_string_list(config,wl_type_str[type],"Path",&len,NULL);
+	char **items;
+	if (type >= QTFS_WHITELIST_MAX) {
+		engine_err("whitelist item index out of range:%d, no more than %d.", type, QTFS_WHITELIST_MAX);
+		return -1;
+	}
+	items = g_key_file_get_string_list(config,wl_type_str[type],"Path",&len,NULL);
 	if (len == 0) {
-		engine_out("Can't find whitelist item %s", wl_type_str[type]);
-		return 0;
+		engine_err("Can't find whitelist item %s", wl_type_str[type]);
+		return -1;
 	}
 	whitelist[type] = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len);
 	g_print("%s:\n", wl_type_str[type]);
@@ -209,10 +220,14 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 	for(i = 0; i < len;i++){
 		printf("%s\n", items[i]);
 		whitelist[type]->wl[i].len = strlen(items[i]);
-        strcpy(whitelist[type]->wl[i].path, items[i]);
-    }
+		strcpy(whitelist[type]->wl[i].path, items[i]);
+	}
 	int ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist[type]);
+	if (ret != 0) {
+		engine_err("Can't set whitelist item %s", wl_type_str[type]);
+	}
 	free(items);
+	// whitelist[type] will be free in qtfs_whitelist_init
 	return ret;
 }
 
@@ -224,18 +239,24 @@ int qtfs_whitelist_init(int fd)
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
 		ret = qtfs_whitelist_transfer(fd, config, i);
 		if (ret != 0) {
-			return ret;
+			engine_err("failed to set whitelist item %s, get error:%d", wl_type_str[i], ret);
+			// failure of one whitelist type should not stop others.
+			continue;
 		}
 	}
 	g_key_file_free(config);
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		free(whitelist[i]);
+		if (whitelist[i]) {
+			free(whitelist[i]);
+			whitelist[i] = NULL;
+		}
 	}
 	return 0;
 }
 
 int main(int argc, char *argv[])
 {
+	int ret = 0;
 	if (argc != 7) {
 		engine_out("Usage: %s <number of threads> <uds proxy thread num> <host ip> <uds proxy port> <dpu ip> <uds proxy port>.", argv[0]);
 		engine_out("     Example: %s 16 1 192.168.10.10 12121 192.168.10.11 12121.", argv[0]);
@@ -245,7 +266,7 @@ int main(int argc, char *argv[])
 	int fd = open(QTFS_SERVER_FILE, O_RDONLY);
 	if (fd < 0) {
 		engine_err("qtfs server file:%s open failed, fd:%d.", QTFS_SERVER_FILE, fd);
-		return 0;
+		return -1;
 	}
 	qtfs_fd = fd;
 	// init epoll
@@ -254,17 +275,18 @@ int main(int argc, char *argv[])
 		close(fd);
 		return -1;
 	}
-	if (qtfs_whitelist_init(fd)) {
+	ret = qtfs_whitelist_init(fd);
+	if (ret)
 		goto end;
-	}
 
 	umask(0);
 
 	pthread_t texec[QTFS_MAX_THREADS];
 	pthread_t tepoll;
 	if (thread_nums > QTFS_MAX_THREADS) {
-		engine_err("qtfs engine param invalid, thread_nums:%d(must <= %d).",
+		engine_err("qtfs engine parm invalid, thread_nums:%d(must <= %d).",
 				thread_nums, QTFS_MAX_THREADS);
+		ret = -1;
 		goto end;
 	}
 	(void)ioctl(fd, QTFS_IOCTL_EXIT, 1);
@@ -275,6 +297,7 @@ int main(int argc, char *argv[])
 	struct qtfs_server_userp_s *userp = qtfs_engine_thread_init(fd, thread_nums, QTFS_USERP_SIZE);
 	if (userp == NULL) {
 		engine_out("qtfs engine userp init failed.");
+		ret = -1;
 		goto end;
 	}
 	struct engine_arg arg[QTFS_MAX_THREADS];
@@ -288,6 +311,7 @@ int main(int argc, char *argv[])
 	// 必须放在这个位置，uds main里面最终也有join
 	if (uds_proxy_main(6, &argv[1]) != 0) {
 		engine_out("uds proxy start failed.");
+		ret = -1;
 		goto engine_free;
 	}
 	for (int i = 0; i < thread_nums; i++) {
@@ -302,5 +326,5 @@ end:
 	close(epfd);
 	close(fd);
 	engine_out("qtfs engine over.");
-	return 0;
+	return ret;
 }

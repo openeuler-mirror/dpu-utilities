@@ -137,7 +137,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case QTFS_IOCTL_ALLINFO:
 			if (qtfs_diag_info == NULL) {
 				qtfs_err("ioctl allinfo failed, qtfs_diag_info is invalid.");
-				break;
+				goto err_end;
 			}
 			qtfs_req_size();
 			qtfs_diag_info->log_level = log_level;
@@ -145,30 +145,28 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			qtfs_conn_list_cnt();
 			if (copy_to_user((void *)arg, qtfs_diag_info, sizeof(struct qtinfo))) {
 				qtfs_err("ioctl allinfo copy to user failed.");
+				goto err_end;
 			}
 			break;
 		case QTFS_IOCTL_CLEARALL:
 			qtinfo_clear();
 			break;
-		case QTFS_IOCTL_LOGLEVEL:
-		{
+		case QTFS_IOCTL_LOGLEVEL: {
 			char level_str[QTFS_LOGLEVEL_STRLEN] = {0};
 			if (arg == 0 || copy_from_user(level_str, (void *)arg, QTFS_LOGLEVEL_STRLEN - 1)) {
 				qtfs_err("ioctl set log level failed, arg:%lu.", arg);
-				break;
+				goto err_end;
 			}
 			ret = (long)qtfs_log_init(level_str);
 			break;
 		}
 		case QTFS_IOCTL_EPOLL_SUPPORT:
-		{
 			if (arg == 0) {
 				qtfs_epoll_mode = false;
 			} else {
 				qtfs_epoll_mode = true;
 			}
 			break;
-		}
 		case QTFS_IOCTL_QTSOCK_WL_ADD: {
 			struct qtsock_whitelist *name;
 			struct qtsock_whitelist head;
