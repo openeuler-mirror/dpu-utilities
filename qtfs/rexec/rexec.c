@@ -43,14 +43,19 @@
 FILE *rexec_logfile = NULL;
 
 #define REXEC_PIDMAP_PATH "/var/run/rexec/pids"
-
+#define REXEC_PIDMAP_PATH_LEN 64
+#define REXEC_PID_LEN   16
 static int rexec_conn_to_server()
 {
     struct rexec_conn_arg arg;
+    char *ret = strncpy(arg.sun_path, REXEC_UDS_CONN, sizeof(arg.sun_path));
+    if (ret == NULL) {
+        rexec_err("strncpy sun path failed");
+        return -1;
+    }
     arg.cs = REXEC_SOCK_CLIENT;
-    strncpy(arg.sun_path, REXEC_UDS_CONN, sizeof(arg.sun_path));
     arg.udstype = SOCK_STREAM;
-    if (0 != rexec_build_unix_connection(&arg))
+    if (rexec_build_unix_connection(&arg) != 0)
         return -1;
     return arg.connfd;
 }
@@ -61,7 +66,7 @@ static int rexec_calc_argv_len(int argc, char *argv[])
     for (int i = 0; i < argc; i++) {
         if (argv[i] == NULL) {
             rexec_err("Invalid argv index:%d", i);
-            return len;
+            return -1;
         }
         len += strlen(argv[i]);
         len++;
@@ -113,9 +118,10 @@ static int rexec_conn_msg(int connfd, int *exit_status, int *pidfd)
         case REXEC_PIDMAP: {
             int mypid = getpid();
             int peerpid = head.pid;
-            char path[32] = {0};
-            char buf[16] = {0};
+            char path[REXEC_PIDMAP_PATH_LEN] = {0};
+            char buf[REXEC_PID_LEN] = {0};
             int fd;
+            int err;
             if (*pidfd > 0) {
                 rexec_err("Rexec pidmap msg > 1 error.");
                 return 0;
@@ -128,13 +134,23 @@ static int rexec_conn_msg(int connfd, int *exit_status, int *pidfd)
                 break;
             }
             *pidfd = fd;
-            if (0 != flock(fd, LOCK_EX)) {
-                rexec_err("Rexec flock file:%s failed.", path);
+            if ((err = flock(fd, LOCK_EX)) != 0) {
+                rexec_err("Rexec flock file:%s failed, errno:%d rexec exit.", path, err);
+                return -1;
             }
-            ftruncate(fd, 0);
-            lseek(fd, 0, SEEK_SET);
+            if ((err = ftruncate(fd, 0)) != 0) {
+                rexec_err("Rexec pidmap file:%s clear failed errno:%d rexec exit.", path, err);
+                return -1;
+            }
+            if ((err = lseek(fd, 0, SEEK_SET)) < 0) {
+                rexec_err("Rexec pidmap file:%s lseek 0 failed errno:%d rexec exit", path, err);
+                return -1;
+            }
             sprintf(buf, "%d", peerpid);
-            write(fd, buf, strlen(buf));
+            if ((err = write(fd, buf, strlen(buf))) <= 0) {
+                rexec_err("Rexec pidmap file:%s write pid:%d failed errno:%d rexec exit.", path, peerpid, err);
+                return -1;
+            }
             break;
         }
         default:
@@ -174,13 +190,14 @@ static int rexec_run(int rstdin, int rstdout, int rstderr, int connfd, char *arg
             continue;
         } else {
             if (rexec_set_nonblock(infds[i], 1) != 0) {
-                rexec_err("rexec set fd:%d i:%d non block failed.", infds[i], i)
+                rexec_err("rexec set fd:%d i:%d non block failed.", infds[i], i);
+                return exit_status;
             }
         }
     }
 
     struct epoll_event *evts = calloc(REXEC_MAX_EVENTS, sizeof(struct epoll_event));
-        if (evts == NULL) {
+    if (evts == NULL) {
         rexec_err("init calloc evts failed.");
         goto end;
     }
@@ -254,7 +271,7 @@ void rexec_create_pidmap_path()
 
 void rexec_clear_pids()
 {
-    char path[32] = {0};
+    char path[REXEC_PIDMAP_PATH_LEN] = {0};
     DIR *dir = NULL;
     struct dirent *entry;
     if (access(REXEC_PIDMAP_PATH, F_OK) != 0) {
@@ -269,7 +286,8 @@ void rexec_clear_pids()
     while (entry = readdir(dir)) {
         int fd;
 
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 ||
+            strlen(entry->d_name) >= REXEC_PID_LEN)
             continue;
 
         memset(path, 0, sizeof(path));
@@ -356,14 +374,14 @@ static char *rexec_get_fds_jsonstr()
     fdinfo = (struct rexec_fdinfo *)malloc(sizeof(struct rexec_fdinfo));
     if (fdinfo == NULL) {
         rexec_err("malloc failed.");
-        return NULL;
+        goto err_end;
     }
 
     fddir = opendir("/proc/self/fd");
     if (fddir == NULL) {
         free(fdinfo);
         rexec_err("open path:%s failed", REXEC_PIDMAP_PATH);
-        return NULL;
+        goto err_end;
     }
 
     struct json_object *files_arr = json_object_new_array();
@@ -372,6 +390,10 @@ static char *rexec_get_fds_jsonstr()
         struct json_object *fd_obj = json_object_new_object();
         struct json_object *item = NULL;
 
+        if (fd_obj == NULL) {
+            rexec_err("json c new object failed.");
+            goto json_err;
+        }
         memset(fdinfo, 0, sizeof(struct rexec_fdinfo));
         if (rexec_get_fdinfo(fdentry, fdinfo) != 0)
             continue;
@@ -394,6 +416,13 @@ static char *rexec_get_fds_jsonstr()
     json_object_put(root);
 
     return json_str;
+
+json_err:
+    closedir(fddir);
+    free(fdinfo);
+err_end:
+    json_object_put(root);
+    return NULL;
 }
 
 int main(int argc, char *argv[])
@@ -407,7 +436,12 @@ int main(int argc, char *argv[])
         return -1;
     }
     rexec_log("Remote exec binary:%s", argv[1]);
+
     int arglen = rexec_calc_argv_len(argc - 1, &argv[1]);
+    if (arglen <= 0) {
+        rexec_err("argv is invalid.");
+        return -1;
+    }
     char *fds_json = rexec_get_fds_jsonstr();
     if (fds_json == NULL) {
         rexec_err("Get fds info json string failed.");

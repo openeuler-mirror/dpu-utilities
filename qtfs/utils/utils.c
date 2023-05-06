@@ -48,6 +48,7 @@ static struct miscdevice qtfs_utils_dev = {
 int qtfs_utils_register(void)
 {
 	int ret = misc_register(&qtfs_utils_dev);
+
 	if (ret) {
 		qtfs_err("qtfs utils dev register failed, ret:%d", ret);
 		return -EFAULT;
@@ -58,6 +59,7 @@ int qtfs_utils_register(void)
 void qtfs_utils_destroy(void)
 {
 	misc_deregister(&qtfs_utils_dev);
+
 	return;
 }
 
@@ -65,6 +67,7 @@ long qtfs_utils_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = -EINVAL;
 	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
+
 	if (pvar == NULL) {
 		qtfs_err("utils ioctl get pvar failed, cmd type:%c nr:%d", _IOC_TYPE(cmd), _IOC_NR(cmd));
 		return -EFAULT;
@@ -90,7 +93,7 @@ long qtfs_utils_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 long qtfs_capability_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
 {
-	long ret = -EINVAL;
+	long ret = -ENOTSUPP;
 	return ret;
 }
 
@@ -99,6 +102,7 @@ static long qtfs_sc_kill(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	struct qtreq_sc_kill *req;
 	struct qtrsp_sc_kill *rsp;
 	struct qtsc_kill karg;
+
 	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtsc_kill))) {
 		qtfs_err("copy args failed.");
 		return -EINVAL;
@@ -109,7 +113,6 @@ static long qtfs_sc_kill(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	rsp = qtfs_remote_run(pvar, QTFS_SC_KILL, sizeof(struct qtreq_sc_kill));
 	if (IS_ERR(rsp) || rsp == NULL) {
 		qtfs_err("qtfs remote kill faile.");
-		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}
 	qtfs_info("qtfs remote kill pid:%d sig:%d success:%ld", req->pid, req->signum, rsp->ret);
@@ -121,6 +124,7 @@ static long qtfs_sc_setaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	struct qtreq_sc_sched_affinity *req;
 	struct qtrsp_sc_sched_affinity *rsp;
 	struct qtsc_sched_affinity karg;
+
 	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtreq_sc_sched_affinity))) {	
 		qtfs_err("copy args failed.");
 		return -EINVAL;
@@ -148,6 +152,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	struct qtreq_sc_sched_affinity *req;
 	struct qtrsp_sc_sched_affinity *rsp;
 	struct qtsc_sched_affinity karg;
+
 	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtreq_sc_sched_affinity))) {
 		qtfs_err("copy args failed.");
 		return -EINVAL;
@@ -166,6 +171,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	if (rsp->len == 0 || rsp->len > karg.len ||
 			copy_to_user(karg.user_mask_ptr, rsp->user_mask_ptr, rsp->len)) {
 		qtfs_err("copy user mask ptr failed rsp len:%u valid len:%u", rsp->len, karg.len);
+		return -EINVAL;
 	}
 	return rsp->ret;
 }
@@ -173,6 +179,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 long qtfs_syscall_ioctl(struct qtfs_conn_var_s *pvar, struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = -EINVAL;
+
 	switch (cmd) {
 		case QTUTIL_SC_KILL:
 			ret = qtfs_sc_kill(pvar, arg);

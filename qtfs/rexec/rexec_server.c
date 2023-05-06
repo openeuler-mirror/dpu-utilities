@@ -231,8 +231,19 @@ static int rexec_whitelist_build(struct rexec_white_list_str *wl)
     return 0;
 
 err_end:
+    for (int i = 0; i < wl->wl_nums; i++) {
+        free(wl->wl[i]);
+    }
     fclose(fwl);
     return -1;
+}
+
+static void rexec_white_list_free(struct rexec_white_list_str *wl)
+{
+    for (int i = 0; i < wl->wl_nums; i++) {
+        free(wl->wl[i]);
+    }
+    return;
 }
 
 static int rexec_whitelist_check(char *binary)
@@ -293,7 +304,7 @@ static int rexec_start_new_process(int newconnfd)
 
     int pid = fork();
     // parent
-    if (pid  != 0) {
+    if (pid != 0) {
         close(pipefd[PIPE_WRITE]);
         return 0;
     }
@@ -354,8 +365,7 @@ static int rexec_start_new_process(int newconnfd)
     char *binary = msgbuf;
     if (rexec_whitelist_check(binary) != 0) {
         rexec_err("Cmd:<%s> not in white list.", binary);
-        free(msgbuf);
-        goto err_to_parent;
+        goto err_free;
     }
 
     int mypid = getpid();
@@ -526,8 +536,10 @@ int main(int argc, char *argv[])
     if (access(REXEC_RUN_PATH, F_OK) != 0) {
         mkdir(REXEC_RUN_PATH, 0755);
     }
-    if (rexec_pid_hashmap_init(&child_hash) != 0)
+    if (rexec_pid_hashmap_init(&child_hash) != 0) {
+        rexec_white_list_free(&rexec_wl);
         return -1;
+    }
     rexec_server_mainloop();
     rexec_pid_hashmap_destroy(child_hash);
     fclose(rexec_logfile);

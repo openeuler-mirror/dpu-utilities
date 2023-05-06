@@ -481,7 +481,7 @@ int main(int argc, char *argv[])
 	int ch;
 	if ((argc == 1) || (argc == 2 && strcmp(argv[1], "--help") == 0)) {
 		qtinfo_help(argv[0]);
-		return 0;
+		return -1;
 	}
 	int fd = open(QTFS_DEV_NAME, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
