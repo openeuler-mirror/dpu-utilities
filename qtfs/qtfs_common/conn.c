@@ -66,7 +66,7 @@ int qtfs_uds_proxy_build(struct socket *sock, struct sockaddr_un *addr, int len)
 	memset(proxy.sun_path, 0, sizeof(proxy.sun_path));
 	strncpy(proxy.sun_path, UDS_BUILD_CONN_ADDR, strlen(UDS_BUILD_CONN_ADDR));
 	ret = sock->ops->connect(proxy_sock, (struct sockaddr *)&proxy, sizeof(proxy), SOCK_NONBLOCK);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("connect to uds proxy failed");
 		goto err_end;
 	}
@@ -291,7 +291,7 @@ void qtfs_conn_var_fini(struct qtfs_conn_var_s *pvar)
 		pvar->vec_send.iov_base = NULL;
 	}
 
-	return ;
+	return;
 }
 
 void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar)
@@ -360,7 +360,7 @@ int qtfs_sm_active(struct qtfs_conn_var_s *pvar)
 			break;
 		case QTCONN_INIT:
 			ret = pvar->conn_ops->conn_init(pvar);
-			if (ret < 0) {
+			if (ret) {
 				qtfs_err("qtfs sm active init failed, ret:%d.", ret);
 				break;
 			}
@@ -396,8 +396,9 @@ int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar)
 		case QTCONN_ACTIVE:
 			pvar->conn_ops->conn_fini(pvar);
 			ret = pvar->conn_ops->conn_init(pvar);
-			if (ret < 0) {
+			if (ret) {
 				qtfs_err("qtfs sm active init failed, ret:%d.", ret);
+				ret = QTERROR;
 				break;
 			}
 
@@ -498,7 +499,7 @@ void qtfs_conn_param_fini(void)
 	int i;
 
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs conn param finish mutex lock interrup failed, ret:%d.", ret);
 		WARN_ON(1);
 		return;
@@ -508,13 +509,14 @@ void qtfs_conn_param_fini(void)
 		struct qtfs_conn_var_s *pvar = (struct qtfs_conn_var_s *)plst;
 		pvar->conn_ops->conn_var_fini(pvar);
 		qtfs_sm_exit((struct qtfs_conn_var_s *)plst);
-		kfree(plst);
 		if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS) {
 			qtfs_err("qtfs free unknown threadidx %d", pvar->cur_threadidx);
 		} else {
 			qtfs_thread_var[pvar->cur_threadidx] = NULL;
 			qtfs_info("qtfs free pvar idx:%d successed.", pvar->cur_threadidx);
 		}
+		list_del(&pvar->lst);
+		kfree(pvar);
 	}
 	conn_num = atomic_read(&g_qtfs_conn_num);
 	for (i = 0; i < conn_num; i++) {
@@ -541,7 +543,7 @@ struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *func)
 
 retry:
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs conn get param mutex lock interrup failed, ret:%d.", ret);
 		return NULL;
 	}
@@ -569,7 +571,7 @@ retry:
 	}
 
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs conn get param mutex lock interrup failed, ret:%d.", ret);
 		return NULL;
 	}
@@ -577,7 +579,7 @@ retry:
 		mutex_unlock(&g_param_mutex);
 		cnt++;
 		msleep(1);
-		if (cnt < 100000)
+		if (cnt < QTFS_GET_PARAM_MAX_RETRY)
 			goto retry;
 		qtfs_err("qtfs get param failed, the concurrency specification has reached the upper limit");
 		return NULL;
@@ -614,7 +616,7 @@ retry:
 	mutex_unlock(&g_param_mutex);
 	pvar->cs = QTFS_CONN_SOCK_CLIENT;
 	ret = qtfs_sm_active(pvar);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 		// put to vld list
 		qtfs_conn_put_param(pvar);
@@ -636,7 +638,7 @@ retry:
 		mutex_unlock(&g_param_mutex);
 		pvar->state = QTCONN_CONNECTING;
 		ret = qtfs_sm_active(pvar);
-		if (ret < 0) {
+		if (ret) {
 			qtfs_err("qtfs get param active connection failed, ret:%d curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 			qtfs_conn_put_param(pvar);
 			return NULL;
@@ -661,7 +663,7 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 		} else {
 			ret = qtfs_sm_active(pvar);
 		}
-		if (ret < 0) {
+		if (ret) {
 			return NULL;
 		}
 		return pvar;
@@ -689,7 +691,7 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 	pvar->cs = QTFS_CONN_SOCK_SERVER;
 #endif
 	ret = qtfs_sm_active(pvar);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs epoll get param active new param failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));
 		return NULL;
 	}
@@ -702,7 +704,7 @@ void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 {
 	int ret;
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
-	if (ret < 0) {
+	if (ret) {
 		llist_add(&pvar->lazy_put, &g_lazy_put_llst);
 		qtfs_warn("qtfs conn put param add to lazy list idx:%d, ret:%d.", pvar->cur_threadidx, ret);
 		return;
@@ -716,7 +718,7 @@ void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar)
 {
 	int ret = qtfs_sm_exit(pvar);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs epoll put param exit failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));
 	}
 	return;
@@ -729,7 +731,7 @@ void qtfs_conn_list_cnt(void)
 #ifdef QTFS_CLIENT
 	int ret = 0;
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
-	if (ret < 0) {
+	if (ret) {
 		qtfs_err("qtfs conn put param mutex lock interrup failed, ret:%d.", ret);
 		return;
 	}

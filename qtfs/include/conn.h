@@ -50,6 +50,7 @@ extern struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops;
 #define QTFS_EPOLL_THREADIDX (QTFS_MAX_THREADS + 4)
 #define QTCONN_IS_EPOLL_CONN(pvar) (pvar->cur_threadidx == QTFS_EPOLL_THREADIDX)
 #define QTFS_SERVER_MAXCONN 2
+#define QTFS_GET_PARAM_MAX_RETRY 10000
 
 static inline bool err_ptr(void *ptr)
 {
