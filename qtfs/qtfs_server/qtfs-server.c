@@ -177,7 +177,9 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				return QTERROR;
 			}
 			for (i = 0; i < init_userp.thread_nums; i++)
-				qtfs_info("userp set idx:%d size:%lu user pointer", i, qtfs_userps[i].size);
+				qtfs_info("userp set idx:%d size:%lu user pointer:%lx %lx", i,
+					qtfs_userps[i].size, (unsigned long)qtfs_userps[i].userp,
+					(unsigned long)qtfs_userps[i].userp2);
 			break;
 		case QTFS_IOCTL_THREAD_RUN:
 			pvar = qtfs_conn_get_param();
