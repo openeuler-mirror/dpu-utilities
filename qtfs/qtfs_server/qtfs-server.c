@@ -25,6 +25,7 @@
 #include "symbol_wrapper.h"
 
 #define QTFS_EPOLL_TIMEO 1000 // unit ms
+#define QTFS_EPOLL_RETRY_INTVL 500 // unit ms
 
 int qtfs_server_thread_run = 1;
 
@@ -42,7 +43,7 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 	.kevents = NULL,
 };
 
-struct whitelist* whitelist[QTFS_WHITELIST_MAX];
+struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
 
 long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 {
@@ -66,7 +67,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 	}
 	if (ret != QTOK) {
 		qtfs_err("qtfs epoll thread connect state error, can't work.");
-		msleep(500);
+		msleep(QTFS_EPOLL_RETRY_INTVL);
 		return QTERROR;
 	}
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
@@ -79,7 +80,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 			break;
 		}
 		if (n < 0) {
-			msleep(100);
+			msleep(QTFS_EPOLL_RETRY_INTVL);
 			qtfs_err("epoll get new events number failed:%d ", n);
 			break;
 		}
@@ -144,9 +145,8 @@ long qtfs_server_epoll_init(void)
 
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	qtfs_info("qtfs epoll events req size:%lu, events size:%lu, struct:%lu.",
-									sizeof(struct qtreq_epollevt),
-									sizeof(req->events),
-									sizeof(struct qtreq_epoll_event));
+				sizeof(struct qtreq_epollevt), sizeof(req->events),
+				sizeof(struct qtreq_epoll_event));
 	qtfs_info("qtfs epoll wait thread, epfd:%d nums:%d.",
 							qtfs_epoll.epfd, qtfs_epoll.event_nums);
 
@@ -184,7 +184,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		case QTFS_IOCTL_THREAD_RUN:
 			pvar = qtfs_conn_get_param();
 			if (pvar == NULL)
-				break;
+				return QTERROR;
 			ret = qtfs_conn_server_run(pvar);
 			if (ret == QTEXIT) {
 				qtfs_warn("qtfs thread idx:%d exit.", pvar->cur_threadidx);
@@ -200,6 +200,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 			if (copy_from_user(&qtfs_epoll, (void __user *)arg, sizeof(struct qtfs_server_epoll_s))) {
 				qtfs_err("copy epoll struct from arg failed.");
+				ret = QTERROR;
 				break;
 			}
 			if (qtfs_epoll.event_nums > QTFS_MAX_EPEVENTS_NUM) {
@@ -208,9 +209,9 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				break;
 			}
 			qtfs_info("epoll arg set, epfd:%d event nums:%d events.",
-									qtfs_epoll.epfd, qtfs_epoll.event_nums);
+						qtfs_epoll.epfd, qtfs_epoll.event_nums);
 			qtfs_epoll.kevents = (struct epoll_event *)kmalloc(sizeof(struct epoll_event) *
-															qtfs_epoll.event_nums, GFP_KERNEL);
+							qtfs_epoll.event_nums, GFP_KERNEL);
 			if (qtfs_epoll.kevents == NULL) {
 				qtfs_err("epoll kernel events kmalloc failed.");
 				ret = QTERROR;
@@ -233,10 +234,14 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 			break;
 		case QTFS_IOCTL_EXIT:
+			if (arg != 0 && arg != 1) {
+				qtfs_err("qtfs exit input invalid, should be 0 or 1.");
+				ret = QTERROR;
+				break;
+			}
 			qtfs_info("qtfs server threads run set to:%lu.", arg);
 			qtfs_server_thread_run = arg;
 			break;
-
 		case QTFS_IOCTL_WHITELIST:
 			if (copy_from_user(&len, (void __user *)arg, sizeof(int))) {
 				qtfs_err("qtfs ioctl white init copy from user failed.");
@@ -247,7 +252,10 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				return QTERROR;
 			}
 			tmp = (struct whitelist *)kmalloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len, GFP_KERNEL);
-			
+			if (!tmp) {
+				qtfs_err("qtfs ioctl whitelist alloc memory failed.");
+				return QTERROR;
+			}
 			if (copy_from_user(tmp, (void __user *)arg, sizeof(struct whitelist) + sizeof(struct wl_item) * len)) {
 				qtfs_err("qtfs ioctl white init copy from user failed.");
 				return QTERROR;
@@ -256,12 +264,12 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("qtfs white list type :%d invalid.", tmp->type);
 				return QTERROR;
 			}
-			if (whitelist[tmp->type] != NULL) {
-				kfree(whitelist[tmp->type]);
+			if (g_whitelist[tmp->type] != NULL) {
+				kfree(g_whitelist[tmp->type]);
 			}
-			whitelist[tmp->type] = tmp;
-			for (i = 0; i < whitelist[tmp->type]->len; i++) {
-				qtfs_err("init %d list:%d %s", tmp->type, i, whitelist[tmp->type]->wl[i].path);
+			g_whitelist[tmp->type] = tmp;
+			for (i = 0; i < g_whitelist[tmp->type]->len; i++) {
+				qtfs_err("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
 			}
 			break;
 		case QTFS_IOCTL_ALLINFO:
@@ -274,6 +282,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			break;
 		default:
 			qtfs_err("qtfs misc ioctl unknown cmd:%u.", cmd);
+			ret = QTERROR;
 			break;
 	}
 
@@ -287,24 +296,44 @@ static int __init qtfs_server_init(void)
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		whitelist[i] = NULL;
+		g_whitelist[i] = NULL;
 	}
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);
-	if (qtfs_diag_info == NULL) 
+	if (qtfs_diag_info == NULL) {
 		qtfs_err("kmalloc qtfs diag info failed.");
-	else
-		memset(qtfs_diag_info, 0, sizeof(struct qtinfo));
+		return -1;
+	}
+	memset(qtfs_diag_info, 0, sizeof(struct qtinfo));
 	qtfs_userps = (struct qtfs_server_userp_s *)kmalloc(
-											QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s), GFP_KERNEL);
-	if (qtfs_userps == NULL)
+				QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s), GFP_KERNEL);
+	if (qtfs_userps == NULL) {
 		qtfs_err("kmalloc qtfs userps failed, nums:%d", QTFS_MAX_THREADS);
-	else
-		memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
+		kfree(qtfs_diag_info);
+		return -1;
+	}
+	memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
 	qtfs_conn_param_init();
-	qtfs_syscall_replace_start();
-	qtfs_misc_register();
-	qtfs_uds_remote_init();
+	if (qtfs_syscall_replace_start()) {
+		qtfs_err("qtfs syscall replace failed.");
+		goto err_syscall;
+	}
+	if (qtfs_misc_register()) {
+		qtfs_err("qtfs misc device register failed.");
+		goto err_misc;
+	}
+	if (qtfs_uds_remote_init()) {
+		qtfs_err("qtfs uds remote initialization failed.");
+		goto err;
+	}
 	return 0;
+err:
+	qtfs_misc_destroy();
+err_misc:
+	qtfs_syscall_replace_stop();
+err_syscall:
+	kfree(qtfs_userps);
+	kfree(qtfs_diag_info);
+	return -1;
 }
 
 static void __exit qtfs_server_exit(void)
@@ -331,8 +360,8 @@ static void __exit qtfs_server_exit(void)
 		qtfs_userps = NULL;
 	}
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		if (whitelist[i] != NULL) {
-			kfree(whitelist[i]);
+		if (g_whitelist[i] != NULL) {
+			kfree(g_whitelist[i]);
 		}
 	}
 	qtfs_misc_destroy();
