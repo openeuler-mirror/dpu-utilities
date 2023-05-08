@@ -42,30 +42,32 @@ int uds_event_pipe2tcp(void *arg, int epfd, struct uds_event_global_var *p_event
 int uds_event_module_init(struct uds_event_global_var *p)
 {
 	p->msg_controllen = UDS_EVENT_BUFLEN;
-	p->iov_len = UDS_EVENT_BUFLEN;
-	p->buflen = UDS_EVENT_BUFLEN;
-	p->msg_controlsendlen = UDS_EVENT_BUFLEN;
-	p->iov_sendlen = UDS_EVENT_BUFLEN;
-
 	p->msg_control = (char *)malloc(p->msg_controllen);
 	if (p->msg_control == NULL) {
 		uds_err("malloc msg control buf failed.");
-		p->msg_controllen = 0;
 		return EVENT_ERR;
 	}
+
+	p->msg_controlsendlen = UDS_EVENT_BUFLEN;
 	p->msg_control_send = (char *)malloc(p->msg_controlsendlen);
 	if (p->msg_control_send == NULL) {
 		goto free1;
 	}
+
+	p->iov_len = UDS_EVENT_BUFLEN;
 	p->iov_base = (char *)malloc(p->iov_len);
 	if (p->iov_base == NULL) {
 		uds_err("malloc iov base failed.");
 		goto free2;
 	}
+
+	p->iov_sendlen = UDS_EVENT_BUFLEN;
 	p->iov_base_send = (char *)malloc(p->iov_sendlen);
 	if (p->iov_base_send == NULL) {
 		goto free3;
 	}
+
+	p->buflen = UDS_EVENT_BUFLEN;
 	p->buf = (char *)malloc(p->buflen);
 	if (p->buf == NULL) {
 		uds_err("malloc buf failed.");
@@ -88,6 +90,12 @@ free2:
 free1:
 	free(p->msg_control);
 	p->msg_control = NULL;
+
+	p->msg_controllen = 0;
+	p->msg_controlsendlen = 0;
+	p->iov_len = 0;
+	p->iov_sendlen = 0;
+	p->buflen = 0;
 	return EVENT_ERR;
 }
 
@@ -186,7 +194,10 @@ int uds_event_uds_listener(void *arg, int epfd, struct uds_event_global_var *p_e
 
 	uds_log("accept an new connection, fd:%d", connfd);
 
-	uds_add_event(connfd, NULL, uds_event_build_step2, NULL);
+	if (uds_add_event(connfd, NULL, uds_event_build_step2, NULL) == NULL) {
+		uds_err("failed to add event,connfd:%d", connfd);
+		return EVENT_ERR;
+	}
 	return EVENT_OK;
 }
 
@@ -244,7 +255,11 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 
 	uds_log("step2 recv sun path:%s, add step3 event fd:%d", msg->sun_path, tcp.connfd);
 	memcpy(priv, msg, sizeof(struct uds_proxy_remote_conn_req));
-	uds_add_event(tcp.connfd, evt, uds_event_build_step3, priv);
+	if (uds_add_event(tcp.connfd, evt, uds_event_build_step3, priv) == NULL) {
+		uds_err("failed to add event, fd:%d", tcp.connfd);
+		// 新事件添加失败，本事件也要删除，否则残留在中间状态
+		return EVENT_DEL;
+	}
 
 end:
 	return EVENT_OK;
@@ -286,20 +301,28 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	uds_event_suspend(epfd, evt);
 	
 	struct uds_event *newevt = uds_add_event(uds.sockfd, evt, uds_event_build_step4, NULL);
+	if (newevt == NULL) {
+		goto event_del;
+	}
 	evt->tmout = UDS_EVENT_WAIT_TMOUT;
 	newevt->tmout = UDS_EVENT_WAIT_TMOUT;
-	uds_hash_insert_dirct(event_tmout_hash, evt->fd, evt);
-	uds_hash_insert_dirct(event_tmout_hash, newevt->fd, newevt);
+	if (uds_hash_insert_dirct(event_tmout_hash, evt->fd, evt) != 0 ||
+		uds_hash_insert_dirct(event_tmout_hash, newevt->fd, newevt) != 0) {
+		uds_err("add time out hash failed fd:%d %d", evt->fd, newevt->fd);
+	}
 	uds_log("Add hash key:%d-->value and key:%d-->value", evt->fd, newevt->fd);
 
 	msg.ret = 1;
 	write(evt->peer->fd, &msg, sizeof(struct uds_proxy_remote_conn_rsp));
+	free(evt->priv);
+	evt->priv = NULL;
 	return EVENT_OK;
 
 event_del:
 	msg.ret = 0;
 	write(evt->peer->fd, &msg, sizeof(struct uds_proxy_remote_conn_rsp));
 	free(evt->priv);
+	evt->priv = NULL;
 	return EVENT_DEL;
 }
 
@@ -311,14 +334,21 @@ int uds_event_build_step4(void *arg, int epfd, struct uds_event_global_var *p_ev
 		uds_err("accept connection failed fd:%d", connfd);
 		return EVENT_ERR;
 	}
-	uds_hash_remove_dirct(event_tmout_hash, evt->fd);
-	uds_hash_remove_dirct(event_tmout_hash, evt->peer->fd);
+	if (uds_hash_remove_dirct(event_tmout_hash, evt->fd) != 0 ||
+		uds_hash_remove_dirct(event_tmout_hash, evt->peer->fd) != 0) {
+		uds_err("failed to remove time out hash fd:%d %d", evt->fd, evt->peer->fd);
+	}
 	evt->tmout = 0;
 	evt->peer->tmout = 0;
 
 	struct uds_event *peerevt = (struct uds_event *)evt->peer;
 	peerevt->handler = uds_event_tcp2uds;
 	peerevt->peer = uds_add_event(connfd, peerevt, uds_event_uds2tcp, NULL);
+	if (peerevt->peer == NULL) {
+		uds_err("failed to add new event fd:%d", connfd);
+		uds_event_add_to_free(p_event_var, peerevt);
+		return EVENT_DEL;
+	}
 
 	uds_log("accept new connection fd:%d, peerfd:%d frontfd:%d peerfd:%d, peerevt(fd:%d) active now",
 			connfd, evt->peer->fd, peerevt->fd, peerevt->peer->fd, peerevt->fd);
@@ -336,8 +366,11 @@ int uds_event_tcp_listener(void *arg, int epfd, struct uds_event_global_var *p_e
 	}
 	uds_log("tcp listener event enter, new connection fd:%d.", connfd);
 
-	uds_add_event(connfd, NULL, uds_event_remote_build, NULL);
-	return 0;
+	if (uds_add_event(connfd, NULL, uds_event_remote_build, NULL) == NULL) {
+		uds_err("failed to add new event fd:%d", connfd);
+		return EVENT_ERR;
+	}
+	return EVENT_OK;
 }
 
 int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_req *msg)
@@ -354,14 +387,15 @@ int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_re
 	memset(targ.sun_path, 0, sizeof(targ.sun_path));
 	strncpy(targ.sun_path, msg->sun_path, sizeof(targ.sun_path));
 	if (uds_build_unix_connection(&targ) < 0) {
-		struct uds_proxy_remote_conn_rsp ack;
 		uds_err("can't connect to sun_path:%s", targ.sun_path);
-		ack.ret = EVENT_ERR;
-		write(evt->fd, &ack, sizeof(struct uds_proxy_remote_conn_rsp));
-		return EVENT_DEL;
+		goto err_ack;
 	}
 
 	evt->peer = uds_add_event(targ.connfd, evt, uds_event_uds2tcp, NULL);
+	if (evt->peer == NULL) {
+		uds_err("failed to add new event fd:%d", targ.connfd);
+		goto err_ack;
+	}
 	evt->handler = uds_event_tcp2uds;
 
 	uds_log("build link req from tcp, sunpath:%s, type:%d, eventfd:%d peerfd:%d",
@@ -372,10 +406,22 @@ int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_re
 
 	int ret = write(evt->fd, &ack, sizeof(struct uds_proxy_remote_conn_rsp));
 	if (ret <= 0) {
-		uds_err("apply ack failed, ret:%d", ret);
+		uds_err("reply ack failed, ret:%d", ret);
 		return EVENT_DEL;
 	}
 	return EVENT_OK;
+
+err_ack:
+	do {
+		int ret;
+		struct uds_proxy_remote_conn_rsp ack;
+		ack.ret = EVENT_ERR;
+		ret = write(evt->fd, &ack, sizeof(struct uds_proxy_remote_conn_rsp));
+		if (ret <= 0) {
+			uds_err("reply ack failed, ret:%d", ret);
+		}
+	} while (0);
+	return EVENT_DEL;
 }
 
 int uds_build_pipe_proxy(int efd, struct uds_event *evt, struct uds_stru_scm_pipe *msg)

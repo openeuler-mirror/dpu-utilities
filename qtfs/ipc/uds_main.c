@@ -81,14 +81,8 @@ int uds_event_suspend(int efd, struct uds_event *event)
 
 int uds_event_delete(int efd, int fd)
 {
-	int ret = epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-	if (ret != 0) {
-		uds_err("failed to delete event fd:%d.", fd);
-	} else {
-		uds_log("event fd:%d deleted.", fd);
-	}
 	close(fd);
-	return ret;
+	return 0;
 }
 
 #pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
@@ -135,6 +129,7 @@ void uds_main_loop(int efd, struct uds_thread_arg *arg)
 	}
 	if (uds_event_module_init(p_event_var) == EVENT_ERR) {
 		uds_err("uds event module init failed, main loop not run.");
+		free(evts);
 		return;
 	}
 #ifdef QTFS_SERVER
@@ -173,15 +168,15 @@ void uds_main_loop(int efd, struct uds_thread_arg *arg)
 		}
 		uds_event_post_hook(p_event_var);
 	}
+	free(evts);
 	uds_log("main loop exit.");
 	uds_event_module_fini(p_event_var);
 	return;
 }
 
+#define UDS_MAX_LISTEN_NUM 64
 int uds_build_tcp_connection(struct uds_conn_arg *arg)
 {
-	const int sock_max_conn_num = 1024;
-
 	if (arg->cs > UDS_SOCKET_SERVER) {
 		uds_err("cs type %d is error.", arg->cs);
 		return -1;
@@ -207,7 +202,7 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 					strerror(errno));
 			goto close_and_return;
 		}
-		if (listen(sock_fd, sock_max_conn_num) < 0) {
+		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
 			uds_err("As server listen failed, err:%s.", strerror(errno));
 			goto close_and_return;
 		}
@@ -229,7 +224,6 @@ close_and_return:
 
 int uds_build_unix_connection(struct uds_conn_arg *arg)
 {
-	const int sock_max_conn_num = 5;
 	if (arg->cs > UDS_SOCKET_SERVER) {
 		uds_err("cs type %d is error.", arg->cs);
 		return -1;
@@ -255,7 +249,7 @@ int uds_build_unix_connection(struct uds_conn_arg *arg)
 					strerror(errno));
 			goto close_and_return;
 		}
-		if (listen(sock_fd, sock_max_conn_num) < 0) {
+		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
 			uds_err("As server listen failed, err:%s.", strerror(errno));
 			goto close_and_return;
 		}
@@ -315,7 +309,10 @@ struct uds_event *uds_add_event(int fd, struct uds_event *peer, int (*handler)(v
 	newevt->priv = priv;
 	newevt->tofree = 0;
 	newevt->tmout = 0;
-	uds_event_insert(p_uds_var->efd[hash], newevt);
+	if (uds_event_insert(p_uds_var->efd[hash], newevt) != 0) {
+		uds_del_event(newevt);
+		return NULL;
+	}
 	return newevt;
 }
 
@@ -335,14 +332,17 @@ struct uds_event *uds_add_pipe_event(int fd, int peerfd, int (*handler)(void *, 
 	newevt->tofree = 0;
 	newevt->pipe = 1;
 	newevt->tmout = 0;
-	uds_event_insert(p_uds_var->efd[hash], newevt);
+	if (uds_event_insert(p_uds_var->efd[hash], newevt) != 0) {
+		uds_del_event(newevt);
+		return NULL;
+	}
 	return newevt;
 }
 
 void uds_del_event(struct uds_event *evt)
 {
 	int hash = evt->fd % p_uds_var->work_thread_num;
-	if (evt->pipe == 1 &&evt->peerfd != -1) {
+	if (evt->pipe == 1 && evt->peerfd != -1) {
 		// pipe是单向，peerfd没有epoll事件，所以直接关闭
 		close(evt->peerfd);
 		evt->peerfd = -1;
@@ -402,6 +402,14 @@ struct uds_event *uds_init_tcp_listener()
 	return tcpevt;
 }
 
+static inline void uds_rollback_efd(int *efd, int maxidx)
+{
+	for (int i = 0; i < maxidx; i++) {
+		close(efd[i]);
+	}
+	return;
+}
+
 void uds_thread_create()
 {
 	struct uds_conn_arg arg;
@@ -415,6 +423,7 @@ void uds_thread_create()
 	for (int i = 0; i < p_uds_var->work_thread_num; i++) {
 		efd = epoll_create1(0);
 		if (efd == -1) {
+			uds_rollback_efd(p_uds_var->efd, i);
 			uds_err("epoll create1 failed, i:%d.", i);
 			return;
 		}
@@ -422,7 +431,7 @@ void uds_thread_create()
 	}
 
 	if ((udsevt = uds_init_unix_listener(UDS_BUILD_CONN_ADDR, uds_event_uds_listener)) == NULL)
-		return;
+		goto rollbackefd;
 
 	if ((tcpevt = uds_init_tcp_listener()) == NULL)
 		goto end;
@@ -464,6 +473,7 @@ end1:
 	uds_del_event(tcpevt);
 end:
 	uds_del_event(udsevt);
+rollbackefd:
 	for (int i = 0; i < p_uds_var->work_thread_num; i++)
 		close(p_uds_var->efd[i]);
 
@@ -515,6 +525,7 @@ int uds_hash_insert_dirct(GHashTable *table, int key, struct uds_event *value)
 {
 	if (g_hash_table_insert(table, (gpointer)key, value) == 0) {
 		uds_err("Hash table key:%d value:0x%lx is already exist, update it.", key, value);
+		return -1;
 	}
 	uds_log("Hash insert key:%d value:0x%lx", key, value);
 	return 0;
@@ -525,12 +536,13 @@ void *uds_hash_lookup_dirct(GHashTable *table, int key)
 	return (void *)g_hash_table_lookup(table, (gpointer)key);
 }
 
-void uds_hash_remove_dirct(GHashTable *table, int key)
+int uds_hash_remove_dirct(GHashTable *table, int key)
 {
 	if (g_hash_table_remove(table, (gpointer)key) == 0) {
 		uds_err("Remove key:%d from hash failed.", key);
+		return -1;
 	}
-	return;
+	return 0;
 }
 #pragma GCC diagnostic pop
 
