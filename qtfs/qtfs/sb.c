@@ -49,7 +49,7 @@ int qtfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	QTFS_FULLNAME(req->path, dentry);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_STATFS, QTFS_SEND_SIZE(struct qtreq_statfs, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
@@ -86,6 +86,9 @@ static inline char *qtfs_mountpoint_path_init(struct dentry *dentry, struct path
 		return fsinfo->mnt_path;
 	}
 	name = __getname();
+	if (!name) {
+		return ERR_PTR(-ENOMEM);
+	}
 	path_get(path);
 	ret = qtfs_kern_syms.d_absolute_path(path, name, MAX_PATH_LEN);
 	qtfs_debug("mntfile:%s absolute:%s", mnt_file, ret);
@@ -141,7 +144,7 @@ int qtfs_readdir(struct file *filp, struct dir_context *ctx)
 	req->pos = ctx->pos;
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_READDIR, QTFS_SEND_SIZE(struct qtreq_readdir, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -198,7 +201,7 @@ int qtfs_open(struct inode *inode, struct file *file)
 	req->flags = file->f_flags;
 	req->mode = file->f_mode;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_OPEN, QTFS_SEND_SIZE(struct qtreq_open, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		qtfs_err("qtfs open:%s failed, f_mode:%o flag:%x", req->path, file->f_mode, file->f_flags);
 		return -EINVAL;
@@ -265,7 +268,7 @@ int qtfs_release(struct inode *inode, struct file *file)
 	}
 	req->fd = private->fd;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_CLOSE, sizeof(struct qtreq_close));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_err("qtfs release fd:%d failed, rsp is invalid.", req->fd);
 		ret = PTR_ERR(rsp);
 		goto end;
@@ -317,7 +320,7 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 		req->len = leftlen;
 		req->pos = kio->ki_pos;
 		rsp = qtfs_remote_run(pvar, QTFS_REQ_READITER, reqlen);
-		if (IS_ERR(rsp) || rsp == NULL) {
+		if (IS_ERR_OR_NULL(rsp)) {
 			qtfs_conn_put_param(pvar);
 			return PTR_ERR(rsp);
 		}
@@ -398,7 +401,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 			break;
 		}
 		rsp = qtfs_remote_run(pvar, QTFS_REQ_WRITE, sizeof(struct qtreq_write) - sizeof(req->path_buf) + wrbuflen);
-		if (IS_ERR(rsp) || rsp == NULL) {
+		if (IS_ERR_OR_NULL(rsp)) {
 			qtfs_conn_put_param(pvar);
 			return PTR_ERR(rsp);
 		}
@@ -461,7 +464,7 @@ loff_t qtfs_llseek(struct file *file, loff_t off, int whence)
 	req->whence = whence;
 	req->fd = priv->fd;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_LLSEEK, sizeof(struct qtreq_llseek));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		qtfs_err("Failed to remote run llseek.");
 		return PTR_ERR(rsp);
@@ -579,7 +582,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	}
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_IOCTL, len);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -671,7 +674,7 @@ qtfsfifo_poll(struct file *filp, poll_table *wait)
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	req->fd = fpriv->fd;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_FIFOPOLL, sizeof(struct qtreq_poll));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return 0;
 	}
@@ -860,7 +863,7 @@ int qtfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 
 	req->mode = mode;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_MKDIR, QTFS_SEND_SIZE(struct qtreq_mkdir, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -901,7 +904,7 @@ int qtfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool exc
 	req->mode = mode;
 	req->excl = excl;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_ICREATE, QTFS_SEND_SIZE(struct qtreq_icreate, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -945,7 +948,7 @@ int qtfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev
 	req->mode = mode;
 	req->dev = dev;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_MKNOD, sizeof(struct qtreq_mknod) - sizeof(req->path) + strlen(req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1048,7 +1051,7 @@ struct dentry *qtfs_lookup(struct inode *parent_inode, struct dentry *child_dent
 		goto err_end;
 	}
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_LOOKUP, strlen(req->fullname));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return (void *)rsp;
 	}
@@ -1089,7 +1092,7 @@ int qtfs_rmdir(struct inode *dir, struct dentry *dentry)
 	QTFS_FULLNAME(req->path, dentry);
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_RMDIR, QTFS_SEND_SIZE(struct qtreq_rmdir, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1103,8 +1106,8 @@ int qtfs_rmdir(struct inode *dir, struct dentry *dentry)
 	qtfs_info("qtfs rmdir success:<%s>.\n", req->path);
 	qtfs_conn_put_param(pvar);
 	if (inode->i_nlink > 0)
-                drop_nlink(inode);
-        d_invalidate(dentry);
+		drop_nlink(inode);
+	d_invalidate(dentry);
 	return 0;
 }
 
@@ -1126,7 +1129,7 @@ int qtfs_unlink(struct inode *dir, struct dentry *dentry)
 	qtfs_info("qtfs unlink %s.\n", req->path);
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_UNLINK, QTFS_SEND_SIZE(struct qtreq_unlink, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1140,8 +1143,8 @@ int qtfs_unlink(struct inode *dir, struct dentry *dentry)
 	ret = rsp->errno;
 	qtfs_conn_put_param(pvar);
 	if (inode->i_nlink > 0)
-                drop_nlink(inode);
-        d_invalidate(dentry);
+		drop_nlink(inode);
+	d_invalidate(dentry);
 	return ret;
 }
 
@@ -1163,7 +1166,7 @@ int qtfs_link(struct dentry *old_dentry, struct inode *dir, struct dentry *new_d
 	QTFS_FULLNAME(req->path + req->d.oldlen, new_dentry);
 	req->d.newlen = strlen(req->path + req->d.oldlen) + 1;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_LINK, sizeof(struct qtreq_link) - sizeof(req->path) + req->d.newlen + req->d.oldlen);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1214,7 +1217,7 @@ int qtfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 
 	req->d.oldlen = strlen(&req->path[req->d.newlen]) + 1;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYMLINK, sizeof(struct qtreq_symlink) - sizeof(req->path) + req->d.newlen + req->d.oldlen);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1243,6 +1246,7 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_getattr *req;
 	struct qtrsp_getattr *rsp;
+	char *mnt_path;
 	struct inode *inode = path->dentry->d_inode;
 	int ret;
 
@@ -1255,10 +1259,12 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 	QTFS_FULLNAME(req->path, path->dentry);
 	req->request_mask = req_mask;
 	req->query_flags = flags;
-
-	(void)qtfs_mountpoint_path_init(path->dentry, (struct path*)path, req->path);
+	mnt_path = qtfs_mountpoint_path_init(path->dentry, (struct path*)path, req->path);
+	if (IS_ERR(mnt_path)) {
+		return PTR_ERR(mnt_path);
+	}
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_GETATTR, QTFS_SEND_SIZE(struct qtreq_getattr, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1305,7 +1311,7 @@ int qtfs_setattr(struct dentry *dentry, struct iattr *attr)
 	qtfs_info("iattr iavalid:%u mode:0x%o size:%lld file:0x%lx\n",
 			req->attr.ia_valid, req->attr.ia_mode, req->attr.ia_size, (unsigned long)req->attr.ia_file);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SETATTR, QTFS_SEND_SIZE(struct qtreq_setattr, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1352,7 +1358,7 @@ const char *qtfs_getlink(struct dentry *dentry,
 		return ERR_PTR(-EINVAL);
 	}
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_GETLINK, QTFS_SEND_SIZE(struct qtreq_getlink, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return (void *)rsp;
 	}
@@ -1419,7 +1425,7 @@ int qtfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	req->d.flags = flags;
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_RENAME, sizeof(struct qtreq_rename) - sizeof(req->path) + req->d.oldlen + req->d.newlen);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
@@ -1520,7 +1526,7 @@ struct dentry *qtfs_fs_mount(struct file_system_type *fs_type,
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	strlcpy(req->path, dev_name, PATH_MAX);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_MOUNT, strlen(dev_name));
-	if (IS_ERR(rsp) || rsp == NULL || rsp->ret != QTFS_OK) {
+	if (IS_ERR_OR_NULL(rsp) || rsp->ret != QTFS_OK) {
 		qtfs_err("qtfs fs mount failed, path:<%s> not exist at peer.\n", dev_name);
 		qtfs_conn_put_param(pvar);
 		return ERR_PTR(-ENOENT);

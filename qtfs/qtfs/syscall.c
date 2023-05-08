@@ -123,7 +123,6 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 	int ret = 0;
 	f = fdget(fd);
 	if (!f.file) {
-		// qtfs_err("epoll ctl remote fd:%d file error.", fd);
 		return -1;
 	}
 	file = f.file;
@@ -133,6 +132,10 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 	}
 	if (!qtfs_support_epoll(file->f_inode->i_mode)) {
 		char *fullname = (char *)kmalloc(MAX_PATH_LEN, GFP_KERNEL);
+		if (!fullname) {
+			ret = -1;
+			goto end;
+		}
 		memset(fullname, 0, MAX_PATH_LEN);
 		if (qtfs_fullname(fullname, file->f_path.dentry) < 0) {
 			qtfs_err("qtfs fullname failed\n");
@@ -345,11 +348,9 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		return -EINVAL;
 	}
 	kernel_dir = qtfs_copy_mount_string(dir_name);
-	ret = PTR_ERR(kernel_dir);
-	if (IS_ERR(kernel_dir)) {
-		qtfs_err("qtfs remote mount %s, kernel dir dup failed ret:%d.\n", dev_name, ret);
+	if (IS_ERR_OR_NULL(kernel_dir)) {
 		qtfs_conn_put_param(pvar);
-		return ret;
+		return -EINVAL;
 	}
 
 	// data = qtfs_mount_datapage_modify(type, data);
@@ -420,6 +421,13 @@ static int qtfs_remote_umount(char __user *name, int flags)
 	}
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	kernel_name = qtfs_copy_mount_string(name);
+	if (!kernel_name) {
+		qtfs_conn_put_param(pvar);
+		return -EINVAL;
+	} else if (IS_ERR(kernel_name)) {
+		qtfs_conn_put_param(pvar);
+		return PTR_ERR(kernel_name);
+	}
 	req->flags = flags;
 	qtfs_dir_to_qtdir(kernel_name, req->buf);
 	qtfs_info("qtfs remote umount string:%s reqbuf:%s", (kernel_name == NULL) ? "INVALID":kernel_name, req->buf);

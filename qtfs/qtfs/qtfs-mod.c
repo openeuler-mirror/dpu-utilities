@@ -222,27 +222,63 @@ static int __init qtfs_init(void)
 					NULL);
 	if (!qtfs_inode_priv_cache) {
 		qtfs_err("qtfs inode priv cache create failed.\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto cache_create_err;
 	}
 	qtfs_conn_param_init();
 	g_qtfs_epoll_thread = kthread_run(qtfs_epoll_thread, NULL, "qtfs_epoll");
 	if (IS_ERR(g_qtfs_epoll_thread)) {
 		qtfs_err("qtfs epoll thread run failed.\n");
+		ret = PTR_ERR(g_qtfs_epoll_thread);
+		goto epoll_thread_err;
 	}
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);
 	if (qtfs_diag_info == NULL) {
 		qtfs_err("kmalloc qtfs diag info failed.");
+		ret = -ENOMEM;
+		goto diag_malloc_err;
 	} else {
 		memset(qtfs_diag_info, 0, sizeof(struct qtinfo));
 	}
-
-	qtfs_misc_register();
-	qtfs_syscall_replace_start();
-	qtfs_syscall_init();
-	qtfs_utils_register();
-	qtfs_uds_remote_init();
+	ret = qtfs_misc_register();
+	if (ret) {
+		goto misc_register_err;
+	}
+	ret = qtfs_syscall_replace_start();
+	if (ret) {
+		goto syscall_replace_err;
+	}
+	ret = qtfs_syscall_init();
+	if (ret) {
+		goto syscall_init_err;
+	}
+	ret = qtfs_utils_register();
+	if (ret) {
+		goto utils_register_err;
+	}
+	ret = qtfs_uds_remote_init();
+	if (ret) {
+		goto uds_init_err;
+	}
 	qtfs_info("QTFS file system register success!\n");
 	return 0;
+uds_init_err:
+	qtfs_utils_destroy();
+utils_register_err:
+	qtfs_syscall_fini();
+syscall_init_err:
+	qtfs_syscall_replace_stop();
+syscall_replace_err:
+	qtfs_misc_destroy();
+misc_register_err:
+	kfree(qtfs_diag_info);
+diag_malloc_err:
+	kthread_stop(g_qtfs_epoll_thread);
+epoll_thread_err:
+	qtfs_conn_param_fini();
+cache_create_err:
+	unregister_filesystem(&qtfs_fs_type);
+	return ret;
 }
 
 static void __exit qtfs_exit(void)

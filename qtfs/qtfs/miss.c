@@ -68,7 +68,7 @@ int qtfs_missmsg_proc(struct qtfs_conn_var_s *pvar)
 		return -EINVAL;
 	}
 	if (qtfs_miss_handles[rsp->type].misshandle == NULL) {
-		qtfs_info("qtfs miss message proc not support:%u, req type:%u.", rsp->type, req->type);
+		qtfs_err("qtfs miss message proc not support:%u, req type:%u.", rsp->type, req->type);
 		return -ESRCH;
 	}
 	ret = qtfs_miss_handles[rsp->type].misshandle(rsp);
