@@ -49,11 +49,11 @@ bool in_white_list(char *path, int type)
 {
 	int i, in_wl = -1;
 
-	if (!whitelist[type]) {
+	if (!g_whitelist[type]) {
 		return true;
 	}
-	for (i = 0; i < whitelist[type]->len; i++) {
-		if (!strncmp(path, whitelist[type]->wl[i].path, whitelist[type]->wl[i].len)){
+	for (i = 0; i < g_whitelist[type]->len; i++) {
+		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
 			in_wl = i;
 			break;
 		}
