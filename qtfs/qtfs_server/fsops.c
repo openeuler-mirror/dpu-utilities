@@ -381,17 +381,20 @@ static int handle_readiter(struct qtserver_arg *arg)
 		rsp->d.errno = -ENOENT;
 		goto end;
 	}
-	fput(file);
 	qtfs_info("handle readiter file:<%s> len:%lu pos:%lld", fullname, req->len, req->pos);
 	__putname(pathbuf);
 
-	seek = qtfs_syscall_lseek(req->fd, req->pos, SEEK_SET);
-	if (seek < 0) {
-		qtfs_err("handle read set lseek pos:%lld failed, fd:%d ret:%ld", req->pos, req->fd, seek);
-		rsp->d.ret = QTFS_ERR;
-		rsp->d.errno = seek;
-		return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+	if (file->f_mode & FMODE_LSEEK) {
+		seek = qtfs_syscall_lseek(req->fd, req->pos, SEEK_SET);
+		if (seek < 0) {
+			qtfs_err("handle read set lseek pos:%lld failed, fd:%d ret:%ld", req->pos, req->fd, seek);
+			rsp->d.ret = QTFS_ERR;
+			rsp->d.errno = seek;
+			fput(file);
+			return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+		}
 	}
+	fput(file);
 
 	rsp->d.ret = QTFS_OK;
 	while (maxlen > 0) {
@@ -487,15 +490,18 @@ static int handle_write(struct qtserver_arg *arg)
 	qtfs_info("handle write fd:%d file:<%s>, write len:%d before pos:%lld mode:%o flags:%x", req->d.fd, fullname,
 				leftlen, req->d.pos, file->f_mode, file->f_flags);
 	__putname(pathbuf);
-	fput(file);
 
-	seek = qtfs_syscall_lseek(req->d.fd, req->d.pos, SEEK_SET);
-	if (seek < 0) {
-		qtfs_err("handle write set lseek pos:%lld failed, fd:%d ret:%ld", req->d.pos, req->d.fd, seek);
-		rsp->ret = QTFS_ERR;
-		rsp->len = seek;
-		return sizeof(struct qtrsp_write);
+	if (file->f_mode & FMODE_LSEEK) {
+		seek = qtfs_syscall_lseek(req->d.fd, req->d.pos, SEEK_SET);
+		if (seek < 0) {
+			qtfs_err("handle write set lseek pos:%lld failed, fd:%d ret:%ld", req->d.pos, req->d.fd, seek);
+			rsp->ret = QTFS_ERR;
+			rsp->len = seek;
+			fput(file);
+			return sizeof(struct qtrsp_write);
+		}
 	}
+	fput(file);
 
 	rsp->ret = QTFS_OK;
 	while (leftlen > 0) {
