@@ -60,9 +60,11 @@ enum qtfs_req_type
 	QTFS_REQ_INV,
 };
 
+#define MAX_QTINFO_TYPE_STR_LEN 20
+
 struct qtinfo_type_str {
 	enum qtfs_req_type type;
-	char str[20];
+	char str[MAX_QTINFO_TYPE_STR_LEN];
 };
 
 #endif
