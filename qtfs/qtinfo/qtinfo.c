@@ -48,6 +48,8 @@
 		printf("ERROR: "info"\n", ##__VA_ARGS__);\
 	} while (0);
 
+#define RECV_BUFF_LEN	256
+
 struct qtinfo_type_str qtinfo_all_events[] = {
 	{QTFS_REQ_NULL,				"null"},
 	{QTFS_REQ_MOUNT,			"mount"},
@@ -92,7 +94,7 @@ static void qtinfo_events_count(struct qtinfo *evts)
 	int i;
 #ifdef client
 	qtinfo_out("++++++++++++++++++++++++++send events count++++++++++++++++++++++++++");
-	for (i = 0; i < (sizeof(qtinfo_all_events)/sizeof(struct qtinfo_type_str)) - 3; i+=3) {
+	for (i = 0; i < (sizeof(qtinfo_all_events) / sizeof(struct qtinfo_type_str)) - 3; i += 3) {
 		qtinfo_out("%-10s: %-10lu %-10s: %-10lu %-10s: %-10lu",
 						qtinfo_all_events[i].str, evts->c.o_events[i],
 						qtinfo_all_events[i+1].str, evts->c.o_events[i+1],
@@ -239,55 +241,55 @@ static void qtinfo_log_level(struct qtinfo *info)
 	qtinfo_out("Log level: %d", info->log_level);
 }
 
-static void qtinfo_opt_a(int fd)
+static int qtinfo_opt_a(int fd)
 {
 	struct qtinfo *diag = (struct qtinfo *)malloc(sizeof(struct qtinfo));
 	if (diag == NULL) {
 		qtinfo_err("malloc failed.");
-		return;
+		return -1;
 	}
 	memset(diag, 0, sizeof(struct qtinfo));
 	int ret = ioctl(fd, QTFS_IOCTL_ALLINFO, diag);
-	if (ret < 0) {
+	if (ret != QTOK) {
 		qtinfo_err("ioctl failed, ret:%d.", ret);
-		goto end;
+		free(diag);
+		return -1;
 	}
 	qtinfo_events_count(diag);
 	qtinfo_misc_count(diag);
 	qtinfo_log_level(diag);
 	qtinfo_thread_state(diag);
 	qtinfo_pvar_count(diag);
-end:
 	free(diag);
-	return;
+	return 0;
 }
 
-void qtinfo_opt_c(int fd)
+static int qtinfo_opt_c(int fd)
 {
 	int ret = ioctl(fd, QTFS_IOCTL_CLEARALL, NULL);
-	return;
+	return ret;
 }
 
-void qtinfo_opt_l(int fd, char *level)
+static int qtinfo_opt_l(int fd, char *level)
 {
 	int ret;
 
 	ret = ioctl(fd, QTFS_IOCTL_LOGLEVEL, level);
-	if (ret != 0) {
+	if (ret != QTOK) {
 		qtinfo_out("Set qtfs log level:%s failed.", level);
-		return;
+		return ret;
 	}
 	qtinfo_out("Set qtfs log level to %s success.", level);
-	return;
+	return ret;
 }
 
-void qtinfo_opt_t(int fd)
+static int qtinfo_opt_t(int fd)
 {
 	int i;
 	struct qtinfo *diag = (struct qtinfo *)malloc(sizeof(struct qtinfo));
 	if (diag == NULL) {
 		qtinfo_err("malloc failed.");
-		return;
+		return -1;
 	}
 	int ret = ioctl(fd, QTFS_IOCTL_ALLINFO, (unsigned long)diag);
 	qtinfo_out("++++++++++++++++++++++++++qtreq_xxx size++++++++++++++++++++++++++");
@@ -314,32 +316,34 @@ void qtinfo_opt_t(int fd)
 	qtinfo_out2("\n");
 
 	free(diag);
-	return;
+	return ret;
 }
 
-void qtinfo_opt_p(int fd, char *support)
+static int qtinfo_opt_p(int fd, char *support)
 {
 	int ret;
 	int sup = atoi(support);
 
 	ret = ioctl(fd, QTFS_IOCTL_EPOLL_SUPPORT, sup);
-	if (ret != 0) {
+	if (ret != QTOK) {
 		qtinfo_out("Set qtfs epoll support to:%s failed.", (sup == 1) ? "any file" : "fifo file");
-		return;
+		return ret;
 	}
 	qtinfo_out("Set qtfs epoll support to %s success.", (sup == 1) ? "any file" : "fifo file");
-	return;
+	return ret;
 }
 
 #define PATH_MAX 4096
-void qtinfo_opt_u()
+static int qtinfo_opt_u()
 {
+	int ret = -1;
 	int len;
 	struct sockaddr_un svr;
+	char buf[RECV_BUFF_LEN];
 	int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		qtinfo_err("Create socket fd failed.");
-		return;
+		return -1;
 	}
 
 	memset(&svr, 0, sizeof(svr));
@@ -348,29 +352,31 @@ void qtinfo_opt_u()
 	len = offsetof(struct sockaddr_un, sun_path) + strlen(svr.sun_path);
 	if (connect(sockfd, (struct sockaddr *)&svr, len) < 0) {
 		qtinfo_err("connect to %s failed.", UDS_DIAG_ADDR);
-		return;
+		close(sockfd);
+		return -1;
 	}
 	while (1) {
-		char buf[256];
-		int n;
-		memset(buf, 0, 256);
-		n = recv(sockfd, buf, 256, 0);
-		if (n <= 0)
+		memset(buf, 0, RECV_BUFF_LEN);
+		ret = recv(sockfd, buf, RECV_BUFF_LEN, 0);
+		if (ret <= 0)
 			break;
 		qtinfo_out2("%s", buf);
 	}
+	qtinfo_out2("\n");
 	close(sockfd);
-	return;
+	return ret;
 }
 
-void qtinfo_opt_s()
+static int qtinfo_opt_s()
 {
+	int ret = -1;
 	int len;
 	struct sockaddr_un svr;
+	char buf[RECV_BUFF_LEN];
 	int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		qtinfo_err("Create socket fd failed.");
-		return;
+		return -1;
 	}
 
 	memset(&svr, 0, sizeof(svr));
@@ -379,70 +385,73 @@ void qtinfo_opt_s()
 	len = offsetof(struct sockaddr_un, sun_path) + strlen(svr.sun_path);
 	if (connect(sockfd, (struct sockaddr *)&svr, len) < 0) {
 		qtinfo_err("connect to %s failed.", UDS_LOGLEVEL_UPD);
-		return;
+		close(sockfd);
+		return -1;
 	}
 	while (1) {
-		char buf[256];
-		int n;
-		memset(buf, 0, 256);
-		n = recv(sockfd, buf, 256, 0);
-		if (n <= 0)
+		memset(buf, 0, RECV_BUFF_LEN);
+		ret = recv(sockfd, buf, RECV_BUFF_LEN, 0);
+		if (ret <= 0)
 			break;
 		qtinfo_out2("%s", buf);
 	}
+	qtinfo_out2("\n");
 	close(sockfd);
-	return;
+	return ret;
 
 }
 
 #define PATH_MAX 4096
-void qtinfo_opt_x(int fd, char *path)
+static int qtinfo_opt_x(int fd, char *path)
 {
-	int ret;
+	int ret = -1;
 	int index = 0;
 	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
 	if (item == NULL) {
 		qtinfo_err("malloc failed");
-		return;
+		return -1;
 	}
 	memset(item, 0, PATH_MAX);
 	item->len = strlen(path);
 	if (item->len > PATH_MAX - sizeof(struct qtsock_whitelist)) {
 		qtinfo_err("item len:%d str:%s error", item->len, path);
 		free(item);
-		return;
+		return -1;
 	}
 	memcpy(item->data, path, item->len);
 	ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_ADD, item);
 	if (ret != QTOK) {
 		qtinfo_err("ioctl add white list failed");
+		ret = -1;
 	} else {
 		qtinfo_out("successed to add white list item:%s successed", path);
+		ret = 0;
 	}
 	free(item);
-	return;
+	return ret;
 }
 
-void qtinfo_opt_y(int fd, char *index)
+static int qtinfo_opt_y(int fd, char *index)
 {
 	int idx = atoi(index);
 	int ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_DEL, &idx);
 	if (ret != QTOK) {
 		qtinfo_err("failed to delete white list index:%d", idx);
+		return -1;
 	} else {
 		qtinfo_out("successed to delete white list index:%d", idx);
 	}
-	return;
+	return 0;
 }
 
-void qtinfo_opt_z(int fd)
+static int qtinfo_opt_z(int fd)
 {
-	int ret;
+	int ret = -1;
 	int index = 0;
 	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
 	if (item == NULL) {
 		qtinfo_err("malloc failed");
-		return;
+		return -1;
 	}
 	qtinfo_out("Get remote uds white list:");
 	while (index < QTSOCK_WL_MAX_NUM) {
@@ -455,7 +464,7 @@ void qtinfo_opt_z(int fd)
 		index++;
 	}
 	free(item);
-	return;
+	return ret;
 }
 
 static void qtinfo_help(char *exec)
@@ -478,6 +487,7 @@ static void qtinfo_help(char *exec)
 
 int main(int argc, char *argv[])
 {
+	int ret = -1;
 	int ch;
 	if ((argc == 1) || (argc == 2 && strcmp(argv[1], "--help") == 0)) {
 		qtinfo_help(argv[0]);
@@ -486,6 +496,7 @@ int main(int argc, char *argv[])
 	int fd = open(QTFS_DEV_NAME, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
+		return -1;
 	}
 #ifndef QTINFO_RELEASE
 	while ((ch = getopt(argc, argv, "acl:tp:usx:y:z")) != -1) {
@@ -495,42 +506,43 @@ int main(int argc, char *argv[])
 		switch (ch) {
 #ifndef QTINFO_RELEASE
 			case 'a':
-				qtinfo_opt_a(fd);
+				ret = qtinfo_opt_a(fd);
 				break;
 			case 'c':
-				qtinfo_opt_c(fd);
+				ret = qtinfo_opt_c(fd);
 				break;
 			case 'l':
-				qtinfo_opt_l(fd, optarg);
+				ret = qtinfo_opt_l(fd, optarg);
 				break;
 			case 't':
-				qtinfo_opt_t(fd);
+				ret = qtinfo_opt_t(fd);
 				break;
 			case 'p':
-				qtinfo_opt_p(fd, optarg);
+				ret = qtinfo_opt_p(fd, optarg);
 				break;
 			case 'u':
-				qtinfo_opt_u();
+				ret = qtinfo_opt_u();
 				break;
 #endif
 			case 's':
-				qtinfo_opt_s();
+				ret = qtinfo_opt_s();
 				break;
 			case 'x':
-				qtinfo_opt_x(fd, optarg);
+				ret = qtinfo_opt_x(fd, optarg);
 				break;
 			case 'y':
-				qtinfo_opt_y(fd, optarg);
+				ret = qtinfo_opt_y(fd, optarg);
 				break;
 			case 'z':
-				qtinfo_opt_z(fd);
+				ret = qtinfo_opt_z(fd);
 				break;
 			default:
+				ret = 0;
 				qtinfo_help(argv[0]);
 				break;
 		}
 	}
 
 	close(fd);
-	return 0;
+	return ret;
 }
