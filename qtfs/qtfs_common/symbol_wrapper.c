@@ -260,6 +260,8 @@ WRAPPER_DEFINE(3, long, qtfs_syscall_write(unsigned int x1, const char __user *x
 			size_t x3), __NR_write);
 WRAPPER_DEFINE(3, long, qtfs_syscall_read(unsigned int x1, char __user *x2,
 			size_t x3), __NR_read);
+WRAPPER_DEFINE(3, long, qtfs_syscall_ioctl(unsigned int x1, unsigned int x2,
+			unsigned long x3), __NR_ioctl);
 
 #ifdef __aarch64__
 #define WRAPPER_DEFINE_A64(nargs, ret, func, nr)\

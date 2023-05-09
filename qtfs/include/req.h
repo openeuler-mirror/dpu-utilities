@@ -149,7 +149,7 @@ struct qtreq_ioctl {
 	struct qtreq_ioctl_len {
 		unsigned int cmd;
 		unsigned int size;
-		unsigned int offset;
+		int fd;
 	} d;
 
 	char path[QTFS_TAIL_LEN(struct qtreq_ioctl_len)];

@@ -89,22 +89,20 @@ static int handle_ioctl(struct qtserver_arg *arg)
 {
 	int ret;
 	int iret;
-	struct file *file;
 	struct qtreq_ioctl *req = (struct qtreq_ioctl *)REQ(arg);
 	struct qtrsp_ioctl *rsp = (struct qtrsp_ioctl *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-	file = filp_open(req->path, O_RDONLY, 0);
-	if (err_ptr(file)) {
-		qtfs_err("handle ioctl error, path:<%s> failed.\n", req->path);
+	if (req->d.fd < 0) {
+		qtfs_err("ioctl invalid fd:%d", req->d.fd);
 		rsp->ret = QTFS_ERR;
 		rsp->size = 0;
-		rsp->errno = -ENOENT;
+		rsp->errno = EINVAL;
 		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
 	}
 
 	switch (req->d.cmd) {
 	case FS_IOC_FSGETXATTR:
-		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("fsgetxattr ioctl failed with %d\n", iret);
 			rsp->errno = iret;
@@ -116,36 +114,29 @@ static int handle_ioctl(struct qtserver_arg *arg)
 			rsp->errno = ret;
 			goto err;
 		}
-		rsp->ret = QTFS_OK;
-		rsp->errno = iret;
 		rsp->size = sizeof(struct fsxattr);
-		filp_close(file, NULL);
-		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + sizeof(struct fsxattr);
+		break;
 	case FS_IOC_FSSETXATTR:
-		if (req->d.size <= 0 || req->d.offset >= sizeof(req->path) ||
-			req->d.size > sizeof(req->path) - req->d.offset) {
+		if (req->d.size <= 0 || req->d.size > sizeof(req->path)) {
 			rsp->errno = -EINVAL;
 			goto err;
 		}
-		ret = copy_to_user(userp->userp, req->path+req->d.offset, req->d.size);
+		ret = copy_to_user(userp->userp, req->path, req->d.size);
 		if (ret) {
 			qtfs_err("fssetxattr copy_to_user failed with %d\n", ret);
 			rsp->errno = ret;
 			goto err;
 		}
-		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("fssetxattr ioctl failed with %d\n", iret);
 			rsp->errno = iret;
 			goto err;
 		}
-		rsp->ret = QTFS_OK;
-		rsp->errno = iret;
 		rsp->size = 0;
-		filp_close(file, NULL);
-		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
+		break;
 	case TCGETS:
-		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("ioctl TCGETS failed with %d\n", iret);
 			rsp->errno = iret;
@@ -159,43 +150,38 @@ static int handle_ioctl(struct qtserver_arg *arg)
 			rsp->errno = ret;
 			goto err;
 		}
-		rsp->ret = QTFS_OK;
-		rsp->errno = iret;
 		rsp->size = sizeof(struct ktermios);
-		filp_close(file, NULL);
-		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + sizeof(struct ktermios);
+		break;
 	case TCSETS:
-		if (req->d.size <= 0 || req->d.offset >= sizeof(req->path) ||
-			req->d.size > sizeof(req->path) - req->d.offset) {
+		if (req->d.size <= 0 || req->d.size > sizeof(req->path)) {
 			rsp->errno = -EINVAL;
 			goto err;
 		}
-		ret = copy_to_user(userp->userp, req->path+req->d.offset, req->d.size);
+		ret = copy_to_user(userp->userp, req->path, req->d.size);
 		if (ret) {
 			qtfs_err("tcsets copy_to_user failed with %d\n", ret);
 			rsp->errno = ret;
 			goto err;
 		}
 		qtfs_info("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
-		iret = file->f_op->unlocked_ioctl(file, req->d.cmd, (unsigned long)userp->userp);
+		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
 		if (iret) {
 			qtfs_err("tcsets ioctl failed with %d\n", iret);
 			rsp->errno = iret;
 			goto err;
 		}
-		rsp->ret = QTFS_OK;
-		rsp->errno = iret;
 		rsp->size = 0;
-		filp_close(file, NULL);
-		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
+		break;
 	default:
 		rsp->errno = -EOPNOTSUPP;
 		goto err;
 	}
+	rsp->ret = QTFS_OK;
+	rsp->errno = iret;
+	return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf) + rsp->size;
 err:
 	rsp->ret = QTFS_ERR;
 	rsp->size = 0;
-	filp_close(file, NULL);
 	return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
 }
 

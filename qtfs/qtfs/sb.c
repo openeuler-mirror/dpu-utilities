@@ -551,6 +551,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	struct qtrsp_ioctl *rsp;
 	unsigned int len = 0;
 	int ret = -EINVAL;
+	struct private_data *priv = NULL;
 
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var");
@@ -565,17 +566,17 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 
-	QTFS_FULLNAME(req->path, filp->f_path.dentry);
+	priv = (struct private_data *)filp->private_data;
+	req->d.fd = priv->fd;
 
 	req->d.cmd = cmd;
 	if (size > 0) {
-		req->d.offset = ALIGN(strlen(req->path) + 1, 64);
-		ret = copy_from_user(req->path + req->d.offset, (char __user *)arg, size);
+		ret = copy_from_user(req->path, (char __user *)arg, size);
 		if (ret) {
 			qtfs_err("%s: copy_from_user, 0x%lx, %u failed.", __func__, arg, size);
 			goto out;
 		}
-		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + req->d.offset + size;
+		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + size;
 		req->d.size = size;
 	} else {
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + strlen(req->path) + 1;
