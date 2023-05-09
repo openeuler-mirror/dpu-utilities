@@ -478,8 +478,8 @@ static void qtinfo_help(char *exec)
 	qtinfo_out("  -t, For test informations.");
 	qtinfo_out("  -p, Epoll support file mode(1: any files; 0: only fifo).");
 	qtinfo_out("  -u, Display unix socket proxy diagnostic info");
-#endif
 	qtinfo_out("  -s, Set unix socket proxy log level(Increase by 1 each time)");
+#endif
 	qtinfo_out("  -x, Add a uds white list path(example: -x /home/)");
 	qtinfo_out("  -y, Delete a uds white list with index(example: -y 1)");
 	qtinfo_out("  -z, Get all uds white list");
@@ -496,12 +496,14 @@ int main(int argc, char *argv[])
 	int fd = open(QTFS_DEV_NAME, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
 		qtinfo_err("open file %s failed.", QTFS_DEV_NAME);
+#ifdef QTINFO_RELEASE
 		return -1;
+#endif
 	}
 #ifndef QTINFO_RELEASE
 	while ((ch = getopt(argc, argv, "acl:tp:usx:y:z")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "sx:y:z")) != -1) {
+	while ((ch = getopt(argc, argv, "x:y:z")) != -1) {
 #endif
 		switch (ch) {
 #ifndef QTINFO_RELEASE
@@ -523,10 +525,10 @@ int main(int argc, char *argv[])
 			case 'u':
 				ret = qtinfo_opt_u();
 				break;
-#endif
 			case 's':
 				ret = qtinfo_opt_s();
 				break;
+#endif
 			case 'x':
 				ret = qtinfo_opt_x(fd, optarg);
 				break;
