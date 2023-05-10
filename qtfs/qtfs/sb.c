@@ -596,8 +596,10 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 
 	qtfs_info("qtfs do ioctl cmd:0x%x success, path: %s size:%u, rsp size:%u", cmd, req->path, size, rsp->size);
 	ret = rsp->errno;
-	if (rsp->size > 0)
-		ret = copy_to_user((char __user *)arg, rsp->buf, size);
+	if (rsp->size > 0 && copy_to_user((char __user *)arg, rsp->buf, size)) {
+		qtfs_err("copy to user failed");
+		ret = -EFAULT;
+	}
 out:
 	qtfs_conn_put_param(pvar);
 	return (long)ret;

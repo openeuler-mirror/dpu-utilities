@@ -111,7 +111,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		ret = copy_from_user(rsp->buf, userp->userp, sizeof(struct fsxattr));
 		if (ret) {
 			qtfs_err("fsgetxattr copy_from_user failed with %d\n", ret);
-			rsp->errno = ret;
+			rsp->errno = -EFAULT;
 			goto err;
 		}
 		rsp->size = sizeof(struct fsxattr);
@@ -124,7 +124,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		ret = copy_to_user(userp->userp, req->path, req->d.size);
 		if (ret) {
 			qtfs_err("fssetxattr copy_to_user failed with %d\n", ret);
-			rsp->errno = ret;
+			rsp->errno = -EFAULT;
 			goto err;
 		}
 		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
@@ -147,7 +147,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		ret = copy_from_user(rsp->buf, userp->userp, sizeof(struct ktermios));
 		if (ret) {
 			qtfs_err("fsgetxattr copy_from_user failed with %d\n", ret);
-			rsp->errno = ret;
+			rsp->errno = -EFAULT;
 			goto err;
 		}
 		rsp->size = sizeof(struct ktermios);
@@ -160,7 +160,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		ret = copy_to_user(userp->userp, req->path, req->d.size);
 		if (ret) {
 			qtfs_err("tcsets copy_to_user failed with %d\n", ret);
-			rsp->errno = ret;
+			rsp->errno = -EFAULT;
 			goto err;
 		}
 		qtfs_info("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
@@ -194,29 +194,32 @@ static int handle_statfs(struct qtserver_arg *arg)
 
 	if (strlen(req->path) + 1 > userp->size) {
 		qtfs_err("invalid msg");
-		rsp->ret = QTFS_ERR;
 		rsp->errno = -EINVAL;
-		return sizeof(struct qtrsp_statfs);
+		goto err_end;
 	}
 	ret = copy_to_user(userp->userp, req->path, strlen(req->path)+1);
 	if (ret) {
-		rsp->ret = QTFS_ERR;
-		return sizeof(struct qtrsp_statfs);
+		rsp->errno = -EFAULT;
+		goto err_end;
 	}
 
 	ret = qtfs_syscall_statfs((char *)userp->userp, userp->userp2);
 	if (ret) {
 		qtfs_err("qtfs server handle statfs path:%s failed with ret:%d.\n", req->path, ret);
-		rsp->ret = QTFS_ERR;
+		rsp->errno = ret;
+		goto err_end;
 	} else {
 		qtfs_info("qtfs server handle statfs path:%s success.\n", req->path);
 		rsp->ret = QTFS_OK;
 	}
 	if (copy_from_user(&rsp->kstat, userp->userp2, sizeof(struct kstatfs))) {
 		qtfs_err("copy statfs to kstatfs failed");
-		rsp->ret = QTFS_ERR;
+		rsp->errno = -EFAULT;
+		goto err_end;
 	}
-	rsp->errno = ret;
+	return sizeof(struct qtrsp_statfs);
+err_end:
+	rsp->ret = QTFS_ERR;
 	return sizeof(struct qtrsp_statfs);
 }
 
@@ -1371,7 +1374,7 @@ int handle_epollctl(struct qtserver_arg *arg)
 
 	evt.data = (__u64)req->event.data;
 	evt.events = req->event.events;
-	if (copy_to_user(userp->userp, &evt, sizeof(struct epoll_event)) <= 0) {
+	if (copy_to_user(userp->userp, &evt, sizeof(struct epoll_event))) {
 		qtfs_err("copy to user failed.");
 		rsp->ret = QTFS_ERR;
 		return sizeof(struct qtrsp_epollctl);
