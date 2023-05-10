@@ -100,7 +100,7 @@ noinline long qtfs_syscall_mknodat(int dfd, const char __user *filename, umode_t
 noinline off_t qtfs_syscall_lseek(unsigned int fd, off_t offset, unsigned int whence);
 long qtfs_syscall_write(unsigned int fd, const char __user *buf, size_t count);
 long qtfs_syscall_read(unsigned int fd, char __user *buf, size_t count);
-
+long qtfs_syscall_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 long qtfs_syscall_kill(pid_t pid, int sig);
 long qtfs_syscall_sched_getaffinity(pid_t pid, unsigned int len, unsigned long __user *user_mask_ptr);
 long qtfs_syscall_sched_setaffinity(pid_t pid, unsigned int len, unsigned long __user *user_mask_ptr);
