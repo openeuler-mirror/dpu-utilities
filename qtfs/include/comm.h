@@ -198,6 +198,10 @@ struct qtinfo {
 	int epoll_state;
 	int pvar_vld; // valid param's number
 	int pvar_busy; // busy param's number
+#ifdef QTFS_SERVER
+	unsigned short server_port;
+	char server_ip[20];
+#endif
 };
 
 #define QTINFO_STATE(state) ((state == QTCONN_INIT) ? "INIT" : \

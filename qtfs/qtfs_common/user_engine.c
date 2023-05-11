@@ -21,11 +21,16 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <netinet/ip.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
 #include <glib.h>
 #include <malloc.h>
+#include <errno.h>
 
 #include <sys/epoll.h>
 
@@ -254,12 +259,71 @@ int qtfs_whitelist_init(int fd)
 	return 0;
 }
 
+static int qtfs_engine_check_port(unsigned short port, char *ip)
+{
+	struct sockaddr_in sin;
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		engine_err("socket error, fd:%", sockfd);
+		return -1;
+	}
+	bzero(&sin, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(port);
+	inet_pton(AF_INET, ip, &sin.sin_addr);
+	if (bind(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0) {
+		engine_err("ip:%s port:%u bind failed, errno string:%s.", ip, port, strerror(errno));
+		close(sockfd);
+		return -1;
+	}
+	close(sockfd);
+	return 0;
+}
+
+#define IS_NUMBER(c) (c >= '0' && c <= '9')
+static int qtfs_engine_env_check(char *argv[])
+{
+	struct qtinfo diag;
+	int ret;
+	int fd;
+	if (!IS_NUMBER(argv[1][0])) {
+		engine_err("invalid thread number :%s", argv[1]);
+		return -1;
+	}
+	fd = open(QTFS_SERVER_DEV, O_RDONLY|O_NONBLOCK);
+	if (fd < 0) {
+		engine_err("not find server dev:%s", QTFS_SERVER_DEV);
+		return -1;
+	}
+	ret = ioctl(fd, QTFS_IOCTL_ALLINFO, &diag);
+	close(fd);
+	if (ret != QTOK) {
+		engine_err("check ioctl return failed:%d", ret);
+		return -1;
+	}
+
+	if (qtfs_engine_check_port(diag.server_port, diag.server_ip) < 0)
+		goto err;
+	if (qtfs_engine_check_port(diag.server_port + 1, diag.server_ip) < 0)
+		goto err;
+	if (qtfs_engine_check_port(atoi(argv[4]), argv[3]) < 0)
+		goto err;
+
+	return 0;
+err:
+	return -1;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = 0;
 	if (argc != 7) {
 		engine_out("Usage: %s <number of threads> <uds proxy thread num> <host ip> <uds proxy port> <dpu ip> <uds proxy port>.", argv[0]);
 		engine_out("     Example: %s 16 1 192.168.10.10 12121 192.168.10.11 12121.", argv[0]);
+		return -1;
+	}
+	if (qtfs_engine_env_check(argv) < 0) {
+		engine_err("Environment check failed, engine exit.");
 		return -1;
 	}
 	int thread_nums = atoi(argv[1]);

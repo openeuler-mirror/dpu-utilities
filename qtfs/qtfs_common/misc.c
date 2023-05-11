@@ -143,6 +143,10 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			qtfs_diag_info->log_level = log_level;
 			qtfs_misc_flush_threadstate();
 			qtfs_conn_list_cnt();
+#ifdef QTFS_SERVER
+			qtfs_diag_info->server_port = qtfs_server_port;
+			memcpy(qtfs_diag_info->server_ip, qtfs_server_ip, sizeof(qtfs_diag_info->server_ip));
+#endif
 			if (copy_to_user((void *)arg, qtfs_diag_info, sizeof(struct qtinfo))) {
 				qtfs_err("ioctl allinfo copy to user failed.");
 				goto err_end;
