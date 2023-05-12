@@ -153,6 +153,6 @@ int rexec_shim_entry(int argc, char *argv[])
     execvp(newarg[0], newarg);
     perror("execvp failed.");
 
-    exit(EXIT_FAILURE);
+    return -1;
 }
 

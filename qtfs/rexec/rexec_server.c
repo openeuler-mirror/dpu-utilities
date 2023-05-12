@@ -172,9 +172,8 @@ static int rexec_parse_argv(int argc, char *argv_str, char *argv[])
     return offset;
 }
 
-static inline void rexec_clear_string_tail(char *str)
+static inline void rexec_clear_string_tail(char *str, int len)
 {
-    int len = strlen(str);
     while (str[len] < 0x20) {
         str[len] = '\0';
         len--;
@@ -214,7 +213,7 @@ static int rexec_whitelist_build(struct rexec_white_list_str *wl)
         fstr = fgets(cmd, MAX_CMD_LEN, fwl);
         if (fstr == NULL)
             continue;
-        rexec_clear_string_tail(cmd);
+        rexec_clear_string_tail(cmd, strlen(cmd));
         len = strlen(cmd);
         fstr = (char *)malloc(len + 1);
         if (fstr == NULL) {
@@ -293,6 +292,7 @@ static void rexec_server_sig_pipe(int signum)
 #define REXEC_MSG_OVER 0xf
 static int rexec_start_new_process(int newconnfd)
 {
+    int ret;
     int pipefd[2];
     if (pipe(pipefd) == -1) {
         rexec_err("pipe syscall error, strerr:%s", strerror(errno));
@@ -395,7 +395,7 @@ static int rexec_start_new_process(int newconnfd)
     for (int i = 2; i < argc + 2; i++) {
         rexec_log("  argv[%d]:%s", i - 2, argv[i]);
     }
-    rexec_shim_entry(argc + 2, argv);
+    ret = rexec_shim_entry(argc + 2, argv);
     perror("rexec shim entry");
 
 err_free:
@@ -407,7 +407,7 @@ err_to_parent:
         write(pipefd[PIPE_WRITE], &errpid, sizeof(int));
     } while (0);
 
-    exit(0);
+    return ret;
 }
 
 // 道生一
@@ -445,7 +445,7 @@ static void rexec_server_mainloop()
         .cs = REXEC_SOCK_SERVER,
         .udstype = SOCK_STREAM,
     };
-    strncpy(ser.sun_path, REXEC_UDS_CONN, strlen(REXEC_UDS_CONN));
+    strncpy(ser.sun_path, REXEC_UDS_CONN, strlen(REXEC_UDS_CONN) + 1);
     int buildret = rexec_build_unix_connection(&ser);
     if (buildret != 0) {
         rexec_err("faild to build main sock:%d err:%s", buildret, strerror(errno));

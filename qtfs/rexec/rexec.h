@@ -33,6 +33,7 @@ enum {
 
 #define REXEC_MSG_1K 1024
 #define REXEC_MSG_MAX REXEC_MSG_1K * 1024
+#define REXEC_LOG_PATH_LEN 64
 
 // rexec client与server之间建联的sock文件路径
 #define REXEC_UDS_CONN "/var/run/rexec/rexec_uds.sock"
@@ -61,9 +62,10 @@ struct rexec_msg {
 extern FILE *rexec_logfile;
 static inline void rexec_log_init()
 {
+    char deflog[REXEC_LOG_PATH_LEN] = "/dev/null";
     char *logfile = getenv("REXEC_LOG_FILE");
     if (logfile == NULL) {
-        logfile = "/dev/null";
+        logfile = deflog;
     } else if (strcmp(logfile, "std") == 0) {
         rexec_logfile = stderr;
         return;
@@ -75,7 +77,7 @@ retry:
             return;
         }
         // 输入的文件打开失败则回退到无日志模式
-        logfile = "/dev/null";
+        logfile = deflog;
         goto retry;
     }
     return;
