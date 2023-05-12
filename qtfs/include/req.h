@@ -432,7 +432,7 @@ struct qtrsp_rename {
 };
 
 // xattr def
-#define QTFS_XATTR_LEN 64
+#define QTFS_XATTR_LEN 512
 struct qtreq_xattrlist {
 	size_t buffer_size;
 	char path[MAX_PATH_LEN];
