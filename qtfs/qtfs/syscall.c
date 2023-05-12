@@ -252,86 +252,6 @@ int qtfs_dir_to_qtdir(char *dir, char *qtdir)
 	return ret;
 }
 
-int qtfs_parse_data(void *data, void *newc)
-{
-	char *options = data, *key;
-	int ret = 0;
-	char *newchar = (char *)newc;
-	char *lowers;
-	int firstkey = 0;
-
-	if (!options)
-		return 0;
-
-	while ((key = strsep(&options, ",")) != NULL) {
-		if (*key) {
-			size_t v_len = 0;
-			char *value = strchr(key, '=');
-
-			if (value) {
-				if (value == key)
-					continue;
-				*value++ = 0;
-				v_len = strlen(value);
-			}
-			if (firstkey != 0)
-				strcat(newchar, ",");
-			firstkey++;
-
-			qtfs_info("qtfs parse mount data: key:%s value:%s v_len:%ld\n", key, value, v_len);
-			if (strcmp(key, "lowerdir") == 0) {
-				int firstlower = 0;
-				strcat(newchar, "lowerdir=");
-				while ((lowers = strsep(&value, ":")) != NULL) {
-					if (*lowers) {
-						if (firstlower != 0)
-							strcat(newchar, ":");
-						firstlower++;
-						qtfs_dir_to_qtdir(lowers, &newchar[strlen(newchar)]);
-					}
-				}
-			} else {
-				strcat(newchar, key);
-				strcat(newchar, "=");
-				qtfs_dir_to_qtdir(value, &newchar[strlen(newchar)]);
-			}
-		}
-	}
-	qtfs_info("qtfs parse mount data result:%s\n", newchar);
-
-	return ret;
-}
-
-/*
- * overlay -o format: lowerdir=/xxx/overlay/lower:/xx/xx,upperdir=
- *			/xx/overlay/upper,workdir=/xxx/overlay/work
- */
-static inline void *qtfs_mount_data_overlay(void *data)
-{
-	void *mod;
-	int len;
-	len = strlen((char *)data);
-	mod = (void *)kmalloc(len + 1, GFP_KERNEL);
-	if (mod == NULL) {
-		qtfs_err("kmalloc failed.\n");
-		return (void *)-ENOMEM;
-	}
-	memset(mod, 0, len+1);
-	qtfs_parse_data(data, mod);
-	memset(data, 0, len);
-	strcpy(data, mod);
-
-	kfree(mod);
-	return data;
-}
-
-static inline void *qtfs_mount_datapage_modify(char *type, void *data)
-{
-	if (type != NULL && strcmp(type, "overlay") == 0) {
-		return qtfs_mount_data_overlay(data);
-	}
-	return data;
-}
 
 static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		unsigned long flags, void *data)
@@ -353,7 +273,6 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		return -EINVAL;
 	}
 
-	// data = qtfs_mount_datapage_modify(type, data);
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (dev_name != NULL) {
 		qtfs_dir_to_qtdir(dev_name, req->buf);
