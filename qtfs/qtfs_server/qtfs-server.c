@@ -292,7 +292,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 static int __init qtfs_server_init(void)
 {
 	int i;
-	qtfs_log_init(qtfs_log_level);
+	qtfs_log_init(qtfs_log_level, sizeof(qtfs_log_level));
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {

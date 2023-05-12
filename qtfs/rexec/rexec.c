@@ -107,7 +107,7 @@ static int rexec_conn_msg(int connfd, int *exit_status, int *pidfd)
     struct rexec_msg head;
     int ret = recv(connfd, &head, sizeof(struct rexec_msg), MSG_WAITALL);
     if (ret <= 0) {
-        rexec_err("Rexec conn recv err:%d errstr:%s", ret, strerror(errno));
+        rexec_err("Rexec conn recv err:%d errno:%d", ret, errno);
         return -1;
     }
     switch (head.msgtype) {
@@ -178,7 +178,7 @@ static int rexec_run(int rstdin, int rstdout, int rstderr, int connfd, char *arg
 
     int efd = epoll_create1(0);
     if (efd == -1) {
-        rexec_err("epoll create1 failed, err:%s.", strerror(errno));
+        rexec_err("epoll create1 failed, errno:%d.", errno);
         return exit_status;
     }
     struct epoll_event evt;
@@ -322,7 +322,7 @@ static inline int rexec_is_reg_file(int fd)
     struct stat st;
     char path[32] = {0};
     if (fstat(fd, &st) != 0) {
-        rexec_err("get fd:%d fstat failed, errstr:%s", fd, strerror(errno));
+        rexec_err("get fd:%d fstat failed, errno:%d", fd, errno);
         return 0;
     }
     if (S_ISREG(st.st_mode)) {
@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
 
     int connfd = rexec_conn_to_server();
     if (connfd < 0) {
-        rexec_err("Rexec connect to server failed, err:%s", strerror(errno));
+        rexec_err("Rexec connect to server failed, errno:%d", errno);
         return -1;
     }
     rexec_log("Remote exec binary:%s", argv[1]);
@@ -481,7 +481,7 @@ int main(int argc, char *argv[])
     }
     pmsg->stdno = REXEC_STDIN;
     if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg) + pmsg->msglen, rstdin[0]) < 0) {
-        rexec_err("Rexec send exec msg failed, err:%s", strerror(errno));
+        rexec_err("Rexec send exec msg failed, errno:%d", errno);
         goto err_end;
     }
     rexec_log("Normal msg send len:%d head:%d", sizeof(struct rexec_msg) + pmsg->msglen, sizeof(struct rexec_msg));
@@ -490,12 +490,12 @@ int main(int argc, char *argv[])
     pmsg->msglen = 0;
     pmsg->stdno = REXEC_STDOUT;
     if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg), rstdout[1]) < 0) {
-        rexec_err("Rexec send exec msg failed, err:%s", strerror(errno));
+        rexec_err("Rexec send exec msg failed, errno:%d", errno);
         goto err_end;
     }
     pmsg->stdno = REXEC_STDERR;
     if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg), rstderr[1]) < 0) {
-        rexec_err("Rexec send exec msg failed, err:%s", strerror(errno));
+        rexec_err("Rexec send exec msg failed, errno:%d", errno);
         goto err_end;
     }
     free(pmsg);

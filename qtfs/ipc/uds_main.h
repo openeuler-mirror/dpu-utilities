@@ -39,7 +39,7 @@ enum {
 		time_t t; \
 		struct tm *p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
@@ -50,7 +50,7 @@ enum {
 		time_t t; \
 		struct tm *p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
@@ -61,7 +61,7 @@ enum {
 		time_t t; \
 		struct tm *p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][ERROR:%s:%3d]"info"\n", \
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \

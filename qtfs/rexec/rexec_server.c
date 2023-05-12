@@ -108,8 +108,8 @@ static int rexec_event_process_manage(struct rexec_event *event)
     struct rexec_msg head;
     int ret = recv(event->fd, &head, sizeof(struct rexec_msg), MSG_WAITALL);
     if (ret <= 0) {
-        rexec_log("Event fd:%d recv ret:%d str:%s, peer rexec closed, kill the associated process:%d.",
-                    event->fd, ret, strerror(errno), event->pid);
+        rexec_log("Event fd:%d recv ret:%d errno:%d, peer rexec closed, kill the associated process:%d.",
+                    event->fd, ret, errno, event->pid);
         kill(event->pid, SIGKILL);
         return REXEC_EVENT_DEL;
     }
@@ -123,7 +123,7 @@ static int rexec_event_handshake(struct rexec_event *event)
     int sonpid = 0;
     int ret = read(event->fd, &sonpid, sizeof(int));
     if (ret <= 0) {
-        rexec_err("Rexec read from pipe ret:%d err:%s", ret, strerror(errno));
+        rexec_err("Rexec read from pipe ret:%d errno:%d", ret, errno);
         return REXEC_EVENT_DEL;
     }
     int connfd = event->connfd;
@@ -142,7 +142,7 @@ static int rexec_event_handshake(struct rexec_event *event)
     head.pid = sonpid;
     ret = write(connfd, &head, sizeof(struct rexec_msg));
     if (ret <= 0) {
-        rexec_err("Rexec send son pid:%d to client failed, ret:%d err:%s", sonpid, ret, strerror(errno));
+        rexec_err("Rexec send son pid:%d to client failed, ret:%d errno:%d", sonpid, ret, errno);
     }
     rexec_add_event(main_epoll_fd, connfd, sonpid, rexec_event_process_manage);
 
@@ -295,7 +295,7 @@ static int rexec_start_new_process(int newconnfd)
     int ret;
     int pipefd[2];
     if (pipe(pipefd) == -1) {
-        rexec_err("pipe syscall error, strerr:%s", strerror(errno));
+        rexec_err("pipe syscall error, errno:%d", errno);
         return -1;
     }
     // handshake阶段，联合体里面记录newconnfd
@@ -321,7 +321,7 @@ static int rexec_start_new_process(int newconnfd)
         memset(&head, 0, sizeof(struct rexec_msg));
         int ret = rexec_recvmsg(newconnfd, (char *)&head, len, &scmfd, MSG_WAITALL);
         if (ret <= 0) {
-            rexec_log("recvmsg ret:%d, err:%s", ret, strerror(errno));
+            rexec_log("recvmsg ret:%d, errno:%d", ret, errno);
             goto err_to_parent;
         }
         // 将管道与自己的标准输入输出关联
@@ -354,7 +354,7 @@ static int rexec_start_new_process(int newconnfd)
         memset(msgbuf, 0, head.msglen + 1);
         ret = recv(newconnfd, msgbuf, head.msglen, MSG_WAITALL);
         if (ret <= 0) {
-            rexec_err("recv failed, ret:%d err:%s", ret, strerror(errno));
+            rexec_err("recv failed, ret:%d errno:%d", ret, errno);
             goto err_free;
         }
         rexec_log("recv normal msg len:%d headlen:%d real recv:%d msg:%s",
@@ -415,7 +415,7 @@ static int rexec_event_new_process(struct rexec_event *event)
 {
     int newconnfd = rexec_sock_step_accept(event->fd, AF_UNIX);
     if (newconnfd < 0) {
-        rexec_err("Accept failed, ret:%d err:%s", newconnfd, strerror(errno));
+        rexec_err("Accept failed, ret:%d errno:%d", newconnfd, errno);
         return REXEC_EVENT_OK;
     }
     //     主进程只负责接收新链接，基于newconnfd的新消息由子进程自己去接收，但是最
@@ -435,7 +435,7 @@ static void rexec_server_mainloop()
 #define REXEC_MAX_EVENTS 16
     main_epoll_fd = epoll_create1(0);
     if (main_epoll_fd == -1) {
-        rexec_err("epoll create1 failed, err:%s.", strerror(errno));
+        rexec_err("epoll create1 failed, errno:%d.", errno);
         return;
     }
     if (rexec_set_inherit(main_epoll_fd, false) < 0) {
@@ -448,7 +448,7 @@ static void rexec_server_mainloop()
     strncpy(ser.sun_path, REXEC_UDS_CONN, strlen(REXEC_UDS_CONN) + 1);
     int buildret = rexec_build_unix_connection(&ser);
     if (buildret != 0) {
-        rexec_err("faild to build main sock:%d err:%s", buildret, strerror(errno));
+        rexec_err("faild to build main sock:%d errno:%d", buildret, errno);
         close(main_epoll_fd);
         return;
     }

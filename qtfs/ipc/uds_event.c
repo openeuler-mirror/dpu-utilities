@@ -215,11 +215,11 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	memset(buf, 0, sizeof(buf));
 	len = recv(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req), MSG_WAITALL);
 	if (len == 0) {
-		uds_err("recv err msg:%d errno:%s", len, strerror(errno));
+		uds_err("recv err msg:%d errno:%d", len, errno);
 		return EVENT_DEL;
 	}
 	if (len < 0) {
-		uds_err("read msg error:%d errno:%s", len, strerror(errno));
+		uds_err("read msg error:%d errno:%d", len, errno);
 		goto end;
 	}
 	if (strlen(msg->sun_path) >= (UDS_SUN_PATH_LEN - strlen(UDS_PROXY_SUFFIX))) {
@@ -378,7 +378,7 @@ int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_re
 	struct uds_conn_arg targ;
 	int len = recv(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req), MSG_WAITALL);
 	if (len <= 0) {
-		uds_err("recv failed, len:%d str:%s", len, strerror(errno));
+		uds_err("recv failed, len:%d errno:%d", len, errno);
 		return EVENT_ERR;
 	}
 
@@ -428,7 +428,7 @@ int uds_build_pipe_proxy(int efd, struct uds_event *evt, struct uds_stru_scm_pip
 {
 	int len = recv(evt->fd, msg, sizeof(struct uds_stru_scm_pipe), MSG_WAITALL);
 	if (len <= 0) {
-		uds_err("recv failed, len:%d str:%s", len, strerror(errno));
+		uds_err("recv failed, len:%d errno:%d", len, errno);
 		return EVENT_ERR;
 	}
 	if (msg->dir != SCM_PIPE_READ && msg->dir != SCM_PIPE_WRITE) {
@@ -484,7 +484,7 @@ static inline mode_t uds_msg_file_mode(int fd)
 	struct stat st;
 	char path[32] = {0};
 	if (fstat(fd, &st) != 0) {
-		uds_err("get fd:%d fstat failed, errstr:%s", fd, strerror(errno));
+		uds_err("get fd:%d fstat failed, errno:%d", fd, errno);
 	}
 	if (S_ISFIFO(st.st_mode)) {
 		uds_log("fd:%d is fifo", fd);
@@ -506,7 +506,7 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	sprintf(fdproc, "/proc/self/fd/%d", scmfd);
 	ret = readlink(fdproc, p_scmr->path, UDS_PATH_MAX);
 	if (ret < 0) {
-		uds_err("readlink:%s error, ret:%d, errstr:%s", fdproc, ret, strerror(errno));
+		uds_err("readlink:%s error, ret:%d, errno:%d", fdproc, ret, errno);
 		free(fdproc);
 		close(scmfd);
 		return EVENT_ERR;
@@ -514,7 +514,7 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	free(fdproc);
 	p_scmr->flags = fcntl(scmfd, F_GETFL, 0);
 	if (p_scmr->flags < 0) {
-		uds_err("fcntl get flags failed:%d error:%s", p_scmr->flags, strerror(errno));
+		uds_err("fcntl get flags failed:%d errno:%d", p_scmr->flags, errno);
 		close(scmfd);
 		return EVENT_ERR;
 	}
@@ -556,7 +556,7 @@ static int uds_msg_scm_fifo_file(int scmfd, int tcpfd, struct uds_event_global_v
 	p_pipe->srcfd = scmfd;
 	ret = send(tcpfd, p_get, sizeof(struct uds_tcp2tcp) + sizeof(struct uds_stru_scm_pipe), 0);
 	if (ret <= 0) {
-		uds_err("send tar get msg failed, ret:%d errstr:%s", ret, strerror(errno));
+		uds_err("send tar get msg failed, ret:%d errno:%d", ret, errno);
 		return EVENT_ERR;
 	}
 	return EVENT_OK;
@@ -714,7 +714,7 @@ int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt, i
 		return EVENT_ERR;
 	}
 	if (pipe(fd) == -1) {
-		uds_err("pipe syscall error, strerr:%s", strerror(errno));
+		uds_err("pipe syscall error, errno:%d", errno);
 		return EVENT_ERR;
 	}
 	if (p_pipe->dir == SCM_PIPE_READ) {
@@ -748,14 +748,14 @@ int uds_event_tcp2pipe(void *arg, int epfd, struct uds_event_global_var *p_event
 	memset(p_event_var->iov_base, 0, p_event_var->iov_len);
 	int len = read(evt->fd, p_event_var->iov_base, p_event_var->iov_len);
 	if (len <= 0) {
-		uds_err("read from tcp failed, len:%d str:%s", len, strerror(errno));
+		uds_err("read from tcp failed, len:%d errno:%d", len, errno);
 		return EVENT_DEL;
 	}
 
 	uds_log("tcp:%d to pipe:%d len:%d, buf:\n>>>>>>>\n%.*s\n<<<<<<<\n", evt->fd, evt->peerfd, len, len, p_event_var->iov_base);
 	int ret = write(evt->peerfd, p_event_var->iov_base, len);
 	if (ret <= 0) {
-		uds_err("write to pipe failed, fd:%d str:%s", evt->peerfd, strerror(errno));
+		uds_err("write to pipe failed, fd:%d errno:%d", evt->peerfd, errno);
 		return EVENT_DEL;
 	}
 	return EVENT_OK;
@@ -767,14 +767,14 @@ int uds_event_pipe2tcp(void *arg, int epfd, struct uds_event_global_var *p_event
 	memset(p_event_var->iov_base, 0, p_event_var->iov_len);
 	int len = read(evt->fd, p_event_var->iov_base, p_event_var->iov_len);
 	if (len <= 0) {
-		uds_err("read from pipe failed, len:%d str:%s", len, strerror(errno));
+		uds_err("read from pipe failed, len:%d errno:%d", len, errno);
 		return EVENT_DEL;
 	}
 
 	uds_log("pipe:%d to tcp:%d len:%d, buf:\n>>>>>>>\n%.*s\n<<<<<<<\n", evt->fd, evt->peerfd, len, len, p_event_var->iov_base);
 	int ret = write(evt->peerfd, p_event_var->iov_base, len);
 	if (ret <= 0) {
-		uds_err("write to tcp failed, fd:%d str:%s", evt->peerfd, strerror(errno));
+		uds_err("write to tcp failed, fd:%d errno:%d", evt->peerfd, errno);
 		return EVENT_DEL;
 	}
 	return EVENT_OK;
@@ -964,7 +964,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 	msg.msg_controllen = msg_controllen;
 	if (iov.iov_len == 0) iov.iov_len = 1;
 	ret = sendmsg(evt->peer->fd, &msg, 0);
-	uds_log("evt:%d sendmsg len:%d, controllen:%d errno:%s", evt->fd, ret, msg_controllen, strerror(errno));
+	uds_log("evt:%d sendmsg len:%d, controllen:%d errno:%d", evt->fd, ret, msg_controllen, errno);
 	uds_close_fds(fds, fdnum);
 	return EVENT_OK;
 err:

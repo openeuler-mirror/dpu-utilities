@@ -36,7 +36,7 @@
 		time_t t; \
 		struct tm *p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
@@ -47,7 +47,7 @@
 		time_t t; \
 		struct tm *p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
 				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
 				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
@@ -132,12 +132,12 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 		strncpy(remoteconn.sun_path, addr->sun_path, sizeof(remoteconn.sun_path));
 		ret = send(sock_fd, &remoteconn, sizeof(remoteconn), 0);
 		if (ret <= 0) {
-			uds_err("send remote connect request failed, ret:%d err:%s", ret, strerror(errno));
+			uds_err("send remote connect request failed, ret:%d errno:%d", ret, errno);
 			goto err_end;
 		}
 		ret = recv(sock_fd, &remotersp, sizeof(remotersp), MSG_WAITALL);
 		if (ret <= 0) {
-			uds_err("recv remote connect replay failed, ret:%d err:%s", ret, strerror(errno));
+			uds_err("recv remote connect replay failed, ret:%d errno:%d", ret, errno);
 			goto err_end;
 		}
 		if (remotersp.ret == 0) {

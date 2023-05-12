@@ -213,7 +213,7 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 		engine_err("whitelist item index out of range:%d, no more than %d.", type, QTFS_WHITELIST_MAX);
 		return -1;
 	}
-	items = g_key_file_get_string_list(config,wl_type_str[type],"Path",&len,NULL);
+	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &len, NULL);
 	if (len == 0) {
 		engine_err("Can't find whitelist item %s", wl_type_str[type]);
 		return -1;
@@ -222,10 +222,10 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 	g_print("%s:\n", wl_type_str[type]);
 	whitelist[type]->len = len;
 	whitelist[type]->type = type;
-	for(i = 0; i < len;i++){
+	for(i = 0; i < len; i++){
 		printf("%s\n", items[i]);
 		whitelist[type]->wl[i].len = strlen(items[i]);
-		strcpy(whitelist[type]->wl[i].path, items[i]);
+		strncpy(whitelist[type]->wl[i].path, items[i], sizeof(whitelist[type]->wl[i].path));
 	}
 	int ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist[type]);
 	if (ret != 0) {
@@ -272,7 +272,7 @@ static int qtfs_engine_check_port(unsigned short port, char *ip)
 	sin.sin_port = htons(port);
 	inet_pton(AF_INET, ip, &sin.sin_addr);
 	if (bind(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0) {
-		engine_err("ip:%s port:%u bind failed, errno string:%s.", ip, port, strerror(errno));
+		engine_err("ip:%s port:%u bind failed, errno:%d.", ip, port, errno);
 		close(sockfd);
 		return -1;
 	}

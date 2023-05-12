@@ -48,9 +48,9 @@ int rexec_build_unix_connection(struct rexec_conn_arg *arg)
 	int sock_fd = socket(AF_UNIX, arg->udstype, 0);
 
 	if (sock_fd < 0) {
-		rexec_err("As %s failed, socket fd: %d, err:%s.",
+		rexec_err("As %s failed, socket fd: %d, errno:%d.",
 				(arg->cs == REXEC_SOCK_CLIENT) ? "client" : "server",
-				sock_fd, strerror(errno));
+				sock_fd, errno);
 		return -1;
 	}
 	strncpy(sock_addr.sun_path, arg->sun_path, sizeof(sock_addr.sun_path));
@@ -59,12 +59,12 @@ int rexec_build_unix_connection(struct rexec_conn_arg *arg)
 	if (arg->cs == REXEC_SOCK_SERVER) {
 		unlink(sock_addr.sun_path);
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-			rexec_err("As server failed, bind error, err:%s.",
-					strerror(errno));
+			rexec_err("As server failed, bind error, errno:%d.",
+					errno);
 			goto close_and_return;
 		}
 		if (listen(sock_fd, sock_max_conn) < 0) {
-			rexec_err("As server listen failed, err:%s.", strerror(errno));
+			rexec_err("As server listen failed, errno:%d.", errno);
 			goto close_and_return;
 		}
 	} else {
@@ -95,7 +95,7 @@ int rexec_sock_step_accept(int sock_fd, int family)
 		connfd = accept(sock_fd, (struct sockaddr *)&un_addr, &len);
 	}
 	if (connfd < 0) {
-		rexec_err("Accept error:%d, err:%s.", connfd, strerror(errno));
+		rexec_err("Accept error:%d, errno:%d.", connfd, errno);
 		return connfd;
 	}
 	if (family == AF_INET) {

@@ -172,15 +172,15 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar) && qtfs_server_main_sock != NULL) {
-		qtfs_info("qtfs server main sock is %lx, valid or out-of-date?", (unsigned long)qtfs_server_main_sock);
+		qtfs_info("qtfs server main sock is %lx, valid or out-of-date?", (uintptr_t)qtfs_server_main_sock);
 		return 0;
 	}
 	if (QTCONN_IS_EPOLL_CONN(pvar) && pvar->conn_var.sock_var.sock != NULL) {
-		qtfs_info("qtfs server epoll sock is %lx, valid or out-of-date?", (unsigned long)pvar->conn_var.sock_var.sock);
+		qtfs_info("qtfs server epoll sock is %lx, valid or out-of-date?", (uintptr_t)pvar->conn_var.sock_var.sock);
 		return 0;
 	}
-	qtfs_info("qtfs sock server init enter pvar:%lx, threadidx:%d mainsock:%lx pvarsock:%lx", (unsigned long)pvar, pvar->cur_threadidx,
-							(unsigned long)qtfs_server_main_sock, (unsigned long)pvar->conn_var.sock_var.sock);
+	qtfs_info("qtfs sock server init enter pvar:%lx, threadidx:%d mainsock:%lx pvarsock:%lx", (uintptr_t)pvar, pvar->cur_threadidx,
+							(uintptr_t)qtfs_server_main_sock, (uintptr_t)pvar->conn_var.sock_var.sock);
 
 	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
 	if (ret) {
@@ -205,10 +205,10 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar)) {
 		qtfs_server_main_sock = sock;
-		qtfs_info("qtfs thread main sock get:%lx, threadidx:%d.", (unsigned long)qtfs_server_main_sock, pvar->cur_threadidx);
+		qtfs_info("qtfs thread main sock get:%lx, threadidx:%d.", (uintptr_t)qtfs_server_main_sock, pvar->cur_threadidx);
 	} else {
 		pvar->conn_var.sock_var.sock = sock;
-		qtfs_info("qtfs epoll main sock get:%lx, threadidx:%d.", (unsigned long)pvar->conn_var.sock_var.sock, pvar->cur_threadidx);
+		qtfs_info("qtfs epoll main sock get:%lx, threadidx:%d.", (uintptr_t)pvar->conn_var.sock_var.sock, pvar->cur_threadidx);
 	}
 
 	return 0;

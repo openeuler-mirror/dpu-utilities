@@ -99,10 +99,10 @@ enum {
 	QTFS_WHITELIST_MAX,
 };
 
-
+#define WHITELIST_MAX_PATH_LEN 4096
 struct wl_item {
 	int len;
-	char path[4096];
+	char path[WHITELIST_MAX_PATH_LEN];
 };
 
 struct whitelist {

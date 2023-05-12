@@ -145,7 +145,7 @@ static int qtsock_conn(void)
 		return ret;
 	}
 	saddr.sun_family = PF_UNIX;
-	strcpy(saddr.sun_path, qtfs_sock_path);
+	strncpy(saddr.sun_path, qtfs_sock_path, sizeof(saddr.sun_path));
 	ret = qtfs_sock->ops->connect(qtfs_sock, (struct sockaddr *)&saddr,
 			sizeof(struct sockaddr_un) - 1, 0);
 	if (ret) {

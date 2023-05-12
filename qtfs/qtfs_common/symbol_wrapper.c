@@ -133,8 +133,8 @@ int qtfs_kallsyms_hack_init(void)
 	end_rodata = (unsigned long)qtfs_kallsyms_lookup_name("__end_rodata");
 	if (update_mapping_prot == NULL || start_rodata == NULL || end_rodata == NULL) {
 		qtfs_err("failed to init memory protect handler:%lx %lx %lx",
-			(unsigned long)update_mapping_prot, (unsigned long)start_rodata,
-			(unsigned long)end_rodata);
+			(uintptr_t)update_mapping_prot, (uintptr_t)start_rodata,
+			(uintptr_t)end_rodata);
 		return -1;
 	}
 

@@ -205,7 +205,7 @@ struct file_operations qtfs_misc_fops = {
 static int __init qtfs_init(void)
 {
 	int ret;
-	qtfs_log_init(qtfs_log_level);
+	qtfs_log_init(qtfs_log_level, sizeof(qtfs_log_level));
 
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
