@@ -115,34 +115,34 @@ static inline int rexec_set_inherit(int fd, bool inherit)
 #define rexec_log(info, ...) \
 	if (rexec_logfile != NULL) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		localtime_r(&t, p); \
+		localtime_r(&t, &p); \
 		fprintf(rexec_logfile, "[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 #define rexec_log2(info, ...) \
 	if (rexec_logfile != NULL) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		localtime_r(&t, p); \
+		localtime_r(&t, &p); \
 		fprintf(rexec_logfile, "[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 #define rexec_err(info, ...) \
 	if (rexec_logfile != NULL) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		localtime_r(&t, p); \
+		localtime_r(&t, &p); \
 		fprintf(rexec_logfile, "[%d/%02d/%02d %02d:%02d:%02d][ERROR:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 #endif
