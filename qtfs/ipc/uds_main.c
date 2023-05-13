@@ -198,12 +198,12 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 		sock_addr.sin_port = htons(p_uds_var->tcp.port);
 		sock_addr.sin_addr.s_addr = inet_addr(p_uds_var->tcp.addr);
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-			uds_err("As server failed, bind error, err:%s.",
+			uds_err("As tcp server failed, bind error, err:%s.",
 					strerror(errno));
 			goto close_and_return;
 		}
 		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
-			uds_err("As server listen failed, err:%s.", strerror(errno));
+			uds_err("As tcp server listen failed, err:%s.", strerror(errno));
 			goto close_and_return;
 		}
 	} else {
@@ -213,7 +213,7 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 			goto close_and_return;
 		}
 		arg->connfd = sock_fd;
-		uds_log("Connect to server successed, ip:%s port:%u", p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
+		uds_log("Connect to tcp server successed, ip:%s port:%u", p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
 	}
 
 	return 0;
@@ -245,12 +245,12 @@ int uds_build_unix_connection(struct uds_conn_arg *arg)
 	if (arg->cs == UDS_SOCKET_SERVER) {
 		unlink(sock_addr.sun_path);
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-			uds_err("As server failed, bind error, err:%s.",
+			uds_err("As uds server failed, bind error, err:%s.",
 					strerror(errno));
 			goto close_and_return;
 		}
 		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
-			uds_err("As server listen failed, err:%s.", strerror(errno));
+			uds_err("As uds server listen failed, err:%s.", strerror(errno));
 			goto close_and_return;
 		}
 	} else {
@@ -258,7 +258,7 @@ int uds_build_unix_connection(struct uds_conn_arg *arg)
 			goto close_and_return;
 		}
 		arg->connfd = sock_fd;
-		uds_log("Connect to server successed, sun path:%s", arg->sun_path);
+		uds_log("Connect to uds server successed, sun path:%s", arg->sun_path);
 	}
 
 	return 0;
@@ -410,6 +410,26 @@ static inline void uds_rollback_efd(int *efd, int maxidx)
 	return;
 }
 
+static int uds_thread_execute()
+{
+	pthread_t *thrd = (pthread_t *)malloc(sizeof(pthread_t) * p_uds_var->work_thread_num);
+	if (thrd == NULL) {
+		uds_err("thread info malloc failed.");
+		return -1;
+	}
+
+	for (int i = 0; i < p_uds_var->work_thread_num; i++) {
+		p_uds_var->work_thread[i].p_event_var = &g_event_var[i];
+		p_uds_var->work_thread[i].efd = p_uds_var->efd[i];
+		(void)pthread_create(&thrd[i], NULL, uds_proxy_thread, &p_uds_var->work_thread[i]);
+	}
+	p_uds_var->loglevel = UDS_LOG_NONE;
+	for (int i = 0; i < p_uds_var->work_thread_num; i++)
+		pthread_join(thrd[i], NULL);
+	free(thrd);
+	return 0;
+}
+
 void uds_thread_create()
 {
 	struct uds_conn_arg arg;
@@ -419,6 +439,7 @@ void uds_thread_create()
 	struct uds_event *diagevt;
 	struct uds_event *logevt;
 	int efd;
+	int ret;
 
 	for (int i = 0; i < p_uds_var->work_thread_num; i++) {
 		efd = epoll_create1(0);
@@ -442,31 +463,11 @@ void uds_thread_create()
 	if ((logevt = uds_init_unix_listener(UDS_LOGLEVEL_UPD, uds_event_debug_level)) == NULL)
 		goto end2;
 
-	do {
-		pthread_t *thrd = (pthread_t *)malloc(sizeof(pthread_t) * p_uds_var->work_thread_num);
-		struct uds_thread_arg *work_thread;
-		if (thrd == NULL) {
-			uds_err("thread info malloc failed.");
-			break;
-		}
-		work_thread = (struct uds_thread_arg *)malloc(sizeof(struct uds_thread_arg *) * p_uds_var->work_thread_num);
-		if (work_thread == NULL) {
-			uds_err("thread arg malloc failed.");
-			free(thrd);
-			break;
-		}
-
-		for (int i = 0; i < p_uds_var->work_thread_num; i++) {
-			p_uds_var->work_thread[i].p_event_var = &g_event_var[i];
-			p_uds_var->work_thread[i].efd = p_uds_var->efd[i];
-			(void)pthread_create(&thrd[i], NULL, uds_proxy_thread, &p_uds_var->work_thread[i]);
-		}
-		p_uds_var->loglevel = UDS_LOG_NONE;
-		for (int i = 0; i < p_uds_var->work_thread_num; i++)
-			pthread_join(thrd[i], NULL);
-		free(thrd);
-		free(work_thread);
-	} while(0);
+	ret = uds_thread_execute();
+	if (ret < 0) {
+		uds_err("uds create thread failed.");
+	}
+	uds_del_event(logevt);
 end2: 
 	uds_del_event(diagevt);
 end1:
@@ -510,13 +511,14 @@ int uds_hash_init()
 		uds_err("g_hash_table_new failed.");
 		return EVENT_ERR;
 	}
-	uds_log("init event timt out hash:0x%lx", (unsigned long)event_tmout_hash);
+	uds_log("init event time out hash");
 	return EVENT_OK;
 }
 
 void uds_hash_destroy()
 {
 	g_hash_table_destroy(event_tmout_hash);
+	event_tmout_hash = NULL;
 	return;
 }
 
@@ -555,6 +557,48 @@ static void uds_rlimit()
 	lim.rlim_cur = UDS_FD_LIMIT;
 	setrlimit(RLIMIT_NOFILE, &lim);
 	return;
+}
+
+// port invalid range 1024~65536
+#define UDS_PORT_VALID(port) (port >= 1024 && port < 65536)
+static int uds_glob_var_init(char *argv[])
+{
+	int myport = atoi(argv[3]);
+	int peerport = atoi(argv[5]);
+	p_uds_var->work_thread_num = atoi(argv[1]);
+	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
+		uds_err("work thread num:%d is invalid.(must be 1~%d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
+		return -1;
+	}
+	if (!UDS_PORT_VALID(myport) || !UDS_PORT_VALID(peerport)) {
+		uds_err("local port:%d or peer port:%d invalid.(must be 1024~65535)", myport, peerport);
+		return -1;
+	}
+	p_uds_var->efd = (int *)malloc(sizeof(int) * p_uds_var->work_thread_num);
+	if (p_uds_var->efd == NULL) {
+		uds_err("efd malloc failed, num:%d", p_uds_var->work_thread_num);
+		return -1;
+	}
+
+	p_uds_var->work_thread = (struct uds_thread_arg *)malloc(sizeof(struct uds_thread_arg) * p_uds_var->work_thread_num);
+	if (p_uds_var->work_thread == NULL) {
+		uds_err("work thread var malloc failed.");
+		return -1;
+	}
+	p_uds_var->tcp.port = atoi(argv[3]);
+	strncpy(p_uds_var->tcp.addr, argv[2], sizeof(p_uds_var->tcp.addr));
+	p_uds_var->tcp.peerport = atoi(argv[5]);
+	strncpy(p_uds_var->tcp.peeraddr, argv[4], sizeof(p_uds_var->tcp.addr));
+
+	uds_log("uds proxy param thread num:%d ip:%s port:%u peerip:%s port:%u",
+			p_uds_var->work_thread_num, p_uds_var->tcp.addr, p_uds_var->tcp.port,
+			 p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
+	g_event_var = (struct uds_event_global_var *)malloc(sizeof(struct uds_event_global_var) * p_uds_var->work_thread_num);
+	if (g_event_var == NULL) {
+		uds_err("event variable malloc failed");
+		return -1;
+	}
+	return 0;
 }
 
 static void uds_sig_pipe(int signum)
@@ -597,39 +641,9 @@ int main(int argc, char *argv[])
 	}
 	uds_rlimit();
 	signal(SIGPIPE, uds_sig_pipe);
-	p_uds_var->work_thread_num = atoi(argv[1]);
-	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
-		uds_err("work thread num:%d is invalid.(must be 1~%d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
-		return -1;
-	}
-	int myport = atoi(argv[3]);
-	int peerport = atoi(argv[5]);
-	if (myport < 1024 || peerport < 1024 || myport >= 65536 || peerport >= 65536) {
-		uds_err("local port:%d or peer port:%d invalid.(must be 1024~65535)", myport, peerport);
-		return -1;
-	}
-	p_uds_var->efd = (int *)malloc(sizeof(int) * p_uds_var->work_thread_num);
-	if (p_uds_var->efd == NULL) {
-		uds_err("efd malloc failed, num:%d", p_uds_var->work_thread_num);
-		return -1;
-	}
-
-	p_uds_var->work_thread = (struct uds_thread_arg *)malloc(sizeof(struct uds_thread_arg) * p_uds_var->work_thread_num);
-	if (p_uds_var->work_thread == NULL) {
-		uds_err("work thread var malloc failed.");
-		return -1;
-	}
-	p_uds_var->tcp.port = atoi(argv[3]);
-	strncpy(p_uds_var->tcp.addr, argv[2], 20);
-	p_uds_var->tcp.peerport = atoi(argv[5]);
-	strncpy(p_uds_var->tcp.peeraddr, argv[4], 20);
-
-	uds_log("uds proxy param thread num:%d ip:%s port:%u peerip:%s port:%u",
-			p_uds_var->work_thread_num, p_uds_var->tcp.addr, p_uds_var->tcp.port,
-			 p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
-	g_event_var = (struct uds_event_global_var *)malloc(sizeof(struct uds_event_global_var) * p_uds_var->work_thread_num);
-	if (g_event_var == NULL) {
-		uds_err("event variable malloc failed");
+	if (uds_glob_var_init(argv) < 0) {
+		uds_err("global var init failed.");
+		uds_hash_destroy();
 		return -1;
 	}
 	uds_thread_create();

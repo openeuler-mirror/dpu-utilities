@@ -986,35 +986,6 @@ int uds_diag_is_epoll_fd(int fd)
 	return 0;
 }
 
-void uds_diag_list_fd(char *buf, int len)
-{
-#define FDPATH_LEN 32
-	int pos = 0;
-	char path[32] = {0};
-	DIR *dir = NULL;
-	struct dirent *entry;
-	dir = opendir("/proc/self/fd/");
-	if (dir == NULL) {
-		uds_err("open path:/proc/self/fd/ failed");
-		return;
-	}
-	while (entry = readdir(dir)) {
-		int fd = atoi(entry->d_name);
-		char fdpath[FDPATH_LEN];
-		char link[FDPATH_LEN];
-		int ret;
-		if (fd <= 2 || uds_diag_is_epoll_fd(fd))
-			continue;
-		memset(fdpath, 0, FDPATH_LEN);
-		memset(link, 0, FDPATH_LEN);
-		sprintf(fdpath, "/proc/self/fd/%d", fd);
-		ret = readlink(fdpath, link, FDPATH_LEN);
-		pos += sprintf(&buf[pos], "+ fd:%s type:%u link:%s\n", entry->d_name, entry->d_type, link);
-	}
-	closedir(dir);
-	return;
-}
-
 int uds_diag_string(char *buf, int len)
 {
 	int pos = 0;
@@ -1037,12 +1008,12 @@ int uds_event_diag_info(void *arg, int epfd, struct uds_event_global_var *p_even
 	int ret;
 	struct uds_event *evt = (struct uds_event *)arg;
 	if (evt == NULL) {
-		uds_err("param is invalid.");
+		uds_err("diag info param is invalid.");
 		return EVENT_ERR;
 	}
 	connfd = uds_sock_step_accept(evt->fd, AF_UNIX);
 	if (connfd <= 0) {
-		uds_err("conn fd error:%d", connfd);
+		uds_err("diag info conn fd error:%d", connfd);
 		return EVENT_ERR;
 	}
 
@@ -1065,12 +1036,12 @@ int uds_event_debug_level(void *arg, int epfd, struct uds_event_global_var *p_ev
 	int cur;
 	struct uds_event *evt = (struct uds_event *)arg;
 	if (evt == NULL) {
-		uds_err("param is invalid.");
+		uds_err("debug level set param is invalid.");
 		return EVENT_ERR;
 	}
 	connfd = uds_sock_step_accept(evt->fd, AF_UNIX);
 	if (connfd <= 0) {
-		uds_err("conn fd error:%d", connfd);
+		uds_err("debug level set conn fd error:%d", connfd);
 		return EVENT_ERR;
 	}
 
