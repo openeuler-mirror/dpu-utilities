@@ -42,7 +42,7 @@ extern int log_level;
 }								\
 )
 
-static inline int qtfs_log_init(char *level) {
+static inline int qtfs_log_init(char *level, int len) {
 	if (!strcmp(level, "WARN")) {
 		log_level = LOG_WARN;
 	} else if (!strcmp(level, "INFO")) {

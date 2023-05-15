@@ -37,34 +37,34 @@ enum {
 #define uds_log(info, ...) \
 	if (p_uds_var->loglevel >= UDS_LOG_INFO) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, &p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 #define uds_log2(info, ...) \
 	if (p_uds_var->loglevel >= UDS_LOG_INFO) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, &p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][LOG:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 #define uds_err(info, ...) \
 	if (p_uds_var->loglevel >= UDS_LOG_ERROR) {\
 		time_t t; \
-		struct tm *p; \
+		struct tm p; \
 		time(&t); \
-		p = localtime(&t); \
+		localtime_r(&t, &p); \
 		printf("[%d/%02d/%02d %02d:%02d:%02d][ERROR:%s:%3d]"info"\n", \
-				p->tm_year + 1900, p->tm_mon+1, p->tm_mday, \
-				p->tm_hour, p->tm_min, p->tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
+				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
+				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
 
 enum {

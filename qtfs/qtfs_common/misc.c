@@ -161,7 +161,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				qtfs_err("ioctl set log level failed, arg:%lu.", arg);
 				goto err_end;
 			}
-			ret = (long)qtfs_log_init(level_str);
+			ret = (long)qtfs_log_init(level_str, QTFS_LOGLEVEL_STRLEN);
 			break;
 		}
 		case QTFS_IOCTL_EPOLL_SUPPORT:

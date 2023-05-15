@@ -68,7 +68,7 @@ void rshim_reg_file_open(int fd_target, const char *path, int perm, int offset)
     int fd = open(path, perm);
     int fd2 = -1;
     if (fd < 0) {
-        rshim_err("Open file:%s failed, fd:%d err:%s", path, fd, strerror(errno));
+        rshim_err("Open file:%s failed, fd:%d errno:%d", path, fd, errno);
         return;
     }
     if (fd != fd_target) {
@@ -153,6 +153,6 @@ int rexec_shim_entry(int argc, char *argv[])
     execvp(newarg[0], newarg);
     perror("execvp failed.");
 
-    exit(EXIT_FAILURE);
+    return -1;
 }
 

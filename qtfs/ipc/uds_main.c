@@ -187,9 +187,9 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 	int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (sock_fd < 0) {
-		uds_err("As %s failed, socket fd: %d, err:%s.",
+		uds_err("As %s failed, socket fd: %d, errno:%d.",
 				(arg->cs == UDS_SOCKET_CLIENT) ? "client" : "server",
-				sock_fd, strerror(errno));
+				sock_fd, errno);
 		return -1;
 	}
 	arg->sockfd = sock_fd;
@@ -198,12 +198,12 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 		sock_addr.sin_port = htons(p_uds_var->tcp.port);
 		sock_addr.sin_addr.s_addr = inet_addr(p_uds_var->tcp.addr);
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-			uds_err("As tcp server failed, bind error, err:%s.",
-					strerror(errno));
+			uds_err("As tcp server failed, bind error, errno:%d.",
+					errno);
 			goto close_and_return;
 		}
 		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
-			uds_err("As tcp server listen failed, err:%s.", strerror(errno));
+			uds_err("As tcp server listen failed, errno:%d.", errno);
 			goto close_and_return;
 		}
 	} else {
@@ -234,9 +234,9 @@ int uds_build_unix_connection(struct uds_conn_arg *arg)
 	int sock_fd = socket(AF_UNIX, arg->udstype, 0);
 
 	if (sock_fd < 0) {
-		uds_err("As %s failed, socket fd: %d, err:%s.",
+		uds_err("As %s failed, socket fd: %d, errno:%d.",
 				(arg->cs == UDS_SOCKET_CLIENT) ? "client" : "server",
-				sock_fd, strerror(errno));
+				sock_fd, errno);
 		return -1;
 	}
 	strncpy(sock_addr.sun_path, arg->sun_path, sizeof(sock_addr.sun_path));
@@ -245,12 +245,12 @@ int uds_build_unix_connection(struct uds_conn_arg *arg)
 	if (arg->cs == UDS_SOCKET_SERVER) {
 		unlink(sock_addr.sun_path);
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
-			uds_err("As uds server failed, bind error, err:%s.",
-					strerror(errno));
+			uds_err("As uds server failed, bind error, errno:%d.",
+					errno);
 			goto close_and_return;
 		}
 		if (listen(sock_fd, UDS_MAX_LISTEN_NUM) < 0) {
-			uds_err("As uds server listen failed, err:%s.", strerror(errno));
+			uds_err("As uds server listen failed, errno:%d.", errno);
 			goto close_and_return;
 		}
 	} else {
@@ -281,7 +281,7 @@ int uds_sock_step_accept(int sock_fd, int family)
 		connfd = accept(sock_fd, (struct sockaddr *)&un_addr, &len);
 	}
 	if (connfd < 0) {
-		uds_err("Accept error:%d, err:%s.", connfd, strerror(errno));
+		uds_err("Accept error:%d, errno:%d.", connfd, errno);
 		return connfd;
 	}
 	if (family == AF_INET) {
