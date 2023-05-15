@@ -359,7 +359,7 @@ int qtfs_sm_active(struct qtfs_conn_var_s *pvar)
 			// do nothing
 			break;
 		case QTCONN_INIT:
-			ret = pvar->conn_ops->conn_init(pvar);
+			ret = qtfs_conn_init(pvar);
 			if (ret) {
 				qtfs_err("qtfs sm active init failed, ret:%d.", ret);
 				break;
@@ -394,8 +394,8 @@ int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar)
 			ret = QTERROR;
 			break;
 		case QTCONN_ACTIVE:
-			pvar->conn_ops->conn_fini(pvar);
-			ret = pvar->conn_ops->conn_init(pvar);
+			qtfs_conn_fini(pvar);
+			ret = qtfs_conn_init(pvar);
 			if (ret) {
 				qtfs_err("qtfs sm active init failed, ret:%d.", ret);
 				ret = QTERROR;
@@ -427,7 +427,7 @@ int qtfs_sm_exit(struct qtfs_conn_var_s *pvar)
 			break;
 		case QTCONN_ACTIVE:
 		case QTCONN_CONNECTING:
-			pvar->conn_ops->conn_fini(pvar);
+			qtfs_conn_fini(pvar);
 #ifdef QTFS_SERVER
 			pvar->state = QTCONN_CONNECTING;
 #endif
