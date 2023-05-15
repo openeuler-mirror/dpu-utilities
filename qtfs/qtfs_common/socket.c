@@ -360,7 +360,7 @@ static bool qtfs_conn_sock_connected(struct qtfs_conn_var_s *pvar)
 
 	return false;
 }
-
+#ifdef QTFS_CLIENT
 void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
 {
 #define TMP_STACK_LEN 64
@@ -379,6 +379,7 @@ void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
 	} while (ret > 0);
 	return;
 }
+#endif
 
 #ifdef QTFS_SERVER
 static bool qtfs_conn_sock_inited(struct qtfs_conn_var_s *pvar)
@@ -418,9 +419,9 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 #endif
 #ifdef QTFS_CLIENT
 	.conn_client_connect = qtfs_conn_sock_client_connect,
+	.conn_recv_buff_drop = qtfs_sock_drop_recv_buf,
 #endif
 	.conn_connected = qtfs_conn_sock_connected,
-	.conn_recv_buff_drop = qtfs_sock_drop_recv_buf,
 };
 
 int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
