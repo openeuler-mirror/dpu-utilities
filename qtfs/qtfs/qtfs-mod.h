@@ -154,7 +154,6 @@ static inline int qtfs_fullname(char *fullname, struct dentry *d)
 		if (fullname[strlen(fullname) - 1] == '/')
 			fullname[strlen(fullname) - 1] = '\0';
 	}
-	//qtfs_info("fullname:%s, len:%d\n", fullname, len);
 	__putname(name);
 	return len;
 }

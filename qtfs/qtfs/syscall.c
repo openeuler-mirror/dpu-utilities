@@ -281,7 +281,6 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		req->d.dev_len = 0;
 	}
 
-	//strcpy(&req->buf[req->d.dev_len], kernel_dir);
 	qtfs_dir_to_qtdir(kernel_dir, &req->buf[req->d.dev_len]);
 	req->d.dir_len = strlen(&req->buf[req->d.dev_len]) + 1;
 	if (type != NULL) {
