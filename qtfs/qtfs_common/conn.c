@@ -468,7 +468,6 @@ int qtfs_mutex_lock_interruptible(struct mutex *lock)
 static void parse_param(void)
 {
 	// reserve for pcie conn type
-	// if (strncmp(qtfs_conn_type, QTFS_CONN_PCIE_TYPE, sizeof(QTFS_CONN_PCIE_TYPE)))
 	// default as socket type
 	g_pvar_ops = &qtfs_conn_sock_pvar_ops;
 	// calling conn specific parse_param
