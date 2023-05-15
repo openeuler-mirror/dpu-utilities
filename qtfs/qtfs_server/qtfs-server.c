@@ -79,7 +79,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 			msleep(1);
 			break;
 		}
-		if (n < 0) {
+		if (n < 0 || n > QTFS_MAX_EPEVENTS_NUM) {
 			msleep(QTFS_EPOLL_RETRY_INTVL);
 			qtfs_err("epoll get new events number failed:%d ", n);
 			break;
@@ -98,6 +98,11 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 		}
 		req->event_nums = n;
 		sendlen = sizeof(struct qtreq_epollevt) - sizeof(req->events) + n * sizeof(struct qtreq_epoll_event);
+		if (sendlen > QTFS_REQ_MAX_LEN) {
+			qtfs_err("qtfs epoll events size(%d) larger than qtfs message size.", sendlen);
+			WARN_ON(1);
+			break;
+		}
 		pvar->vec_send.iov_len = QTFS_MSG_LEN - (QTFS_REQ_MAX_LEN - sendlen);
 		head->len = sendlen;
 		head->type = QTFS_REQ_EPOLL_EVENT;
@@ -171,6 +176,10 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				return QTERROR;
 			}
 			memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
+			if (init_userp.thread_nums > QTFS_MAX_THREADS) {
+				qtfs_err("qtfs ioctl thread init invalid input thread_num:%d", init_userp.thread_nums);
+				return QTERROR;
+			}
 			if (copy_from_user(qtfs_userps, (void __user *)init_userp.userp,
 							init_userp.thread_nums * sizeof(struct qtfs_server_userp_s))) {
 				qtfs_err("qtfs ioctl thread init copy from userp failed.");
@@ -247,7 +256,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("qtfs ioctl white init copy from user failed.");
 				return QTERROR;
 			}
-			if (len > QTFS_WL_MAX_NUM) {
+			if (len < 0 || len > QTFS_WL_MAX_NUM) {
 				qtfs_err("qtfs ioctl white list len:%d invalid", len);
 				return QTERROR;
 			}
@@ -258,10 +267,12 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 			if (copy_from_user(tmp, (void __user *)arg, sizeof(struct whitelist) + sizeof(struct wl_item) * len)) {
 				qtfs_err("qtfs ioctl white init copy from user failed.");
+				kfree(tmp);
 				return QTERROR;
 			}
 			if (tmp->type >= QTFS_WHITELIST_MAX) {
 				qtfs_err("qtfs white list type :%d invalid.", tmp->type);
+				kfree(tmp);
 				return QTERROR;
 			}
 			if (g_whitelist[tmp->type] != NULL) {

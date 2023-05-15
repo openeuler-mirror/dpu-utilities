@@ -349,6 +349,7 @@ void uds_del_event(struct uds_event *evt)
 	}
 	uds_event_delete(p_uds_var->efd[hash], evt->fd);
 	free(evt);
+	evt = NULL;
 	return;
 }
 

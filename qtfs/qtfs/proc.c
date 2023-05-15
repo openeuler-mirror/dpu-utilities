@@ -291,7 +291,7 @@ remote:
 	if (local_path)
 		kfree(local_path);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
-return qtfs_getattr(NULL, path, stat, req_mask, flags);
+	return qtfs_getattr(NULL, path, stat, req_mask, flags);
 #else
 	return qtfs_getattr(path, stat, req_mask, flags);
 #endif

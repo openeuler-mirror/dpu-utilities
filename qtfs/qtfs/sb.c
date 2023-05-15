@@ -80,7 +80,7 @@ static inline char *qtfs_mountpoint_path_init(struct dentry *dentry, struct path
 	char *name = NULL;
 	char *ret;
 	char *mnt_point;
-	int len;
+	size_t len;
 	struct qtfs_fs_info *fsinfo = qtfs_priv_byinode(d_inode(dentry));
 	if (fsinfo && fsinfo->mnt_path) {
 		return fsinfo->mnt_path;
@@ -1334,7 +1334,7 @@ const char *qtfs_getlink(struct dentry *dentry,
 	struct qtfs_conn_var_s *pvar = NULL;
 	struct qtreq_getlink *req;
 	struct qtrsp_getlink *rsp;
-	int len = 0;
+	size_t len = 0;
 	struct qtfs_fs_info *fsinfo = qtfs_priv_byinode(inode);
 	char *link = NULL;
 
@@ -1374,6 +1374,11 @@ const char *qtfs_getlink(struct dentry *dentry,
 		len = strlen(fsinfo->mnt_path) + strlen(rsp->path) + 1;
 	else
 		len = strlen(rsp->path) + 1;
+	if (len > MAX_PATH_LEN) {
+		qtfs_err("qtfs getlink failed. path name too long:%s - %s\n", fsinfo->mnt_path, rsp->path);
+		qtfs_conn_put_param(pvar);
+		return ERR_PTR(-EINVAL);
+	}
 	link = kmalloc(len, GFP_KERNEL);
 	if (!link) {
 		qtfs_conn_put_param(pvar);

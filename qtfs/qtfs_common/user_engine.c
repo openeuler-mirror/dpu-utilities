@@ -214,11 +214,15 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 		return -1;
 	}
 	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &len, NULL);
-	if (len == 0) {
+	if (len <= 0) {
 		engine_err("Can't find whitelist item %s", wl_type_str[type]);
 		return -1;
 	}
 	whitelist[type] = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len);
+	if (!whitelist[type]) {
+		engine_err("Failed to alloc memory for whitelist, len is %d\n", len);
+		return -1;
+	}
 	g_print("%s:\n", wl_type_str[type]);
 	whitelist[type]->len = len;
 	whitelist[type]->type = type;
@@ -347,7 +351,7 @@ int main(int argc, char *argv[])
 
 	pthread_t texec[QTFS_MAX_THREADS];
 	pthread_t tepoll;
-	if (thread_nums > QTFS_MAX_THREADS) {
+	if (thread_nums < 0 || thread_nums > QTFS_MAX_THREADS) {
 		engine_err("qtfs engine parm invalid, thread_nums:%d(must <= %d).",
 				thread_nums, QTFS_MAX_THREADS);
 		ret = -1;

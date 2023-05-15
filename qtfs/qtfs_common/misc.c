@@ -175,7 +175,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			struct qtsock_whitelist *name;
 			struct qtsock_whitelist head;
 			read_lock(&qtsock_wl.rwlock);
-			if (qtsock_wl.nums >= QTSOCK_WL_MAX_NUM) {
+			if (qtsock_wl.nums < 0 || qtsock_wl.nums >= QTSOCK_WL_MAX_NUM) {
 				qtfs_err("qtsock white list num:%d cant add any more.", qtsock_wl.nums);
 				read_unlock(&qtsock_wl.rwlock);
 				goto err_end;
@@ -185,14 +185,23 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				qtfs_err("ioctl qtsock wl add copy from user failed");
 				goto err_end;
 			}
-			if (head.len >= PATH_MAX - sizeof(struct qtsock_whitelist)) {
-				qtfs_err("len too big:%d!", head.len);
+			if (head.len < 0 || head.len >= PATH_MAX - sizeof(struct qtsock_whitelist)) {
+				qtfs_err("invalid qtsock whitelist add head length:%d!", head.len);
 				goto err_end;
 			}
 			name = __getname();
+			if (unlikely(!name)) {
+				qtfs_err("failed to getname during qtsock whitelist add!");
+				goto err_end;
+			}
 			memset(name, 0, PATH_MAX);
 			if (copy_from_user(name, (void *)arg, sizeof(struct qtsock_whitelist) + head.len)) {
 				qtfs_err("ioctl qtsock failed");
+				__putname(name);
+				goto err_end;
+			}
+			if (name->len > MAX_PATH_LEN - 1) {
+				qtfs_err("invalid whitelist itern length: %d!", name->len);
 				__putname(name);
 				goto err_end;
 			}
@@ -253,6 +262,10 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				goto err_end;
 			}
 			name = __getname();
+			if (unlikely(!name)) {
+				qtfs_err("failed to getname during qtsock whitelist get!");
+				goto err_end;
+			}
 			memset(name, 0, PATH_MAX);
 			read_lock(&qtsock_wl.rwlock);
 			if (index >= qtsock_wl.nums) {
@@ -264,6 +277,11 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			name->len = strlen(qtsock_wl.wl[index]);
 			memcpy(name->data, qtsock_wl.wl[index], name->len);
 			read_unlock(&qtsock_wl.rwlock);
+			if (sizeof(struct qtsock_whitelist) + name->len > MAX_PATH_LEN) {
+				qtfs_err("invalid message length:%ld during qtsock whitelist get", sizeof(struct qtsock_whitelist) + name->len);
+				__putname(name);
+				goto err_end;
+			}
 			if (copy_to_user((void *)arg, name, sizeof(struct qtsock_whitelist) + name->len)) {
 				qtfs_err("copy to user failed");
 				__putname(name);
