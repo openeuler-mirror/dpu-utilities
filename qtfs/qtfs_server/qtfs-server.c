@@ -346,7 +346,7 @@ static void __exit qtfs_server_exit(void)
 
 	if (qtfs_epoll_var != NULL) {
 		qtfs_epoll_cut_conn(qtfs_epoll_var);
-		qtfs_epoll_var->conn_ops->conn_fini(qtfs_epoll_var);
+		qtfs_conn_fini(qtfs_epoll_var);
 		qtfs_epoll_var->conn_ops->conn_var_fini(qtfs_epoll_var);
 		kfree(qtfs_epoll_var);
 		qtfs_epoll_var = NULL;
