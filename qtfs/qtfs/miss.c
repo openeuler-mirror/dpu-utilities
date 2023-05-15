@@ -29,11 +29,11 @@ static int miss_open(struct qtreq *miss)
 	struct qtrsp_open *missrsp = (struct qtrsp_open *)miss->data;
 	struct qtreq_close *req;
 	struct qtrsp_close *rsp;
-	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
-
+	struct qtfs_conn_var_s *pvar = NULL;
 	if (missrsp->ret == QTFS_ERR)
 		return QTFS_OK; // no need to close
 
+	pvar = qtfs_conn_get_param();
 	if (pvar == NULL) {
 		qtfs_err("qtfs miss open pvar invalid.");
 		return QTFS_ERR;
