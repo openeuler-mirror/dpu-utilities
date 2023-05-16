@@ -42,7 +42,7 @@ static int miss_open(struct qtreq *miss)
 	req->fd = missrsp->fd;
 	qtfs_err("miss open proc fd:%d.", req->fd);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_CLOSE, sizeof(struct qtreq_close));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return QTFS_ERR;
 	}
