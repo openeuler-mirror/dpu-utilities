@@ -153,7 +153,7 @@ int uds_event_add_to_free(struct uds_event_global_var *p_event_var, struct uds_e
 	}
 
 	struct uds_event *peerevt = evt->peer;
-	if (peerevt == NULL) {
+	if (peerevt == NULL || p_event_var->cur >= UDS_EPOLL_MAX_EVENTS) {
 		uds_err("peer event add to free is NULL, my fd:%d", evt->fd);
 		return -1;
 	}
@@ -258,6 +258,7 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	if (uds_add_event(tcp.connfd, evt, uds_event_build_step3, priv) == NULL) {
 		uds_err("failed to add event, fd:%d", tcp.connfd);
 		// 新事件添加失败，本事件也要删除，否则残留在中间状态
+		free(priv);
 		return EVENT_DEL;
 	}
 
@@ -291,6 +292,10 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	uds.cs = UDS_SOCKET_SERVER;
 	uds.udstype = udsmsg->type;
 	strncpy(uds.sun_path, udsmsg->sun_path, sizeof(uds.sun_path));
+	if (strlen(uds.sun_path) + strlen(UDS_PROXY_SUFFIX) >= sizeof(uds.sun_path)) {
+		uds_err("invalid sunpath:%s cant add proxy suffix:%s", uds.sun_path, UDS_PROXY_SUFFIX);
+		goto event_del;
+	}
 	strcat(uds.sun_path, UDS_PROXY_SUFFIX);
 	if (uds_build_unix_connection(&uds) < 0) {
 		uds_err("failed to build uds server sunpath:%s", uds.sun_path);
@@ -513,8 +518,8 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	}
 	free(fdproc);
 	p_scmr->flags = fcntl(scmfd, F_GETFL, 0);
-	if (p_scmr->flags < 0) {
-		uds_err("fcntl get flags failed:%d errno:%d", p_scmr->flags, errno);
+	if (p_scmr->flags < 0 || strlen(p_scmr->path) >= sizeof(p_scmr->path)) {
+		uds_err("fcntl get flags failed:%d len:%d errno:%d", p_scmr->flags, strlen(p_scmr->path), errno);
 		close(scmfd);
 		return EVENT_ERR;
 	}
@@ -990,13 +995,14 @@ int uds_diag_string(char *buf, int len)
 {
 	int pos = 0;
 	memset(buf, 0, len);
-	pos = sprintf(buf,		"+-----------------------------Unix Proxy Diagnostic information-------------------------+\n");
-	pos += sprintf(&buf[pos],	"+ Thread nums:%d\n", p_uds_var->work_thread_num);
+	len--;
+	pos = snprintf(buf, len - pos,		"+-----------------------------Unix Proxy Diagnostic information-------------------------+\n");
+	pos += snprintf(&buf[pos], len - pos,	"+ Thread nums:%d\n", p_uds_var->work_thread_num);
 	for (int i = 0; i < p_uds_var->work_thread_num; i++) {
-		pos += sprintf(&buf[pos], "+	Thread %d events count:%d\n", i+1, p_uds_var->work_thread[i].info.events);
+		pos += snprintf(&buf[pos], len - pos, "+	Thread %d events count:%d\n", i+1, p_uds_var->work_thread[i].info.events);
 	}
-	pos += sprintf(&buf[pos],	"+	Log level:%s\n", p_uds_var->logstr[p_uds_var->loglevel]);
-	strcat(buf,			"+---------------------------------------------------------------------------------------+\n");
+	pos += snprintf(&buf[pos], len - pos,	"+	Log level:%s\n", p_uds_var->logstr[p_uds_var->loglevel]);
+	pos += snprintf(&buf[pos], len - pos,	"+---------------------------------------------------------------------------------------+\n");
 	return strlen(buf);
 }
 

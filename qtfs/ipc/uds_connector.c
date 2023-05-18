@@ -123,11 +123,11 @@ int connect(int fd, const struct sockaddr *addrarg, socklen_t len)
 			uds_err("can't connect to uds proxy: %s", UDS_BUILD_CONN_ADDR);
 			goto err_end;
 		}
-        // 这里type需要是第一个入参fd的type
+		// 这里type需要是第一个入参fd的type
 		remoteconn.type = uds_conn_get_sock_type(fd);
-        if (remoteconn.type == (unsigned short)-1) {
-            remoteconn.type = SOCK_STREAM;
-        }
+		if (remoteconn.type == (unsigned short)-1) {
+			remoteconn.type = SOCK_STREAM;
+		}
 		memset(remoteconn.sun_path, 0, sizeof(remoteconn.sun_path));
 		strncpy(remoteconn.sun_path, addr->sun_path, sizeof(remoteconn.sun_path));
 		ret = send(sock_fd, &remoteconn, sizeof(remoteconn), 0);

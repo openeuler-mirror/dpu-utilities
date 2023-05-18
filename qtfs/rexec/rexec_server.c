@@ -527,6 +527,8 @@ void rexec_hash_remove_direct(GHashTable *table, int key)
 
 int main(int argc, char *argv[])
 {
+    mode_t newmask = 0077;
+    rexec_log("Change umask from:%o to %o", umask(newmask), newmask);
     rexec_log_init();
     signal(SIGCHLD, rexec_server_sig_chld);
     signal(SIGPIPE, rexec_server_sig_pipe);
