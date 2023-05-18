@@ -49,7 +49,9 @@ bool in_white_list(char *path, int type)
 {
 	int i, in_wl = -1;
 
+	read_lock(&g_whitelist_lock);
 	if (!g_whitelist[type]) {
+		read_unlock(&g_whitelist_lock);
 		return true;
 	}
 	for (i = 0; i < g_whitelist[type]->len; i++) {
@@ -61,6 +63,7 @@ bool in_white_list(char *path, int type)
 			break;
 		}
 	}
+	read_unlock(&g_whitelist_lock);
 	return in_wl != -1;
 }
 
