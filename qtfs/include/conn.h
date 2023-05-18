@@ -52,14 +52,11 @@ extern struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops;
 #define QTFS_SERVER_MAXCONN 2
 #define QTFS_GET_PARAM_MAX_RETRY 10000
 
-static inline bool err_ptr(void *ptr)
+static inline long __must_check QTFS_PTR_ERR(__force const void *ptr)
 {
 	if (!ptr)
-		return true;
-	if (IS_ERR(ptr))
-		return true;
-	
-	return false;
+		return -EINVAL;
+	return (long) ptr;
 }
 
 static inline bool qtfs_support_epoll(umode_t mode)

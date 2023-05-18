@@ -333,7 +333,7 @@ static int handle_readiter(struct qtserver_arg *arg)
 	struct qtrsp_readiter *rsp = (struct qtrsp_readiter *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 	file = fget(req->fd);
-	if (err_ptr(file)) {
+	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("handle readiter error, open failed.\n");
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = -ENOENT;
@@ -369,8 +369,8 @@ static int handle_readiter(struct qtserver_arg *arg)
 		goto end;
 	}
     	fullname = file_path(file, pathbuf, PATH_MAX);
-	if (IS_ERR(fullname) || !in_white_list(fullname, QTFS_WHITELIST_READ)) {
-		qtfs_err("%s not in whitelist.\n", fullname);
+	if (IS_ERR_OR_NULL(fullname) || !in_white_list(fullname, QTFS_WHITELIST_READ)) {
+		qtfs_err("read iter path not in whitelist.\n");
 		__putname(pathbuf);
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = -ENOENT;
@@ -440,7 +440,7 @@ static int handle_write(struct qtserver_arg *arg)
 	off_t seek;
 
 	file = fget(req->d.fd);
-	if (err_ptr(file)) {
+	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("qtfs handle write error, open failed.\n");
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
@@ -478,7 +478,7 @@ static int handle_write(struct qtserver_arg *arg)
 		goto end;
 	}
 	fullname = file_path(file, pathbuf, PATH_MAX);
-	if (IS_ERR(fullname) || !in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
+	if (IS_ERR_OR_NULL(fullname) || !in_white_list(fullname, QTFS_WHITELIST_WRITE)) {
 		__putname(pathbuf);
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
@@ -608,7 +608,7 @@ static int handle_readdir(struct qtserver_arg *arg)
 		return sizeof(struct qtrsp_readdir) - sizeof(rsp->dirent);
 	}
 	file = filp_open(req->path, O_RDONLY|O_NONBLOCK|O_DIRECTORY, 0);
-	if (err_ptr(file)) {
+	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("handle readdir error, filp:<%s> open failed.\n", req->path);
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.vldcnt = 0;
@@ -823,10 +823,10 @@ int handle_icreate(struct qtserver_arg *arg)
 	}
 
 	file = filp_open(req->path, O_CREAT, req->mode);
-	if (err_ptr(file)) {
+	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("handle icreate filp:<%s> failed in open.\n", req->path);
 		rsp->ret = QTFS_ERR;
-		rsp->errno = PTR_ERR(file);
+		rsp->errno = QTFS_PTR_ERR(file);
 		return sizeof(struct qtrsp_icreate);
 	}
 	inode = file->f_inode;
@@ -855,10 +855,10 @@ static int handle_mknod(struct qtserver_arg *arg)
 
 retry:
 	dent = kern_path_create(AT_FDCWD, req->path, &path, flags);
-	if (err_ptr(dent)) {
+	if (IS_ERR_OR_NULL(dent)) {
 		rsp->ret = QTFS_ERR;
-		rsp->errno = PTR_ERR(dent);
-		qtfs_info("handle mknod path:<%s>, mode:%o in kern_path_create with ret:%ld\n", req->path, req->mode, PTR_ERR(dent));
+		rsp->errno = QTFS_PTR_ERR(dent);
+		qtfs_info("handle mknod path:<%s>, mode:%o in kern_path_create with ret:%ld\n", req->path, req->mode, QTFS_PTR_ERR(dent));
 		return sizeof(struct qtrsp_mknod);
 	}
 
@@ -968,8 +968,8 @@ int handle_symlink(struct qtserver_arg *arg)
 	oldname = &req->path[req->d.newlen];
 retry:
 	dentry = kern_path_create(AT_FDCWD, newname, &path, lookup_flags);
-	error = PTR_ERR(dentry);
-	if (err_ptr(dentry)) {
+	error = QTFS_PTR_ERR(dentry);
+	if (IS_ERR_OR_NULL(dentry)) {
 		rsp->ret = QTFS_ERR;
 		qtfs_err("handle_symlink: newname(%s), oldname(%s) in kern_path_create %d\n", newname, oldname, error);
 		return sizeof(struct qtrsp_symlink);

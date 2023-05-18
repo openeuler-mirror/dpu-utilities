@@ -208,6 +208,7 @@ struct qtinfo {
 							((state == QTCONN_CONNECTING) ? "CONNECTING" : \
 							((state == QTCONN_ACTIVE) ? "ACTIVE" : "UNKNOWN")))
 #endif
+
 //ko compile
 #if (defined(QTFS_CLIENT) || defined(client))
 static inline void qtinfo_clear(void)

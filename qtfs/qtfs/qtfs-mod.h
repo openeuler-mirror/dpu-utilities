@@ -127,8 +127,8 @@ static inline int qtfs_fullname(char *fullname, struct dentry *d)
 		return -1;
 	}
 	ret = dentry_path_raw(d, name, MAX_PATH_LEN);
-	if (err_ptr(ret)) {
-		qtfs_err("qtfs fullname failed:%ld\n", PTR_ERR(ret));
+	if (IS_ERR_OR_NULL(ret)) {
+		qtfs_err("qtfs fullname failed:%ld\n", QTFS_PTR_ERR(ret));
 		__putname(name);
 		return -1;
 	}

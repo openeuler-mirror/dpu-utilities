@@ -159,7 +159,7 @@ connecting:
 		for (i = 0; i < req->event_nums; i++) {
 			// events[i].data is *file ptr
 			file = (struct file *)req->events[i].data;
-			if (IS_ERR(file) || file == NULL) {
+			if (IS_ERR_OR_NULL(file)) {
 				qtfs_err("epoll thread event file invalid!");
 				continue;
 			}
@@ -227,9 +227,9 @@ static int __init qtfs_init(void)
 	}
 	qtfs_conn_param_init();
 	g_qtfs_epoll_thread = kthread_run(qtfs_epoll_thread, NULL, "qtfs_epoll");
-	if (IS_ERR(g_qtfs_epoll_thread)) {
+	if (IS_ERR_OR_NULL(g_qtfs_epoll_thread)) {
 		qtfs_err("qtfs epoll thread run failed.\n");
-		ret = PTR_ERR(g_qtfs_epoll_thread);
+		ret = QTFS_PTR_ERR(g_qtfs_epoll_thread);
 		goto epoll_thread_err;
 	}
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);

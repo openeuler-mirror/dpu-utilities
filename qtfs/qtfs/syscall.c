@@ -101,7 +101,7 @@ static void do_epoll_ctl_remote(int op, struct epoll_event __user *event, struct
 	req->event.events = tmp.events;
 	req->event.data = (__u64)file;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_EPOLL_CTL, sizeof(struct qtreq_epollctl));
-	if (rsp == NULL || IS_ERR(rsp) || rsp->ret == QTFS_ERR) {
+	if (IS_ERR_OR_NULL(rsp) || rsp->ret == QTFS_ERR) {
 		qtfs_err("qtfs do epoll ctl remote failed.");
 		qtfs_conn_put_param(pvar);
 		qtinfo_cntinc(QTINF_EPOLL_FDERR);
@@ -308,9 +308,9 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 	}
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYSMOUNT, sizeof(struct qtreq_sysmount) - sizeof(req->buf) + totallen);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
-		return PTR_ERR(rsp);
+		return QTFS_PTR_ERR(rsp);
 	}
 	if (rsp->errno < 0) {
 		qtfs_err("qtfs remote mount failed, devname:%s dir_name:%s type:%s, data:%s, flags(0x%lx), errno:%d\n",
@@ -341,22 +341,19 @@ static int qtfs_remote_umount(char __user *name, int flags)
 	}
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	kernel_name = qtfs_copy_mount_string(name);
-	if (!kernel_name) {
+	if (IS_ERR_OR_NULL(kernel_name)) {
 		qtfs_conn_put_param(pvar);
-		return -EINVAL;
-	} else if (IS_ERR(kernel_name)) {
-		qtfs_conn_put_param(pvar);
-		return PTR_ERR(kernel_name);
+		return QTFS_PTR_ERR(kernel_name);
 	}
 	req->flags = flags;
 	qtfs_dir_to_qtdir(kernel_name, req->buf);
 	qtfs_info("qtfs remote umount string:%s reqbuf:%s", (kernel_name == NULL) ? "INVALID":kernel_name, req->buf);
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYSUMOUNT, sizeof(struct qtreq_sysumount) - sizeof(req->buf) + strlen(req->buf));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		kfree(kernel_name);
 		qtfs_conn_put_param(pvar);
-		return PTR_ERR(rsp);
+		return QTFS_PTR_ERR(rsp);
 	}
 	if (rsp->errno)
 		qtfs_err("qtfs remote umount failed, errno:%d\n", rsp->errno);

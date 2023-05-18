@@ -46,7 +46,7 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 	}
 	req->buffer_size = buffer_size;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRLIST, QTFS_SEND_SIZE(struct qtreq_xattrlist, req->path));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_err("qtfs_xattr_list remote run failed.");
 		qtfs_conn_put_param(pvar);
 		return 0;
@@ -161,9 +161,9 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 	strcat(&req->buf[req->d.pathlen], name);
 	memcpy(&req->buf[req->d.pathlen + req->d.namelen], value, size);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRSET, sizeof(struct qtreq_xattrset) - sizeof(req->buf) + req->d.pathlen + req->d.namelen + req->d.size);
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
-		return PTR_ERR(rsp);
+		return QTFS_PTR_ERR(rsp);
 	}
 	if (rsp->errno < 0) {
 		qtfs_err("xattr set failed file:%s name:%s", req->buf, name);
@@ -217,10 +217,10 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 		req->d.pos = rsp->d.pos;
 		req->d.size = size;
 		rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRGET, QTFS_SEND_SIZE(struct qtreq_xattrget, req->path));
-		if (IS_ERR(rsp) || rsp == NULL) {
+		if (IS_ERR_OR_NULL(rsp)) {
 			qtfs_err("rsp invalid, file:%s", req->path);
 			qtfs_conn_put_param(pvar);
-			return PTR_ERR(rsp);
+			return QTFS_PTR_ERR(rsp);
 		}
 		if (rsp->d.ret == QTFS_ERR || (size !=0 && (rsp->d.size > req->d.size || leftlen < rsp->d.size))) {
 			qtfs_err("ret:%d rsp size:%ld req size:%d leftlen:%lu", rsp->d.ret, rsp->d.size,
