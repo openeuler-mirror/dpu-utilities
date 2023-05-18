@@ -78,7 +78,7 @@ static int rexec_msg_fill_argv(int argc, char *argv[], char *msg)
 {
     int offset = 0;
     for (int i = 0; i < argc; i++) {
-        strcpy(&msg[offset], argv[i]);
+        strcpy(&msg[offset], argv[i]); //此处msg已经在前面通过计算出的len预先分配内存，保证这里不会越界
         offset += (strlen(argv[i]) + 1);
     }
     return offset;
@@ -395,8 +395,10 @@ static char *rexec_get_fds_jsonstr()
             goto json_err;
         }
         memset(fdinfo, 0, sizeof(struct rexec_fdinfo));
-        if (rexec_get_fdinfo(fdentry, fdinfo) != 0)
+        if (rexec_get_fdinfo(fdentry, fdinfo) != 0) {
+            json_object_put(fd_obj);
             continue;
+        }
         item = json_object_new_int(fdinfo->fd);
         json_object_object_add(fd_obj, "Fd", item);
         item = json_object_new_string(fdinfo->path);

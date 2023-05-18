@@ -54,6 +54,9 @@ bool in_white_list(char *path, int type)
 	}
 	for (i = 0; i < g_whitelist[type]->len; i++) {
 		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
+			if (strlen(path) > g_whitelist[type]->wl[i].len && path[g_whitelist[type]->wl[i].len] != '/') {
+				continue;
+			}
 			in_wl = i;
 			break;
 		}
@@ -96,7 +99,7 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		qtfs_err("ioctl invalid fd:%d", req->d.fd);
 		rsp->ret = QTFS_ERR;
 		rsp->size = 0;
-		rsp->errno = EINVAL;
+		rsp->errno = -EINVAL;
 		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
 	}
 
@@ -117,11 +120,10 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		rsp->size = sizeof(struct fsxattr);
 		break;
 	case FS_IOC_FSSETXATTR:
-		if (req->d.size <= 0 || req->d.size > sizeof(req->path)) {
+		if (req->d.size <= 0 || req->d.size > sizeof(req->path) || req->d.size >= userp->size) {
 			rsp->errno = -EINVAL;
 			goto err;
 		}
-		// userp has QTFS_USERP_SIZE memory, which is 64K
 		ret = copy_to_user(userp->userp, req->path, req->d.size);
 		if (ret) {
 			qtfs_err("fssetxattr copy_to_user failed with %d\n", ret);
@@ -198,7 +200,7 @@ static int handle_statfs(struct qtserver_arg *arg)
 		rsp->errno = -EINVAL;
 		goto err_end;
 	}
-	ret = copy_to_user(userp->userp, req->path, strlen(req->path)+1);
+	ret = copy_to_user(userp->userp, req->path, strlen(req->path) + 1);
 	if (ret) {
 		rsp->errno = -EFAULT;
 		goto err_end;
@@ -335,7 +337,8 @@ static int handle_readiter(struct qtserver_arg *arg)
 		qtfs_err("handle readiter error, open failed.\n");
 		rsp->d.ret = QTFS_ERR;
 		rsp->d.errno = -ENOENT;
-		goto end;
+		rsp->d.len = 0;
+		return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
 	}
 	if (file->f_flags & O_DIRECT) {
 		if (file->f_inode->i_sb->s_bdev != NULL && file->f_inode->i_sb->s_bdev->bd_disk != NULL 
@@ -344,12 +347,14 @@ static int handle_readiter(struct qtserver_arg *arg)
 		} else {
 			rsp->d.ret = QTFS_ERR;
 			rsp->d.errno = -EINVAL;
-			return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+			rsp->d.len = 0;
+			goto end;
 		}
 		if (req->len % block_size != 0) {
 			rsp->d.ret = QTFS_ERR;
 			rsp->d.errno = -EINVAL;
-			return sizeof(struct qtrsp_readiter) - sizeof(rsp->readbuf);
+			rsp->d.len = 0;
+			goto end;
 		}
 		maxlen = (req->len >= sizeof(rsp->readbuf)) ? (block_size * (sizeof(rsp->readbuf) /block_size)) : req->len;
 	} else {
@@ -402,6 +407,8 @@ static int handle_readiter(struct qtserver_arg *arg)
 		maxlen -= len;
 		if (copy_from_user(&rsp->readbuf[idx], userp->userp, ret)) {
 			qtfs_err("copy from user failed fd:%d len:%d", req->fd, ret);
+			rsp->d.end = 1;
+			rsp->d.ret = QTFS_ERR;
 			break;
 		}
 		idx += ret;
@@ -437,7 +444,7 @@ static int handle_write(struct qtserver_arg *arg)
 		qtfs_err("qtfs handle write error, open failed.\n");
 		rsp->ret = QTFS_ERR;
 		rsp->len = 0;
-		goto end;
+		return sizeof(struct qtrsp_write);
 	}
 	if (file->f_flags & O_DIRECT) {
 		if (file->f_inode->i_sb->s_bdev != NULL && file->f_inode->i_sb->s_bdev->bd_disk != NULL 
@@ -927,7 +934,8 @@ int handle_link(struct qtserver_arg *arg)
 		rsp->ret = QTFS_ERR;
 		return sizeof(struct qtrsp_link);
 	}
-	if (copy_to_user(userp->userp, oldname, strlen(oldname) + 1) ||
+	if (strlen(oldname) + 1 > userp->size || strlen(newname) + 1 > userp->size ||
+		copy_to_user(userp->userp, oldname, strlen(oldname) + 1) ||
 		copy_to_user(userp->userp2, newname, strlen(newname) + 1)) {
 		qtfs_err("handle link failed in copy to userp.\n");
 		rsp->errno = -EFAULT;
@@ -1023,7 +1031,8 @@ int handle_rename(struct qtserver_arg *arg)
 		goto err_handle;
 	}
 	if (strlen(req->path) + 1 > sizeof(req->path) || req->d.oldlen >= sizeof(req->path) ||
-		strlen(req->path) + strlen(&req->path[req->d.oldlen]) + 2 >= sizeof(req->path)) {
+		strlen(req->path) + strlen(&req->path[req->d.oldlen]) >= sizeof(req->path) ||
+		strlen(req->path) + 1 > userp->size || strlen(&req->path[req->d.oldlen]) + 1 > userp->size) {
 		qtfs_err("invalid req msg");
 		rsp->errno = -EFAULT;
 		goto err_handle;
@@ -1104,6 +1113,7 @@ int handle_xattrset(struct qtserver_arg *arg)
 	if (req->d.pathlen + req->d.namelen + req->d.valuelen > sizeof(req->buf) - 3) {
 		qtfs_err("invalid len:%d %d %d", req->d.pathlen, req->d.namelen, req->d.valuelen);
 		rsp->errno = -EFAULT;
+		path_put(&path);
 		goto err_handle;
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
@@ -1142,6 +1152,12 @@ int handle_xattrget(struct qtserver_arg *arg)
 	if (req->d.size > 0) {
 		if (req->d.size > XATTR_SIZE_MAX)
 			req->d.size = XATTR_SIZE_MAX;
+
+		if (req->d.pos > req->d.size) {
+			rsp->d.errno = -EINVAL;
+			path_put(&path);
+			goto err_handle;
+		}
 		kvalue = (char *)kvzalloc(req->d.size, GFP_KERNEL);
 		if (!kvalue) {
 			qtfs_err("handle xattrget kvzalloc failed, size:%d.\n", req->d.size);
@@ -1163,7 +1179,7 @@ int handle_xattrget(struct qtserver_arg *arg)
 			goto end;
 		}
 		qtfs_info("handle getxattr: path:%s prefix name:%s : (%s - 0x%llx), size:%ld, reqpos:%d\n", req->path, req->d.prefix_name, kvalue, (__u64)kvalue, error, req->d.pos);
-		len = (error - req->d.pos)>sizeof(rsp->buf)? sizeof(rsp->buf):(error - req->d.pos);
+		len = (error - req->d.pos) > sizeof(rsp->buf) ? sizeof(rsp->buf) : (error - req->d.pos);
 		rsp->d.size = len;
 		if (req->d.size > 0) {
 			memcpy(rsp->buf, &kvalue[req->d.pos], len);
@@ -1446,7 +1462,7 @@ int remotesc_sched_getaffinity(struct qtserver_arg *arg)
 		goto end;
 	}
 	rsp->ret = qtfs_syscall_sched_getaffinity(req->pid, req->len, userp->userp);
-	if (rsp->ret < 0 || rsp->ret > AFFINITY_MAX_LEN) {
+	if (rsp->ret < 0) {
 		qtfs_err("get affinity failed ret:%ld", rsp->ret);
 		rsp->len = 0;
 		goto end;
@@ -1458,7 +1474,7 @@ int remotesc_sched_getaffinity(struct qtserver_arg *arg)
 		goto end;
 	}
 	rsp->len = req->len;
-	qtfs_info("pid:%d get affinity successed, %lx%lx", req->pid, rsp->user_mask_ptr[0], rsp->user_mask_ptr[1]);
+	qtfs_info("pid:%d get affinity successed", req->pid);
 	return sizeof(struct qtrsp_sc_sched_affinity) + rsp->len * sizeof(unsigned long);
 
 end:
@@ -1471,7 +1487,7 @@ int remotesc_sched_setaffinity(struct qtserver_arg *arg)
 	struct qtrsp_sc_sched_affinity *rsp = (struct qtrsp_sc_sched_affinity *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
 
-	if (req->len < 0 || req->len > AFFINITY_MAX_LEN) {
+	if (req->len > AFFINITY_MAX_LEN || req->len < 0) {
 		qtfs_err("invalid len:%u", req->len);
 		rsp->ret = -EINVAL;
 		rsp->len = 0;

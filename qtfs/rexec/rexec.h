@@ -58,7 +58,6 @@ struct rexec_msg {
     char msg[0];
 };
 
-#define REXEC_LOG_FILE "/var/run/rexec/rexec.log"
 extern FILE *rexec_logfile;
 static inline void rexec_log_init()
 {
@@ -69,6 +68,8 @@ static inline void rexec_log_init()
     } else if (strcmp(logfile, "std") == 0) {
         rexec_logfile = stderr;
         return;
+    } else {
+        printf("REXEC_LOG_FILE cannot be set to any value other than std\n");
     }
 retry:
     rexec_logfile = fopen(logfile, "a");

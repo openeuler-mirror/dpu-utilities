@@ -436,6 +436,10 @@ int uds_build_pipe_proxy(int efd, struct uds_event *evt, struct uds_stru_scm_pip
 		uds_err("recv failed, len:%d errno:%d", len, errno);
 		return EVENT_ERR;
 	}
+	if (msg->srcfd < 0) {
+		uds_err("recv failed, srcid:%d", msg->srcfd);
+		return EVENT_ERR;
+	}
 	if (msg->dir != SCM_PIPE_READ && msg->dir != SCM_PIPE_WRITE) {
 		uds_err("invalid pipe dir:%d", msg->dir);
 		return EVENT_ERR;

@@ -174,7 +174,7 @@ static int rexec_parse_argv(int argc, char *argv_str, char *argv[])
 
 static inline void rexec_clear_string_tail(char *str, int len)
 {
-    while (str[len] < 0x20) {
+    while (len >= 0 && str[len] < 0x20) {
         str[len] = '\0';
         len--;
     }
@@ -251,7 +251,7 @@ static int rexec_whitelist_check(char *binary)
     if (access(REXEC_WHITELIST_FILE, F_OK) != 0)
         return 0;
     for (int i = 0; i < rexec_wl.wl_nums; i++) {
-        if (strncmp(binary, rexec_wl.wl[i], strlen(rexec_wl.wl[i])) == 0)
+        if (strcmp(binary, rexec_wl.wl[i])) == 0)
             return 0;
     }
     return -1;
@@ -413,7 +413,7 @@ err_to_parent:
 // 道生一
 static int rexec_event_new_process(struct rexec_event *event)
 {
-    int newconnfd = rexec_sock_step_accept(event->fd, AF_UNIX);
+    int newconnfd = rexec_sock_step_accept(event->fd);
     if (newconnfd < 0) {
         rexec_err("Accept failed, ret:%d errno:%d", newconnfd, errno);
         return REXEC_EVENT_OK;

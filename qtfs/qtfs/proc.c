@@ -93,10 +93,12 @@ int is_local_process(const char *path)
 	for (i = 0; i < sizeof(match_str)/sizeof(char *); i++) {
 		if (!strncmp(pos, match_str[i], NAME_MAX)) {
 			qtfs_debug("[is_local_process] cmdline: %s is local process %d\n", cmdline, pid);
+			put_task_struct(t);
 			return pid;
 		}
 	}
 
+	put_task_struct(t);
 	qtfs_debug("[is_local_process] cmdline: %s is not local process", cmdline);
 	return -1;
 }

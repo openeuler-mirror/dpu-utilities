@@ -427,7 +427,7 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
 {
 	// fill conn_pvar struct here
-	strncpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, strlen(qtfs_server_ip)+1);
+	strlcpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, strlen(qtfs_server_ip)+1);
 	if (QTCONN_IS_EPOLL_CONN(pvar)) {
 		pvar->conn_var.sock_var.port = qtfs_server_port + 1;
 	} else {
