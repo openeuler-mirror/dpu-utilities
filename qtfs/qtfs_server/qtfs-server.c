@@ -44,6 +44,7 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 };
 
 struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
+rwlock_t g_whitelist_rwlock;
 
 long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 {
@@ -186,9 +187,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				return QTERROR;
 			}
 			for (i = 0; i < init_userp.thread_nums; i++)
-				qtfs_info("userp set idx:%d size:%lu user pointer:%lx %lx", i,
-					qtfs_userps[i].size, (unsigned long)qtfs_userps[i].userp,
-					(unsigned long)qtfs_userps[i].userp2);
+				qtfs_info("userp set idx:%d size:%lu", i, qtfs_userps[i].size);
 			break;
 		case QTFS_IOCTL_THREAD_RUN:
 			pvar = qtfs_conn_get_param();
@@ -275,6 +274,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				kfree(tmp);
 				return QTERROR;
 			}
+			write_lock(&g_whitelist_rwlock);
 			if (g_whitelist[tmp->type] != NULL) {
 				kfree(g_whitelist[tmp->type]);
 				g_whitelist[tmp->type] = NULL;
@@ -284,10 +284,12 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				if (strlen(g_whitelist[tmp->type]->wl[i].path) != g_whitelist[tmp->type]->wl[i].len) {
 					g_whitelist[tmp->type] = NULL;
 					kfree(tmp);
+					write_unlock(&g_whitelist_rwlock)
 					return QTERROR;
 				}
 				qtfs_info("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
 			}
+			write_unlock(&g_whitelist_rwlock)
 			break;
 		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_CLEARALL:
@@ -312,9 +314,14 @@ static int __init qtfs_server_init(void)
 	qtfs_log_init(qtfs_log_level, sizeof(qtfs_log_level));
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
+	rwlock_init(&g_whitelist_rwlock);
+
+ 	write_lock(&g_whitelist_rwlock);
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
 		g_whitelist[i] = NULL;
 	}
+	write_unlock(&g_whitelist_rwlock);
+
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);
 	if (qtfs_diag_info == NULL) {
 		qtfs_err("kmalloc qtfs diag info failed.");
@@ -376,11 +383,14 @@ static void __exit qtfs_server_exit(void)
 		kfree(qtfs_userps);
 		qtfs_userps = NULL;
 	}
+
+	write_lock(&g_whitelist_rwlock);
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
 		if (g_whitelist[i] != NULL) {
 			kfree(g_whitelist[i]);
 		}
 	}
+	write_unlock(&g_whitelist_rwlock);
 	qtfs_misc_destroy();
 	qtfs_uds_remote_exit();
 	qtfs_syscall_replace_stop();
@@ -399,4 +409,3 @@ module_init(qtfs_server_init);
 module_exit(qtfs_server_exit);
 MODULE_AUTHOR("liqiang64@huawei.com");
 MODULE_LICENSE("GPL");
-
