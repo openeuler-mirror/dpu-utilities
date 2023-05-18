@@ -133,7 +133,6 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	int sysret;
 	int ret;
 	int err;
-	int slen;
 	int un_headlen;
 	struct fd f;
 	struct socket *sock;
@@ -176,9 +175,7 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	ret = qtfs_uds_proxy_build(sock, &addr_un, len);
 	if (ret == 0) {
 		memcpy(&addr_proxy, &addr_un, sizeof(struct sockaddr_un));
-		slen = strlen(addr_proxy.sun_path);
-		strlcat(addr_proxy.sun_path, QTFS_UDS_PROXY_SUFFIX,sizeof(addr_proxy.sun_path) - strlen(addr_proxy.sun_path));
-		addr_proxy.sun_path[slen + strlen(QTFS_UDS_PROXY_SUFFIX)] = '\0';
+		strlcat(addr_proxy.sun_path, QTFS_UDS_PROXY_SUFFIX, sizeof(addr_proxy.sun_path));
 		if (copy_to_user(addr, &addr_proxy, (len > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : len)) {
 			qtfs_err("copy to addr failed sunpath:%s", addr_proxy.sun_path);
 			goto end;
@@ -210,7 +207,14 @@ int qtfs_uds_remote_init(void)
 
 void qtfs_uds_remote_exit(void)
 {
+	int i = 0;
 	read_lock(&qtsock_wl.rwlock);
+	for (i = 0; i < qtsock_wl.nums; i++) {
+		if (qtsock_wl.wl[i]) {
+			kfree(qtsock_wl.wl[i]);
+			qtsock_wl.wl[i] = NULL;
+		}
+	}
 	if (qtsock_wl.wl) {
 		kfree(qtsock_wl.wl);
 		qtsock_wl.wl = NULL;
@@ -494,6 +498,24 @@ void qtfs_conn_param_init(void)
 	return;
 }
 
+void release_pvar(struct qtfs_conn_var_s *pvar)
+{
+	if (!pvar)
+		return;
+
+	pvar->conn_ops->conn_var_fini(pvar);
+
+	qtfs_sm_exit(pvar);
+	if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS) {
+		qtfs_err("qtfs free unknown threadidx %d", pvar->cur_threadidx);
+	} else {
+		qtfs_thread_var[pvar->cur_threadidx] = NULL;
+		qtfs_info("qtfs free pvar idx:%d successed.", pvar->cur_threadidx);
+	}
+	list_del(&pvar->lst);
+	kfree(pvar);
+}
+
 void qtfs_conn_param_fini(void)
 {
 	struct list_head *plst;
@@ -510,18 +532,12 @@ void qtfs_conn_param_fini(void)
 	}
 
 	list_for_each_safe(plst, n, &g_vld_lst) {
-		struct qtfs_conn_var_s *pvar = (struct qtfs_conn_var_s *)plst;
-		pvar->conn_ops->conn_var_fini(pvar);
-		qtfs_sm_exit((struct qtfs_conn_var_s *)plst);
-		if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS) {
-			qtfs_err("qtfs free unknown threadidx %d", pvar->cur_threadidx);
-		} else {
-			qtfs_thread_var[pvar->cur_threadidx] = NULL;
-			qtfs_info("qtfs free pvar idx:%d successed.", pvar->cur_threadidx);
-		}
-		list_del(&pvar->lst);
-		kfree(pvar);
+		release_pvar((struct qtfs_conn_var_s *)plst);
 	}
+	list_for_each_safe(plst, n, &g_busy_lst) {
+		release_pvar((struct qtfs_conn_var_s *)plst);
+	}
+
 	conn_num = atomic_read(&g_qtfs_conn_num);
 	for (i = 0; i < conn_num; i++) {
 		if (qtfs_thread_var[i] != NULL) {
@@ -570,7 +586,7 @@ retry:
 			qtfs_conn_put_param(pvar);
 			return NULL;
 		}
-		memcpy(pvar->who_using, func, (strlen(func) >= QTFS_FUNCTION_LEN - 1) ? (QTFS_FUNCTION_LEN - 1) : strlen(func));
+		strlcpy(pvar->who_using, func, QTFS_FUNCTION_LEN);
 		return pvar;
 	}
 

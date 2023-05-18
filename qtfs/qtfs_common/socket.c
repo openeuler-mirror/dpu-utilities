@@ -172,15 +172,14 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar) && qtfs_server_main_sock != NULL) {
-		qtfs_info("qtfs server main sock is %lx, valid or out-of-date?", (uintptr_t)qtfs_server_main_sock);
+		qtfs_info("qtfs server main sock is set, valid or out-of-date?");
 		return 0;
 	}
 	if (QTCONN_IS_EPOLL_CONN(pvar) && pvar->conn_var.sock_var.sock != NULL) {
-		qtfs_info("qtfs server epoll sock is %lx, valid or out-of-date?", (uintptr_t)pvar->conn_var.sock_var.sock);
+		qtfs_info("qtfs server epoll sock is set, valid or out-of-date?");
 		return 0;
 	}
-	qtfs_info("qtfs sock server init enter pvar:%lx, threadidx:%d mainsock:%lx pvarsock:%lx", (uintptr_t)pvar, pvar->cur_threadidx,
-							(uintptr_t)qtfs_server_main_sock, (uintptr_t)pvar->conn_var.sock_var.sock);
+	qtfs_info("qtfs sock server init enter threadidx:%d", pvar->cur_threadidx);
 
 	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
 	if (ret) {
@@ -205,10 +204,10 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar)) {
 		qtfs_server_main_sock = sock;
-		qtfs_info("qtfs thread main sock get:%lx, threadidx:%d.", (uintptr_t)qtfs_server_main_sock, pvar->cur_threadidx);
+		qtfs_info("qtfs thread main sock get, threadidx:%d.", pvar->cur_threadidx);
 	} else {
 		pvar->conn_var.sock_var.sock = sock;
-		qtfs_info("qtfs epoll main sock get:%lx, threadidx:%d.", (uintptr_t)pvar->conn_var.sock_var.sock, pvar->cur_threadidx);
+		qtfs_info("qtfs epoll main sock get, threadidx:%d.", pvar->cur_threadidx);
 	}
 
 	return 0;
@@ -230,7 +229,7 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 
 	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), SOCK_NONBLOCK);
 	if (ret < 0) {
-		qtfs_err("%s: sock(%llx) addr(%s): connect get ret: %d\n", __func__, (__u64)sock, pvar->conn_var.sock_var.addr, ret);
+		qtfs_err("sock addr(%s): connect get ret: %d\n", pvar->conn_var.sock_var.addr, ret);
 		return ret;
 	}
 	QTSOCK_SET_KEEPX(sock, 5);
@@ -279,6 +278,7 @@ static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block)
 	int total = 0;
 	struct qtreq *rsp = NULL;
 	struct kvec load;
+	unsigned long retrytimes = 0;
 
 	memset(&pvar->msg_recv, 0, sizeof(pvar->msg_recv));
 
@@ -297,15 +297,33 @@ static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block)
 		return -EINVAL;
 	}
 	while (total < rsp->len) {
+retry:
 		ret = kernel_recvmsg(pvar->conn_var.sock_var.client_sock, &pvar->msg_recv, &load, 1,
 						rsp->len - total, (block == true) ? 0 : MSG_DONTWAIT);
-		if (ret <= 0) break;
+		if (ret == 0) break;
+		if (ret == -EAGAIN)
+			goto retry;
+		if (ret == -ERESTARTSYS || ret == -EINTR) {
+#ifdef QTFS_CLIENT
+			if (retrytimes == 0) {
+				qtinfo_cntinc(QTINF_RESTART_SYS);
+				qtinfo_recverrinc(rsp->type);
+			}
+#endif
+			retrytimes++;
+			msleep(1);
+			goto retry;
+		}
+		if (ret < 0) {
+			qtfs_err("qtfs recv get invalidelen is:%lu", ret);
+			return ret;
+		}
 		total += ret;
 		load.iov_base += ret;
 		load.iov_len -= ret;
 		if (load.iov_base > (pvar->vec_recv.iov_base + pvar->vec_recv.iov_len)) {
-			qtfs_err("qtfs recv error, total:%d iov_base:%lx iovlen:%lu ret:%d rsplen:%lu", total,
-							(unsigned long)pvar->vec_recv.iov_base, pvar->vec_recv.iov_len, ret, rsp->len);
+			qtfs_err("qtfs recv error, total:%d iovlen:%lu ret:%d rsplen:%lu", total,
+							pvar->vec_recv.iov_len, ret, rsp->len);
 			WARN_ON(1);
 			break;
 		}
@@ -335,7 +353,7 @@ static void qtfs_conn_sock_fini(struct qtfs_conn_var_s *pvar)
 	}
 
 	if (pvar->conn_var.sock_var.client_sock != NULL) {
-		qtfs_err("qtfs conn sock finish threadidx:%d, client:%lx.", pvar->cur_threadidx, (unsigned long)pvar->conn_var.sock_var.client_sock);
+		qtfs_err("qtfs conn sock finish threadidx:%d.", pvar->cur_threadidx);
 		sock_release(pvar->conn_var.sock_var.client_sock);
 		pvar->conn_var.sock_var.client_sock = NULL;
 	}
@@ -427,7 +445,7 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
 {
 	// fill conn_pvar struct here
-	strlcpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, strlen(qtfs_server_ip)+1);
+	strlcpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, sizeof(pvar->conn_var.sock_var.addr));
 	if (QTCONN_IS_EPOLL_CONN(pvar)) {
 		pvar->conn_var.sock_var.port = qtfs_server_port + 1;
 	} else {
