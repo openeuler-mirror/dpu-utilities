@@ -54,6 +54,9 @@ bool in_white_list(char *path, int type)
 	}
 	for (i = 0; i < g_whitelist[type]->len; i++) {
 		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
+			if (strlen(path) > g_whitelist[type]->wl[i].len && path[g_whitelist[type]->wl[i].len] != '/') {
+				continue;
+			}
 			in_wl = i;
 			break;
 		}

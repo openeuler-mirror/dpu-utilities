@@ -253,6 +253,9 @@ static int uds_find_whitelist(const char *path)
 	read_lock(&qtsock_wl.rwlock);
 	for (i = 0; i< qtsock_wl.nums; i++) {
 		if (strncmp(path, qtsock_wl.wl[i], strlen(qtsock_wl.wl[i])) == 0) {
+			if (strlen(path) > strlen(qtsock_wl.wl[i]) && path[strlen(qtsock_wl.wl[i])] != '/') {
+				continue;
+			}
 			ret = 0;
 			break;
 		}

@@ -216,11 +216,18 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 		return -1;
 	}
 	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &wl_count, NULL);
-	if (wl_count == 0) {
+	if (wl_count <= 0) {
 		engine_err("Can't find whitelist item %s", wl_type_str[type]);
 		return -1;
 	}
+	if (wl_count > 64)
+		wl_count = 64;
 	whitelist = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
+	if (!whitelist) {
+		engine_err("alloc memory for whitelist failed");
+		ret = -ENOMEM;
+		goto end;
+	}
 	memset(whitelist, 0, sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
 	engine_out("%s:\n", wl_type_str[type]);
 	whitelist->len = wl_count;
@@ -229,7 +236,7 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 		engine_out("%s\n", items[i]);
 		whitelist->wl[i].len = strlen(items[i]);
 		if (strlen(items[i]) >= sizeof(whitelist->wl[i].path)) {
-			engine_err("item[%s] too long.", items[i]);
+			engine_err("item[%s] too long. should less than %d", items[i], sizeof(whitelist->wl[i].path));
 			ret = -1;
 			goto end;
 		}
