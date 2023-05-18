@@ -111,7 +111,7 @@ static long qtfs_sc_kill(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	req->pid = karg.pid;
 	req->signum = karg.signum;
 	rsp = qtfs_remote_run(pvar, QTFS_SC_KILL, sizeof(struct qtreq_sc_kill));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_err("qtfs remote kill faile.");
 		return -EFAULT;
 	}
@@ -125,7 +125,7 @@ static long qtfs_sc_setaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	struct qtrsp_sc_sched_affinity *rsp;
 	struct qtsc_sched_affinity karg;
 
-	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtreq_sc_sched_affinity))) {	
+	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtsc_sched_affinity))) {
 		qtfs_err("copy args failed.");
 		return -EINVAL;
 	}
@@ -134,12 +134,12 @@ static long qtfs_sc_setaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	req->type = SC_SET;
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
-	if (copy_from_user(req->user_mask_ptr, karg.user_mask_ptr, karg.len)) {
+	if (copy_from_user(req->user_mask_ptr, karg.user_mask_ptr, req->len)) {
 		qtfs_err("copy from user mask ptr failed, len:%u", karg.len);
 		return -EFAULT;
 	}
 	rsp = qtfs_remote_run(pvar, QTFS_SC_SCHED_SETAFFINITY, sizeof(struct qtreq_sc_sched_affinity) + karg.len * sizeof(unsigned long));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_err("qtfs remote set affinit failed, pid:%d len:%u", karg.pid, karg.len);
 		return -EFAULT;
 	}
@@ -153,7 +153,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	struct qtrsp_sc_sched_affinity *rsp;
 	struct qtsc_sched_affinity karg;
 
-	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtreq_sc_sched_affinity))) {
+	if (copy_from_user(&karg, (void *)arg, sizeof(struct qtsc_sched_affinity))) {
 		qtfs_err("copy args failed.");
 		return -EINVAL;
 	}
@@ -163,12 +163,12 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 	req->pid = karg.pid;
 	req->len = (karg.len > AFFINITY_MAX_LEN) ? AFFINITY_MAX_LEN : karg.len;
 	rsp = qtfs_remote_run(pvar, QTFS_SC_SCHED_GETAFFINITY, sizeof(struct qtreq_sc_sched_affinity));
-	if (IS_ERR(rsp) || rsp == NULL) {
+	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_err("qtfs remote get affinit failed, pid:%d len:%u", karg.pid, karg.len);
 		return -EFAULT;
 	}
 	// len == 0 means failed
-	if (rsp->len <= 0 || rsp->len > karg.len ||
+	if (rsp->len <= 0 || rsp->len > req->len ||
 			copy_to_user(karg.user_mask_ptr, rsp->user_mask_ptr, rsp->len)) {
 		qtfs_err("copy user mask ptr failed rsp len:%u valid len:%u", rsp->len, karg.len);
 		return -EINVAL;
