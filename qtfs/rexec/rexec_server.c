@@ -210,7 +210,7 @@ static int rexec_whitelist_build(struct rexec_white_list_str *wl)
         int len;
         char *fstr;
         memset(cmd, 0, MAX_CMD_LEN);
-        fstr = fgets(cmd, MAX_CMD_LEN, fwl);
+        fstr = fgets(cmd, MAX_CMD_LEN - 1, fwl);
         if (fstr == NULL)
             continue;
         rexec_clear_string_tail(cmd, strlen(cmd));

@@ -141,6 +141,7 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	// don't try remote uds connect if: 1.local connect successed; 2.this process is udsproxyd
 	if (sysret == 0 || qtfs_uds_is_proxy())
 		return sysret;
+	// len is passed from syscall input args directly. it's trustworthy
 	if (copy_from_user(&addr_un, addr, len)) {
 		qtfs_err("copy sockaddr failed.");
 		return sysret;
@@ -209,6 +210,7 @@ void qtfs_uds_remote_exit(void)
 	read_lock(&qtsock_wl.rwlock);
 	if (qtsock_wl.wl) {
 		kfree(qtsock_wl.wl);
+		qtsock_wl.wl = NULL;
 	}
 	qtsock_wl.nums = 0;
 	read_unlock(&qtsock_wl.rwlock);

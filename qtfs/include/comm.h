@@ -101,18 +101,18 @@ enum {
 
 #define WHITELIST_MAX_PATH_LEN 4096
 struct wl_item {
-	int len;
+	unsigned int len;
 	char path[WHITELIST_MAX_PATH_LEN];
 };
 
 struct whitelist {
-	int len;
-	int type;
+	unsigned int len;
+	unsigned int type;
 	struct wl_item wl[0];
 };
 
 struct qtfs_thread_init_s {
-	int thread_nums;
+	unsigned int thread_nums;
 	struct qtfs_server_userp_s *userp;
 };
 
@@ -123,7 +123,7 @@ struct qtreq_epoll_event {
 
 struct qtfs_server_epoll_s {
 	int epfd;
-	int event_nums;
+	unsigned int event_nums;
 	struct epoll_event *events;
 	struct epoll_event *kevents;
 };
@@ -135,7 +135,7 @@ enum qtfs_errcode {
 };
 
 struct qtsock_whitelist {
-	int len;
+	unsigned int len;
 	char data[0];
 };
 

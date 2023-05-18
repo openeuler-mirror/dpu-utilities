@@ -168,7 +168,7 @@ static long qtfs_sc_getaffinity(struct qtfs_conn_var_s *pvar, unsigned long arg)
 		return -EFAULT;
 	}
 	// len == 0 means failed
-	if (rsp->len == 0 || rsp->len > karg.len ||
+	if (rsp->len <= 0 || rsp->len > karg.len ||
 			copy_to_user(karg.user_mask_ptr, rsp->user_mask_ptr, rsp->len)) {
 		qtfs_err("copy user mask ptr failed rsp len:%u valid len:%u", rsp->len, karg.len);
 		return -EINVAL;

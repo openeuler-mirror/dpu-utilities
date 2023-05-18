@@ -450,6 +450,11 @@ int main(int argc, char *argv[])
     arglen += sizeof(struct rexec_msg);
     arglen += strlen(fds_json);
     arglen = ((arglen / REXEC_MSG_LEN) + 1) * REXEC_MSG_LEN;
+    if (arglen <= 0) {
+        rexec_err("invalid arguments length:%d.", arglen);
+	free(fds_json);
+        return -1;
+    }
 
     struct rexec_msg *pmsg = (struct rexec_msg *)malloc(arglen);
     if (pmsg == NULL) {

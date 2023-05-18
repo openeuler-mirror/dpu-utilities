@@ -261,9 +261,9 @@ struct inode_info {
 	struct timespec64 ctime;
 
 	unsigned short		i_bytes;
-	u8					i_blkbits;
-	u8					i_write_hint;
-	blkcnt_t			i_blocks;
+	u8			i_blkbits;
+	u8			i_write_hint;
+	blkcnt_t		i_blocks;
 
 	unsigned long		i_state;
 	unsigned long		dirtied_when;	/* jiffies of first dirtying */
@@ -532,7 +532,7 @@ struct qtrsp_epollctl {
 // server epoll 通知 client
 #define QTFS_EPOLL_MAX_EVENTS 128
 struct qtreq_epollevt {
-	int event_nums;
+	unsigned int event_nums;
 	struct qtreq_epoll_event events[QTFS_EPOLL_MAX_EVENTS];
 };
 
