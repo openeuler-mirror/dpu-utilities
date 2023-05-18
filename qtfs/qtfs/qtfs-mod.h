@@ -111,7 +111,7 @@ struct qtmiss_ops {
 	char str[32];
 };
 
-static inline int qtfs_fullname(char *fullname, struct dentry *d)
+static inline int qtfs_fullname(char *fullname, struct dentry *d, size_t buflen)
 {
 	struct qtfs_fs_info *fsinfo = NULL;
 	int len = 0;
@@ -122,6 +122,11 @@ static inline int qtfs_fullname(char *fullname, struct dentry *d)
 		qtfs_info("%s: get dentry fullname NULL\n", __func__);
 		return -1;
 	}
+	if (buflen < MAX_PATH_LEN) {
+		qtfs_err("%s: failed to get fullname dure to small buflen:%lu\n", __func__, buflen);
+		return -1;
+	}
+	
 	name = __getname();
 	if (!name) {
 		return -1;
@@ -158,8 +163,8 @@ static inline int qtfs_fullname(char *fullname, struct dentry *d)
 	return len;
 }
 
-#define QTFS_FULLNAME(fullname, d) \
-	if (qtfs_fullname(fullname, d)<0) { \
+#define QTFS_FULLNAME(fullname, d, buflen) \
+	if (qtfs_fullname(fullname, d, buflen)<0) { \
 		qtfs_err("qtfs fullname failed\n"); \
 		qtfs_conn_put_param(pvar); \
 		return -EINVAL; \

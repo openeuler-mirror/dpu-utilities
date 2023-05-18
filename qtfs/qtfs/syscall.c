@@ -139,7 +139,7 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 			goto end;
 		}
 		memset(fullname, 0, MAX_PATH_LEN);
-		if (qtfs_fullname(fullname, file->f_path.dentry) < 0) {
+		if (qtfs_fullname(fullname, file->f_path.dentry, MAX_PATH_LEN) < 0) {
 			qtfs_err("qtfs fullname failed\n");
 			kfree(fullname);
 			ret = -1;
@@ -253,7 +253,7 @@ int qtfs_dir_to_qtdir(char *dir, char *qtdir, size_t len)
 	if (strcmp(path.mnt->mnt_sb->s_type->name, QTFS_FSTYPE_NAME)) {
 		strlcpy(qtdir, dir, len);
 	} else {
-		ret = qtfs_fullname(qtdir, path.dentry);
+		ret = qtfs_fullname(qtdir, path.dentry, len);
 	}
 	path_put(&path);
 	return ret;

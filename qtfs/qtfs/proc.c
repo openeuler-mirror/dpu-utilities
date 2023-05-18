@@ -138,7 +138,7 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 	memset(cpath, 0, MAX_PATH_LEN);
 	memset(tmp, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(cpath, child_dentry) < 0) {
+	if (qtfs_fullname(cpath, child_dentry, MAX_PATH_LEN) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
 		goto remote;
 	}
@@ -201,7 +201,7 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 	memset(path, 0, MAX_PATH_LEN);
 	memset(tmp, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(path, dentry) < 0) {
+	if (qtfs_fullname(path, dentry, MAX_PATH_LEN) < 0) {
 		qtfs_info("[%s]: get path failed", __func__);
 		goto link_remote;
 	}
@@ -263,7 +263,7 @@ int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask,
 	memset(tmp, 0, MAX_PATH_LEN);
 	memset(local_path, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(cpath, path->dentry) < 0) {
+	if (qtfs_fullname(cpath, path->dentry, MAX_PATH_LEN) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
 		goto remote;
 	}
