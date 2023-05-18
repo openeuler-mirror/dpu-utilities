@@ -157,7 +157,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}
-	strncpy(&req->buf[req->d.pathlen], handler->prefix, strlen(handler->prefix));
+	strlcpy(&req->buf[req->d.pathlen], handler->prefix, strlen(handler->prefix));
 	strcat(&req->buf[req->d.pathlen], name);
 	memcpy(&req->buf[req->d.pathlen + req->d.namelen], value, size);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRSET, sizeof(struct qtreq_xattrset) - sizeof(req->buf) + req->d.pathlen + req->d.namelen + req->d.size);

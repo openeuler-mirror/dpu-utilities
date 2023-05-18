@@ -1216,7 +1216,7 @@ int qtfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 		qtfs_err("qtfs symlink path name too long\n");
 		return -EINVAL;
 	}
-	strncpy(&req->path[req->d.newlen], symname, sizeof(req->path) - req->d.newlen - 1);
+	strlcpy(&req->path[req->d.newlen], symname, sizeof(req->path) - req->d.newlen - 1);
 
 	req->d.oldlen = strlen(&req->path[req->d.newlen]) + 1;
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYMLINK, sizeof(struct qtreq_symlink) - sizeof(req->path) + req->d.newlen + req->d.oldlen);

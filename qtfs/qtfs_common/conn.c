@@ -64,14 +64,14 @@ int qtfs_uds_proxy_build(struct socket *sock, struct sockaddr_un *addr, int len)
 		return -EFAULT;
 	}
 	memset(proxy.sun_path, 0, sizeof(proxy.sun_path));
-	strncpy(proxy.sun_path, UDS_BUILD_CONN_ADDR, strlen(UDS_BUILD_CONN_ADDR) + 1);
+	strlcpy(proxy.sun_path, UDS_BUILD_CONN_ADDR, strlen(UDS_BUILD_CONN_ADDR) + 1);
 	ret = sock->ops->connect(proxy_sock, (struct sockaddr *)&proxy, sizeof(proxy), SOCK_NONBLOCK);
 	if (ret) {
 		qtfs_err("connect to uds proxy failed");
 		goto err_end;
 	}
 	memset(req.sun_path, 0, sizeof(req.sun_path));
-	strncpy(req.sun_path, addr->sun_path, sizeof(req.sun_path));
+	strlcpy(req.sun_path, addr->sun_path, sizeof(req.sun_path));
 	memset(&msgs, 0, sizeof(struct msghdr));
 	memset(&msgr, 0, sizeof(struct msghdr));
 	req.type = sock->sk->sk_type;
@@ -177,7 +177,7 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 	if (ret == 0) {
 		memcpy(&addr_proxy, &addr_un, sizeof(struct sockaddr_un));
 		slen = strlen(addr_proxy.sun_path);
-		strncat(addr_proxy.sun_path, QTFS_UDS_PROXY_SUFFIX,sizeof(addr_proxy.sun_path) - strlen(addr_proxy.sun_path));
+		strlcat(addr_proxy.sun_path, QTFS_UDS_PROXY_SUFFIX,sizeof(addr_proxy.sun_path) - strlen(addr_proxy.sun_path));
 		addr_proxy.sun_path[slen + strlen(QTFS_UDS_PROXY_SUFFIX)] = '\0';
 		if (copy_to_user(addr, &addr_proxy, (len > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : len)) {
 			qtfs_err("copy to addr failed sunpath:%s", addr_proxy.sun_path);
@@ -748,7 +748,7 @@ void qtfs_conn_list_cnt(void)
 		pvar = (struct qtfs_conn_var_s *)entry;
 		if (pvar->cur_threadidx < 0 || pvar->cur_threadidx >= QTFS_MAX_THREADS)
 			continue;
-		strncpy(qtfs_diag_info->who_using[pvar->cur_threadidx],
+		strlcpy(qtfs_diag_info->who_using[pvar->cur_threadidx],
 								qtfs_thread_var[pvar->cur_threadidx]->who_using, QTFS_FUNCTION_LEN);
 	}
 	list_for_each(entry, &g_vld_lst)

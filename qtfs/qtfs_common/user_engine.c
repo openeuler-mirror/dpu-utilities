@@ -247,11 +247,14 @@ static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 		engine_err("Can't set whitelist item %s", wl_type_str[type]);
 	}
 end:
-	free(whitelist);
+	if (!whitelist)
+		free(whitelist);
 	for (int j = 0; i < wl_count; j++) {
-		free(items[j]);
+		if (!items[j])
+			free(items[j]);
 	}
-	free(items);
+	if (!items)
+		free(items);
 	// whitelist will be free in qtfs_whitelist_init
 	return ret;
 }
