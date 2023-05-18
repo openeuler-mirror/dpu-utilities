@@ -41,7 +41,8 @@
 #include "uds_main.h"
 #include "uds_event.h"
 
-struct uds_global_var g_uds_var = {.logstr = {"NONE", "ERROR", "INFO", "UNKNOWN"}};
+char *uds_log_str[UDS_LOG_MAX + 1] = {"NONE", "ERROR", "INFO", "UNKNOWN"};
+struct uds_global_var g_uds_var;
 struct uds_global_var *p_uds_var = &g_uds_var;
 struct uds_event_global_var *g_event_var = NULL;
 GHashTable *event_tmout_hash;
@@ -488,19 +489,12 @@ int uds_env_prepare()
 		return EVENT_OK;
 
 	if ((dir = opendir(UDS_BUILD_CONN_DIR)) == NULL) {
-		if (mkdir(UDS_BUILD_CONN_DIR, 0755) < 0) {
+		if (mkdir(UDS_BUILD_CONN_DIR, 0600) < 0) {
 			uds_err("mkdir %s failed.", UDS_BUILD_CONN_DIR);
 		}
 	} else {
 		closedir(dir);
 	}
-	int fd = open(UDS_BUILD_CONN_ADDR, O_RDONLY|O_CREAT, 0700);
-	if (fd < 0) {
-		uds_err("create file:%s failed.", UDS_BUILD_CONN_ADDR);
-		return EVENT_ERR;
-	}
-	uds_log("success to create %s.", UDS_BUILD_CONN_ADDR);
-	close(fd);
 	return EVENT_OK;
 }
 
@@ -565,6 +559,8 @@ static int uds_glob_var_init(char *argv[])
 {
 	int myport = atoi(argv[3]);
 	int peerport = atoi(argv[5]);
+	memset(p_uds_var, 0, sizeof(struct uds_global_var));
+	p_uds_var->logstr = uds_log_str;
 	p_uds_var->work_thread_num = atoi(argv[1]);
 	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
 		uds_err("work thread num:%d is invalid.(must be 1~%d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
@@ -586,7 +582,7 @@ static int uds_glob_var_init(char *argv[])
 		return -1;
 	}
 	p_uds_var->tcp.port = atoi(argv[3]);
-	strncpy(p_uds_var->tcp.addr, argv[2], sizeof(p_uds_var->tcp.addr));
+	strncpy(p_uds_var->tcp.addr, argv[2], sizeof(p_uds_var->tcp.addr) - 1);
 	p_uds_var->tcp.peerport = atoi(argv[5]);
 	strncpy(p_uds_var->tcp.peeraddr, argv[4], sizeof(p_uds_var->tcp.addr));
 
@@ -625,12 +621,14 @@ int uds_proxy_main(int argc, char *argv[])
 int main(int argc, char *argv[])
 #endif
 {
+	mode_t newmask = 0077;
 	p_uds_var->loglevel = UDS_LOG_INFO;
 #define ARG_NUM 6
 	if (argc != ARG_NUM) {
 		uds_helpinfo(argv);
 		return -1;
 	}
+	uds_log("change uds umask from:%o to %o", umask(newmask), newmask);
 	if (uds_env_prepare() != EVENT_OK) {
 		uds_err("proxy prepare environment failed.");
 		return -1;

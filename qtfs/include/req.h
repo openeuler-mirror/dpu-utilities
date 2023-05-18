@@ -90,21 +90,6 @@ struct qtfs_dirent64 {
 	char		d_name[];
 };
 
-#define NBYTES 256
-#define ISCHR(x) ((x >= 32 && x <= 126))
-static inline void qtfs_nbytes_print(unsigned char *buf, int bytes)
-{
-	int i = 0;
-	qtfs_info("nbyts:%d->", bytes);
-	for (; i < bytes; i++) {
-		if (ISCHR(buf[i])) {
-			qtfs_info("addr:0x%lx, %x(%c)\n", (unsigned long)&buf[i], buf[i], buf[i]);
-		} else
-			qtfs_info("addr:0x%lx, %x\n", (unsigned long)&buf[i], buf[i]);
-	}
-}
-
-
 #define QTFS_SEND 0
 #define QTFS_RECV 1
 

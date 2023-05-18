@@ -65,8 +65,18 @@ int qtfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return 0;
 }
 
+static void qtfs_free_inode(struct inode *inode)
+{
+	if (inode->i_private) {
+		kmem_cache_free(qtfs_inode_priv_cache, inode->i_private);
+		inode->i_private = NULL;
+	}
+	return;
+}
+
 static const struct super_operations qtfs_ops = {
 	.statfs = qtfs_statfs,
+	.free_inode = qtfs_free_inode,
 };
 
 static inline struct qtfs_fs_info *qtfs_priv_byinode(struct inode *inode)
@@ -148,7 +158,7 @@ int qtfs_readdir(struct file *filp, struct dir_context *ctx)
 		qtfs_conn_put_param(pvar);
 		return PTR_ERR(rsp);
 	}
-	if (rsp->d.ret == QTFS_ERR) {
+	if (rsp->d.ret == QTFS_ERR || rsp->d.vldcnt < 0 || rsp->d.pos < 0) {
 		qtfs_err("qtfs readdir failed.");
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
@@ -156,7 +166,7 @@ int qtfs_readdir(struct file *filp, struct dir_context *ctx)
 
 	idx = 0;
 	dircnt = rsp->d.vldcnt;
-	while (dircnt--) {
+	while (dircnt-- > 0) {
 		if (idx >= sizeof(rsp->dirent)) {
 			qtfs_err("invalid idx:%d", idx);
 			break;
@@ -188,12 +198,6 @@ int qtfs_open(struct inode *inode, struct file *file)
 		qtfs_err("Failed to get qtfs sock var");
 		return -EINVAL;
 	}
-	data = (struct private_data *)kmalloc(sizeof(struct private_data), GFP_KERNEL);
-	if (err_ptr(data)) {
-		qtfs_err("qtfs_open alloc private_data failed: %ld", PTR_ERR(data));
-		qtfs_conn_put_param(pvar);
-		return -ENOMEM;
-	}
 
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	QTFS_FULLNAME(req->path, file->f_path.dentry);
@@ -218,6 +222,14 @@ int qtfs_open(struct inode *inode, struct file *file)
 		return err;
 	}
 	qtfs_info("qtfs open:%s success, f_mode:%o flag:%x, fd:%d", req->path, file->f_mode, file->f_flags, rsp->fd);
+
+	data = (struct private_data *)kmalloc(sizeof(struct private_data), GFP_KERNEL);
+	if (err_ptr(data)) {
+		qtfs_err("qtfs_open alloc private_data failed: %ld", PTR_ERR(data));
+		qtfs_conn_put_param(pvar);
+		return -ENOMEM;
+	}
+
 	data->fd = rsp->fd;
 	WARN_ON(file->private_data);
 	file->private_data = data;
@@ -422,7 +434,7 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 		}
 		kio->ki_pos += rsp->len;
 		leftlen -= rsp->len;
-	} while (leftlen);
+	} while (leftlen > 0);
 
 	do {
 		struct inode *inode = kio->ki_filp->f_inode;
@@ -561,7 +573,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	WARN_ON(size >= MAX_PATH_LEN);
 	if (size >= MAX_PATH_LEN) {
 		qtfs_conn_put_param(pvar);
-		return -ENOMEM;
+		return -EINVAL;
 	}
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
@@ -573,7 +585,8 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	if (size > 0) {
 		ret = copy_from_user(req->path, (char __user *)arg, size);
 		if (ret) {
-			qtfs_err("%s: copy_from_user, 0x%lx, %u failed.", __func__, arg, size);
+			qtfs_err("%s: copy_from_user, size %u failed.", __func__, size);
+			ret = -EFAULT;
 			goto out;
 		}
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + size;
@@ -1365,7 +1378,7 @@ const char *qtfs_getlink(struct dentry *dentry,
 		qtfs_conn_put_param(pvar);
 		return (void *)rsp;
 	}
-	if (rsp->ret == QTFS_ERR) {
+	if (rsp->ret == QTFS_ERR || strnlen(rsp->path, sizeof(rsp->path)) >= sizeof(rsp->path)) {
 		qtfs_err("qtfs getlink <%s> failed. %d\n", req->path, rsp->errno);
 		qtfs_conn_put_param(pvar);
 		return ERR_PTR(-ENOENT);
@@ -1560,6 +1573,13 @@ struct dentry *qtfs_fs_mount(struct file_system_type *fs_type,
 
 void qtfs_kill_sb(struct super_block *sb)
 {
+	struct qtfs_fs_info *fsinfo = sb->s_fs_info;
+	if (fsinfo->mnt_path) {
+		kfree(fsinfo->mnt_path);
+		fsinfo->mnt_path = NULL;
+	}
+	kfree(fsinfo);
+	sb->s_fs_info = NULL;
 	qtfs_info("qtfs superblock deleted.\n");
 	kill_anon_super(sb);
 }

@@ -120,7 +120,7 @@ struct uds_global_var {
 	int *efd;
 	struct uds_thread_arg *work_thread;
 	int loglevel;
-	char *logstr[UDS_LOG_MAX + 1];
+	char **logstr;
 	struct _tcp {
 		char addr[20];
 		unsigned short port;
