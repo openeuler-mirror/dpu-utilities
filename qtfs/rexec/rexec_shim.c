@@ -104,7 +104,7 @@ void rshim_reg_file_resume(const char * const json_buf)
     struct json_object *fd_json = json_tokener_parse(json_buf);
     if (fd_json == NULL) {
         fprintf(stderr, "parse json error\n");
-        goto end;
+        return;
     }
     obj_files = json_object_object_get(fd_json, "Files");
     int arraylen = json_object_array_length(obj_files);
@@ -123,7 +123,6 @@ void rshim_reg_file_resume(const char * const json_buf)
         rshim_reg_file_open(fd, path, perm, offset);
     }
 
-end:
     json_object_put(fd_json);
     return;
 }

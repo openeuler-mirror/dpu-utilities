@@ -277,10 +277,16 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 			if (g_whitelist[tmp->type] != NULL) {
 				kfree(g_whitelist[tmp->type]);
+				g_whitelist[tmp->type] = NULL;
 			}
 			g_whitelist[tmp->type] = tmp;
 			for (i = 0; i < g_whitelist[tmp->type]->len; i++) {
-				qtfs_err("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
+				if (strlen(g_whitelist[tmp->type]->wl[i].path) != g_whitelist[tmp->type]->wl[i].len) {
+					g_whitelist[tmp->type] = NULL;
+					kfree(tmp);
+					return QTERROR;
+				}
+				qtfs_info("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
 			}
 			break;
 		case QTFS_IOCTL_ALLINFO:

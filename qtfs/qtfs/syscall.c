@@ -47,7 +47,9 @@ static inline int qtfs_fstype_judgment(char __user *dir)
 	if (ret)
 		return 0;
 
-	if (strcmp(path.mnt->mnt_sb->s_type->name, QTFS_FSTYPE_NAME) == 0) {
+	if (path.mnt && path.mnt->mnt_sb &&
+			path.mnt->mnt_sb->s_type && path.mnt->mnt_sb->s_type->name &&
+			strcmp(path.mnt->mnt_sb->s_type->name, QTFS_FSTYPE_NAME) == 0) {
 		qtfs_info("qtfs fstype judge <%s> is qtfs.\n", path.dentry->d_iname);
 		path_put(&path);
 		return 1;

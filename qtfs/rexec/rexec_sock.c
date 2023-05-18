@@ -83,28 +83,17 @@ close_and_return:
 
 }
 
-int rexec_sock_step_accept(int sock_fd, int family)
+int rexec_sock_step_accept(int sock_fd)
 {
-	struct sockaddr_in in_addr;
 	struct sockaddr_un un_addr;
-	socklen_t len = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_un);
+	socklen_t len = sizeof(struct sockaddr_un);
 	int connfd;
-	if (family == AF_INET) {
-		connfd = accept(sock_fd, (struct sockaddr *)&in_addr, &len);
-	} else {
-		connfd = accept(sock_fd, (struct sockaddr *)&un_addr, &len);
-	}
+	connfd = accept(sock_fd, (struct sockaddr *)&un_addr, &len);
 	if (connfd < 0) {
 		rexec_err("Accept error:%d, errno:%d.", connfd, errno);
 		return connfd;
 	}
-	if (family == AF_INET) {
-		rexec_log("Accept success, ip:%s, port:%u",
-				inet_ntoa(in_addr.sin_addr),
-				ntohs(in_addr.sin_port));
-	} else {
-		rexec_log("Accept success, sun path:%s", un_addr.sun_path);
-	}
+	rexec_log("Accept success, sun path:%s", un_addr.sun_path);
 	return connfd;
 }
 

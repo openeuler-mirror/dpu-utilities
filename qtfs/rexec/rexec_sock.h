@@ -31,7 +31,7 @@ struct rexec_conn_arg {
 	int connfd;
 };
 
-int rexec_sock_step_accept(int sock_fd, int family);
+int rexec_sock_step_accept(int sock_fd);
 int rexec_build_unix_connection(struct rexec_conn_arg *arg);
 int rexec_sendmsg(int sockfd, char *msgbuf, int msglen, int scmfd);
 int rexec_recvmsg(int sockfd, char *msgbuf, int msglen, int *scmfd, int flags);

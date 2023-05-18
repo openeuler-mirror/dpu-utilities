@@ -207,36 +207,45 @@ int qtfs_epoll_init(int fd)
 
 static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 {
-	int64_t i, len;
+	int64_t i, wl_count;
+	int ret;
 	char **items;
+	struct whitelist *whitelist = NULL;
 	if (type >= QTFS_WHITELIST_MAX) {
 		engine_err("whitelist item index out of range:%d, no more than %d.", type, QTFS_WHITELIST_MAX);
 		return -1;
 	}
-	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &len, NULL);
-	if (len <= 0) {
+	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &wl_count, NULL);
+	if (wl_count == 0) {
 		engine_err("Can't find whitelist item %s", wl_type_str[type]);
 		return -1;
 	}
-	whitelist[type] = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len);
-	if (!whitelist[type]) {
-		engine_err("Failed to alloc memory for whitelist, len is %d\n", len);
-		return -1;
+	whitelist = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
+	memset(whitelist, 0, sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
+	engine_out("%s:\n", wl_type_str[type]);
+	whitelist->len = wl_count;
+	whitelist->type = type;
+	for(i = 0; i < wl_count; i++){
+		engine_out("%s\n", items[i]);
+		whitelist->wl[i].len = strlen(items[i]);
+		if (strlen(items[i]) >= sizeof(whitelist->wl[i].path)) {
+			engine_err("item[%s] too long.", items[i]);
+			ret = -1;
+			goto end;
+		}
+		strncpy(whitelist->wl[i].path, items[i], sizeof(whitelist->wl[i].path));
 	}
-	g_print("%s:\n", wl_type_str[type]);
-	whitelist[type]->len = len;
-	whitelist[type]->type = type;
-	for(i = 0; i < len; i++){
-		printf("%s\n", items[i]);
-		whitelist[type]->wl[i].len = strlen(items[i]);
-		strncpy(whitelist[type]->wl[i].path, items[i], sizeof(whitelist[type]->wl[i].path));
-	}
-	int ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist[type]);
+	ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist);
 	if (ret != 0) {
 		engine_err("Can't set whitelist item %s", wl_type_str[type]);
 	}
+end:
+	free(whitelist);
+	for (int j = 0; i < wl_count; j++) {
+		free(items[j]);
+	}
 	free(items);
-	// whitelist[type] will be free in qtfs_whitelist_init
+	// whitelist will be free in qtfs_whitelist_init
 	return ret;
 }
 
@@ -254,18 +263,16 @@ int qtfs_whitelist_init(int fd)
 		}
 	}
 	g_key_file_free(config);
-	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		if (whitelist[i]) {
-			free(whitelist[i]);
-			whitelist[i] = NULL;
-		}
-	}
 	return 0;
 }
 
 static int qtfs_engine_check_port(unsigned short port, char *ip)
 {
 	struct sockaddr_in sin;
+	if (inet_pton(AF_INET, ip, &sin.sin_addr) != 1) {
+		engine_err("%s inet_pton error.", ip);
+		return -1;
+	}
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		engine_err("socket error, fd:%", sockfd);
@@ -274,7 +281,6 @@ static int qtfs_engine_check_port(unsigned short port, char *ip)
 	bzero(&sin, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(port);
-	inet_pton(AF_INET, ip, &sin.sin_addr);
 	if (bind(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0) {
 		engine_err("ip:%s port:%u bind failed, errno:%d.", ip, port, errno);
 		close(sockfd);
@@ -290,9 +296,11 @@ static int qtfs_engine_env_check(char *argv[])
 	struct qtinfo diag;
 	int ret;
 	int fd;
-	if (!IS_NUMBER(argv[1][0])) {
-		engine_err("invalid thread number :%s", argv[1]);
-		return -1;
+	for (int i = 0; i < strlen(argv[1]); i ++) {
+		if (!IS_NUMBER(argv[1][i])) {
+			engine_err("invalid thread number :%s", argv[1]);
+			return -1;
+		}
 	}
 	fd = open(QTFS_SERVER_DEV, O_RDONLY|O_NONBLOCK);
 	if (fd < 0) {
