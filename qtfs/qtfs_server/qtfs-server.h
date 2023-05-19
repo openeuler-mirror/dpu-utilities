@@ -18,6 +18,7 @@ extern int qtfs_server_thread_run;
 extern struct qtfs_server_epoll_s qtfs_epoll;
 extern int qtfs_mod_exiting;
 extern struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
+extern rwlock_t g_whitelist_rwlock;
 
 struct qtserver_arg {
 	char *data;
