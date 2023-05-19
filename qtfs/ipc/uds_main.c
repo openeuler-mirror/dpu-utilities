@@ -618,18 +618,19 @@ void uds_helpinfo(char *argv[])
 
 #ifdef QTFS_SERVER
 int uds_proxy_main(int argc, char *argv[])
+{
 #else
 int main(int argc, char *argv[])
-#endif
 {
 	mode_t newmask = 0077;
+	uds_log("change uds umask from:%o to %o", umask(newmask), newmask);
+#endif
 	p_uds_var->loglevel = UDS_LOG_INFO;
 #define ARG_NUM 6
 	if (argc != ARG_NUM) {
 		uds_helpinfo(argv);
 		return -1;
 	}
-	uds_log("change uds umask from:%o to %o", umask(newmask), newmask);
 	if (uds_env_prepare() != EVENT_OK) {
 		uds_err("proxy prepare environment failed.");
 		return -1;
