@@ -184,8 +184,10 @@ static inline void rexec_clear_string_tail(char *str, int len)
 #define REXEC_WHITELIST_FILE "/etc/rexec/whitelist"
 static int rexec_whitelist_build(struct rexec_white_list_str *wl)
 {
-    if (access(REXEC_WHITELIST_FILE, F_OK) != 0)
-        return 0;
+    if (access(REXEC_WHITELIST_FILE, F_OK) != 0) {
+        rexec_err("Please configure the white list(%s).", REXEC_WHITELIST_FILE);
+        return -1;
+    }
 
     wl->wl_nums = 0;
     memset(wl->wl, 0, sizeof(uintptr_t) * REXEC_WHITELIST_MAX_ITEMS);
@@ -227,6 +229,10 @@ static int rexec_whitelist_build(struct rexec_white_list_str *wl)
         rexec_log("Cmd:<%s> added to white list.", cmd);
     }
     fclose(fwl);
+    if (wl->wl_nums == 0) {
+        rexec_err("White list file [%s] has no valid content.", REXEC_WHITELIST_FILE);
+        return -1;
+    }
     return 0;
 
 err_end:
@@ -249,9 +255,9 @@ static int rexec_whitelist_check(char *binary)
 {
     // white list file not exist, always ok
     if (access(REXEC_WHITELIST_FILE, F_OK) != 0)
-        return 0;
+        return -1;
     for (int i = 0; i < rexec_wl.wl_nums; i++) {
-        if (strcmp(binary, rexec_wl.wl[i]) == 0)
+        if (strlen(binary) == strlen(rexec_wl.wl[i]) && strcmp(binary, rexec_wl.wl[i]) == 0)
             return 0;
     }
     return -1;
