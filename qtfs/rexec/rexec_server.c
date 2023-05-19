@@ -251,7 +251,7 @@ static int rexec_whitelist_check(char *binary)
     if (access(REXEC_WHITELIST_FILE, F_OK) != 0)
         return 0;
     for (int i = 0; i < rexec_wl.wl_nums; i++) {
-        if (strcmp(binary, rexec_wl.wl[i])) == 0)
+        if (strcmp(binary, rexec_wl.wl[i]) == 0)
             return 0;
     }
     return -1;
