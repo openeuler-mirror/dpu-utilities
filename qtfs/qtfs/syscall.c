@@ -139,7 +139,7 @@ int qtfs_epoll_ctl_remote(int op, int fd, struct epoll_event __user * event)
 			goto end;
 		}
 		memset(fullname, 0, MAX_PATH_LEN);
-		if (qtfs_fullname(fullname, file->f_path.dentry) < 0) {
+		if (qtfs_fullname(fullname, file->f_path.dentry, MAX_PATH_LEN) < 0) {
 			qtfs_err("qtfs fullname failed\n");
 			kfree(fullname);
 			ret = -1;
@@ -236,19 +236,24 @@ __SYSCALL_DEFINEx(2, _qtfs_umount, char __user *, name, int, flags)
 	return qtfs_syscall_umount(name, flags);
 }
 
-int qtfs_dir_to_qtdir(char *dir, char *qtdir)
+int qtfs_dir_to_qtdir(char *dir, char *qtdir, size_t len)
 {
 	int ret = 0;
 	struct path path;
+
+	if (strlen(dir) + 1 > len || len < MAX_PATH_LEN) {
+		strlcpy(qtdir, dir, len);
+		return -EINVAL;
+	}
 	ret = kern_path(dir, 0, &path);
 	if (ret) {
-		strcpy(qtdir, dir);
+		strlcpy(qtdir, dir, len);
 		return 0;
 	}
 	if (strcmp(path.mnt->mnt_sb->s_type->name, QTFS_FSTYPE_NAME)) {
-		strcpy(qtdir, dir);
+		strlcpy(qtdir, dir, len);
 	} else {
-		ret = qtfs_fullname(qtdir, path.dentry);
+		ret = qtfs_fullname(qtdir, path.dentry, len);
 	}
 	path_put(&path);
 	return ret;
@@ -263,7 +268,7 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 	struct qtrsp_sysmount *rsp = NULL;
 	char *kernel_dir;
 	int ret;
-	int totallen;
+	size_t totallen;
 
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var\n");
@@ -274,19 +279,26 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
+	totallen = strlen(dev_name) + strlen(kernel_dir) + strlen(type) + strlen(data) + 4;
+	if (totallen > sizeof(req->buf)) {
+		qtfs_err("qtfs remote mount devname:%s, dir_name:%s failed, options too long.\n", dev_name, kernel_dir);
+		kfree(kernel_dir);
+		qtfs_conn_put_param(pvar);
+		return -EINVAL;
+	}
 
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	if (dev_name != NULL) {
-		qtfs_dir_to_qtdir(dev_name, req->buf);
+		qtfs_dir_to_qtdir(dev_name, req->buf, sizeof(req->buf));
 		req->d.dev_len = strlen(dev_name) + 1;
 	} else {
 		req->d.dev_len = 0;
 	}
 
-	qtfs_dir_to_qtdir(kernel_dir, &req->buf[req->d.dev_len]);
+	qtfs_dir_to_qtdir(kernel_dir, &req->buf[req->d.dev_len], sizeof(req->buf) - req->d.dev_len);
 	req->d.dir_len = strlen(&req->buf[req->d.dev_len]) + 1;
 	if (type != NULL) {
-		strcpy(&req->buf[req->d.dev_len + req->d.dir_len], type);
+		strlcpy(&req->buf[req->d.dev_len + req->d.dir_len], type, strlen(type) + 1);
 		req->d.type_len = strlen(type) + 1;
 	} else {
 		req->d.type_len = 0;
@@ -294,21 +306,15 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 
 	if (data != NULL) {
 		req->d.data_len = strlen(data) + 1;
-		strcpy(&req->buf[req->d.dev_len + req->d.dir_len + req->d.type_len], data);
+		strlcpy(&req->buf[req->d.dev_len + req->d.dir_len + req->d.type_len], data, strlen(data) + 1);
 	} else {
 		req->d.data_len = 0;
 	}
 	req->d.flags = flags;
 
-	totallen = req->d.dev_len + req->d.dir_len + req->d.type_len + req->d.data_len;
-	if (totallen >= sizeof(req->buf)) {
-		qtfs_err("qtfs remote mount devname:%s, dir_name:%s failed, len:%d is too big.\n", dev_name, kernel_dir, totallen);
-		rsp->errno = -EFAULT;
-		goto out_free;
-	}
-
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYSMOUNT, sizeof(struct qtreq_sysmount) - sizeof(req->buf) + totallen);
 	if (IS_ERR_OR_NULL(rsp)) {
+		kfree(kernel_dir);
 		qtfs_conn_put_param(pvar);
 		return QTFS_PTR_ERR(rsp);
 	}
@@ -320,7 +326,6 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 				dev_name, kernel_dir, type, (char *)data, flags);
 	}
 
-out_free:
 	kfree(kernel_dir);
 	ret = rsp->errno;
 	qtfs_conn_put_param(pvar);
@@ -346,7 +351,7 @@ static int qtfs_remote_umount(char __user *name, int flags)
 		return QTFS_PTR_ERR(kernel_name);
 	}
 	req->flags = flags;
-	qtfs_dir_to_qtdir(kernel_name, req->buf);
+	qtfs_dir_to_qtdir(kernel_name, req->buf, sizeof(req->buf));
 	qtfs_info("qtfs remote umount string:%s reqbuf:%s", (kernel_name == NULL) ? "INVALID":kernel_name, req->buf);
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SYSUMOUNT, sizeof(struct qtreq_sysumount) - sizeof(req->buf) + strlen(req->buf));
@@ -366,10 +371,6 @@ static int qtfs_remote_umount(char __user *name, int flags)
 
 int qtfs_syscall_init(void)
 {
-	qtfs_debug("qtfs use my_mount instead of mount:0x%lx umount:0x%lx\n",
-			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount], (unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2]);
-	qtfs_debug("qtfs use my_epoll_ctl instead of epoll_ctl:0x%lx\n",
-			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_epoll_ctl]);
 	symbols_origin[SYMBOL_SYSCALL_MOUNT] = qtfs_kern_syms.sys_call_table[__NR_mount];
 	symbols_origin[SYMBOL_SYSCALL_UMOUNT] = qtfs_kern_syms.sys_call_table[__NR_umount2];
 	symbols_origin[SYMBOL_SYSCALL_EPOLL_CTL] = qtfs_kern_syms.sys_call_table[__NR_epoll_ctl];
@@ -389,16 +390,13 @@ int qtfs_syscall_init(void)
 	// enable write protection
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
-	qtfs_debug("qtfs use my_mount:0x%lx, my_umount:0x%lx, my_epoll_ctl:0x%lx\n",
-			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_mount],
-			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_umount2],
-			(unsigned long)qtfs_kern_syms.sys_call_table[__NR_epoll_ctl]);
+	qtfs_debug("qtfs use qtfs_mount instead of mount and umount\n");
+	qtfs_debug("qtfs use qtfs_epoll_ctl instead of epoll_ctl\n");
 	return 0;
 }
 
 int qtfs_syscall_fini(void)
 {
-	qtfs_info("qtfs mount resume to 0x%lx.\n", (unsigned long)symbols_origin[SYMBOL_SYSCALL_MOUNT]);
 #ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
 	qtfs_kern_syms.sys_call_table[__NR_mount] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_MOUNT];
@@ -416,5 +414,6 @@ int qtfs_syscall_fini(void)
 	// enable write protection
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
+	qtfs_info("qtfs mount umount and epoll_ctl resumed\n");
 	return 0;
 }

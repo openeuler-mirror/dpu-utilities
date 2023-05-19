@@ -39,7 +39,7 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 	}
 
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
-	if (qtfs_fullname(req->path, dentry) < 0) {
+	if (qtfs_fullname(req->path, dentry, sizeof(req->path)) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
 		return 0;
@@ -132,6 +132,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 	struct qtrsp_xattrset *rsp;
 	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	int ret;
+	size_t totallen;
 
 	if (!pvar) {
 		qtfs_err("failed to get qtfs sock var");
@@ -142,7 +143,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		return -ENOENT;
 	}
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
-	if (qtfs_fullname(req->buf, dentry) < 0) {
+	if (qtfs_fullname(req->buf, dentry, sizeof(req->buf)) < 0) {
 		qtfs_err("xattr set get fullname failed.");
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
@@ -152,14 +153,17 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 	req->d.pathlen = strlen(req->buf) + 1;
 	req->d.namelen = strlen(name) + strlen(handler->prefix) + 1;
 	qtfs_info("xattr set path:%s name:%s size:%lu", req->buf, name, size);
-	if (req->d.pathlen + req->d.namelen + strlen(handler->prefix) + size > sizeof(req->buf)) {
+	totallen = req->d.pathlen + req->d.namelen + size;
+	if (totallen > sizeof(req->buf)) {
 		qtfs_err("xattr set namelen:%d size:%lu is too long", req->d.namelen, size);
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}
-	strlcpy(&req->buf[req->d.pathlen], handler->prefix, strlen(handler->prefix));
+	strlcpy(&req->buf[req->d.pathlen], handler->prefix, strlen(handler->prefix) + 1);
 	strcat(&req->buf[req->d.pathlen], name);
-	memcpy(&req->buf[req->d.pathlen + req->d.namelen], value, size);
+	if (size > 0)
+		memcpy(&req->buf[req->d.pathlen + req->d.namelen], value, size);
+
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRSET, sizeof(struct qtreq_xattrset) - sizeof(req->buf) + req->d.pathlen + req->d.namelen + req->d.size);
 	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
@@ -197,7 +201,7 @@ static int qtfs_xattr_get(const struct xattr_handler *handler,
 	}
 
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
-	if (qtfs_fullname(req->path, dentry) < 0) {
+	if (qtfs_fullname(req->path, dentry, sizeof(req->path)) < 0) {
 		qtfs_err("qtfs fullname failed");
 		qtfs_conn_put_param(pvar);
 		return 0;

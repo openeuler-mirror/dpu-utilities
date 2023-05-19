@@ -200,12 +200,13 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				__putname(name);
 				goto err_end;
 			}
-			if (name->len > MAX_PATH_LEN - 1) {
+			write_lock(&qtsock_wl.rwlock);
+			if (name->len < 0 || name->len > MAX_PATH_LEN - 1) {
 				qtfs_err("invalid whitelist itern length: %d!", name->len);
+				write_unlock(&qtsock_wl.rwlock);
 				__putname(name);
 				goto err_end;
 			}
-			write_lock(&qtsock_wl.rwlock);
 			qtsock_wl.wl[qtsock_wl.nums] = (char *)kmalloc(name->len + 1, GFP_KERNEL);
 			if (qtsock_wl.wl[qtsock_wl.nums] == NULL) {
 				qtfs_err("kmalloc qtsock white list failed, len:%d.", name->len + 1);
@@ -239,6 +240,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				qtsock_wl.wl[index] = NULL;
 				if (qtsock_wl.nums > 1) {
 					qtsock_wl.wl[index] = qtsock_wl.wl[qtsock_wl.nums - 1];
+					qtsock_wl.wl[qtsock_wl.nums - 1] = NULL;
 				}
 				qtsock_wl.nums--;
 			} else {
@@ -274,14 +276,14 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				__putname(name);
 				goto err_end;
 			}
-			name->len = strlen(qtsock_wl.wl[index]);
-			memcpy(name->data, qtsock_wl.wl[index], name->len);
-			read_unlock(&qtsock_wl.rwlock);
-			if (sizeof(struct qtsock_whitelist) + name->len > MAX_PATH_LEN) {
+			if (sizeof(struct qtsock_whitelist) + name->len + 1 > PATH_MAX) {
 				qtfs_err("invalid message length:%ld during qtsock whitelist get", sizeof(struct qtsock_whitelist) + name->len);
+				read_unlock(&qtsock_wl.rwlock);
 				__putname(name);
 				goto err_end;
 			}
+			memcpy(name->data, qtsock_wl.wl[index], name->len);
+			read_unlock(&qtsock_wl.rwlock);
 			if (copy_to_user((void *)arg, name, sizeof(struct qtsock_whitelist) + name->len)) {
 				qtfs_err("copy to user failed");
 				__putname(name);

@@ -14,6 +14,7 @@
 #include <linux/time.h>
 #include <linux/fs_struct.h>
 #include <linux/version.h>
+#include <linux/sched/task.h>
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -40,8 +41,12 @@ enum qtfs_type qtfs_get_type(char *str)
 
 bool is_sb_proc(struct super_block *sb)
 {
-	struct qtfs_fs_info *qfi = sb->s_fs_info;
+	struct qtfs_fs_info *qfi = NULL;
 
+	if (!sb || !sb->s_fs_info)
+		return false;
+
+	qfi = sb->s_fs_info;
 	return qfi->type == QTFS_PROC;
 }
 
@@ -82,6 +87,7 @@ int is_local_process(const char *path)
 		return -1;
 	}
 	get_task_comm(cmdline, t);
+	put_task_struct(t);
 
 	pos = strrchr(cmdline, '/');
 	if (!pos) {
@@ -132,7 +138,7 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 	memset(cpath, 0, MAX_PATH_LEN);
 	memset(tmp, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(cpath, child_dentry) < 0) {
+	if (qtfs_fullname(cpath, child_dentry, MAX_PATH_LEN) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
 		goto remote;
 	}
@@ -195,7 +201,7 @@ const char *qtfs_proc_getlink(struct dentry *dentry,
 	memset(path, 0, MAX_PATH_LEN);
 	memset(tmp, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(path, dentry) < 0) {
+	if (qtfs_fullname(path, dentry, MAX_PATH_LEN) < 0) {
 		qtfs_info("[%s]: get path failed", __func__);
 		goto link_remote;
 	}
@@ -231,6 +237,7 @@ link_remote:
 link_local:
 	kfree(tmp);
 	kfree(path);
+	set_delayed_call(done, kfree_link, link);
 	return link;
 }
 
@@ -256,7 +263,7 @@ int qtfs_proc_getattr(const struct path *path, struct kstat *stat, u32 req_mask,
 	memset(tmp, 0, MAX_PATH_LEN);
 	memset(local_path, 0, MAX_PATH_LEN);
 
-	if (qtfs_fullname(cpath, path->dentry) < 0) {
+	if (qtfs_fullname(cpath, path->dentry, MAX_PATH_LEN) < 0) {
 		qtfs_err("%s: failed to get fullname", __func__);
 		goto remote;
 	}
