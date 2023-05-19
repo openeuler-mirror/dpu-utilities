@@ -28,6 +28,7 @@
 #define QTFS_EPOLL_RETRY_INTVL 500 // unit ms
 
 int qtfs_server_thread_run = 1;
+DEFINE_RWLOCK(g_userp_rwlock);
 
 long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
@@ -169,26 +170,35 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 	struct qtfs_thread_init_s init_userp;
 	switch (cmd) {
 		case QTFS_IOCTL_THREAD_INIT:
+			if (!write_trylock(&g_userp_rwlock)) {
+				qtfs_err("try lock userps failed.");
+				return QTERROR;
+			}
 			if (copy_from_user(&init_userp, (void __user *)arg, sizeof(struct qtfs_thread_init_s))) {
 				qtfs_err("qtfs ioctl thread init copy from user failed.");
+				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
 			if (qtfs_userps == NULL || init_userp.thread_nums > QTFS_MAX_THREADS) {
 				qtfs_err("qtfs ioctl thread init userps invalid thread nums:%d.", init_userp.thread_nums);
+				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
 			memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
 			if (init_userp.thread_nums > QTFS_MAX_THREADS) {
 				qtfs_err("qtfs ioctl thread init invalid input thread_num:%d", init_userp.thread_nums);
+				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
 			if (copy_from_user(qtfs_userps, (void __user *)init_userp.userp,
 							init_userp.thread_nums * sizeof(struct qtfs_server_userp_s))) {
 				qtfs_err("qtfs ioctl thread init copy from userp failed.");
+				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
 			for (i = 0; i < init_userp.thread_nums; i++)
 				qtfs_info("userp set idx:%d size:%lu", i, qtfs_userps[i].size);
+			write_unlock(&g_userp_rwlock);
 			break;
 		case QTFS_IOCTL_THREAD_RUN:
 			pvar = qtfs_conn_get_param();
@@ -388,10 +398,12 @@ static void __exit qtfs_server_exit(void)
 		kfree(qtfs_diag_info);
 		qtfs_diag_info = NULL;
 	}
+	write_lock(&g_userp_rwlock);
 	if (qtfs_userps != NULL) {
 		kfree(qtfs_userps);
 		qtfs_userps = NULL;
 	}
+	write_unlock(&g_userp_rwlock);
 
 	write_lock(&g_whitelist_rwlock);
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
