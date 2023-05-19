@@ -48,6 +48,7 @@
 bool in_white_list(char *path, int type)
 {
 	int i, in_wl = -1;
+	int wl_len = 0;
 
 	read_lock(&g_whitelist_rwlock);
 	if (!g_whitelist[type]) {
@@ -55,8 +56,11 @@ bool in_white_list(char *path, int type)
 		return false;
 	}
 	for (i = 0; i < g_whitelist[type]->len; i++) {
+		wl_len = g_whitelist[type]->wl[i].len;
 		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
-			if (strlen(path) > g_whitelist[type]->wl[i].len && path[g_whitelist[type]->wl[i].len] != '/') {
+			//到这一行说明path长度起码是大于等于wl长度，那么以下情况是不符合白名单匹配的
+			//   wl不是以/结尾，且path的wl_len字符非结束符也不是/
+			if (g_whitelist[type]->wl[i].path[wl_len - 1] != '/' && path[wl_len] != '\0' && path[wl_len] != '/') {
 				continue;
 			}
 			in_wl = i;

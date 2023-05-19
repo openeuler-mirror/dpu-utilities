@@ -255,9 +255,9 @@ static int rexec_whitelist_check(char *binary)
 {
     // white list file not exist, always ok
     if (access(REXEC_WHITELIST_FILE, F_OK) != 0)
-        return 0;
+        return -1;
     for (int i = 0; i < rexec_wl.wl_nums; i++) {
-        if (strcmp(binary, rexec_wl.wl[i]) == 0)
+        if (strlen(binary) == strlen(rexec_wl.wl[i]) && strcmp(binary, rexec_wl.wl[i]) == 0)
             return 0;
     }
     return -1;
