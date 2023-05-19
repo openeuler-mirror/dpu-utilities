@@ -19,6 +19,7 @@
 #include <linux/time.h>
 #include <linux/delay.h>
 #include <linux/uaccess.h>
+#include <linux/mutex.h>
 
 #include "comm.h"
 #include "log.h"
@@ -26,6 +27,7 @@
 #include "conn.h"
 
 extern struct file_operations qtfs_misc_fops;
+struct mutex qtfs_diag_info_lock;
 
 static struct miscdevice qtfs_misc_dev = {
 	.minor	= MISC_DYNAMIC_MINOR,
@@ -44,6 +46,7 @@ int qtfs_misc_register(void)
 		qtfs_err("qtfs misc register failed, ret:%d.", ret);
 		return -EFAULT;
 	}
+	mutex_init(&qtfs_diag_info_lock);
 	return 0;
 }
 
@@ -135,8 +138,10 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	qtfs_info("qtfs client misc ioctl.");
 	switch (cmd) {
 		case QTFS_IOCTL_ALLINFO:
+			mutex_lock(&qtfs_diag_info_lock);
 			if (qtfs_diag_info == NULL) {
 				qtfs_err("ioctl allinfo failed, qtfs_diag_info is invalid.");
+				mutex_unlock(&qtfs_diag_info_lock);
 				goto err_end;
 			}
 			qtfs_req_size();
@@ -149,11 +154,15 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 #endif
 			if (copy_to_user((void *)arg, qtfs_diag_info, sizeof(struct qtinfo))) {
 				qtfs_err("ioctl allinfo copy to user failed.");
+				mutex_unlock(&qtfs_diag_info_lock);
 				goto err_end;
 			}
+			mutex_unlock(&qtfs_diag_info_lock);
 			break;
 		case QTFS_IOCTL_CLEARALL:
+			mutex_lock(&qtfs_diag_info_lock);
 			qtinfo_clear();
+			mutex_unlock(&qtfs_diag_info_lock);
 			break;
 		case QTFS_IOCTL_LOGLEVEL: {
 			char level_str[QTFS_LOGLEVEL_STRLEN] = {0};
