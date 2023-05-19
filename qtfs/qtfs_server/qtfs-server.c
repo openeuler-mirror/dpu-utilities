@@ -42,6 +42,7 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 	.events = NULL,
 	.kevents = NULL,
 };
+rwlock_t qtfs_epoll_rwlock;
 
 struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
 rwlock_t g_whitelist_rwlock;
@@ -202,6 +203,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			qtfs_conn_put_param(pvar);
 			break;
 		case QTFS_IOCTL_EPFDSET:
+			write_lock(&qtfs_epoll_rwlock);
 			if (qtfs_epoll.kevents != NULL) {
 				kfree(qtfs_epoll.kevents);
 				qtfs_epoll.kevents = NULL;
@@ -209,11 +211,13 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			if (copy_from_user(&qtfs_epoll, (void __user *)arg, sizeof(struct qtfs_server_epoll_s))) {
 				qtfs_err("copy epoll struct from arg failed.");
 				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
 			if (qtfs_epoll.event_nums > QTFS_MAX_EPEVENTS_NUM) {
 				qtfs_err("epoll arg set failed, event nums:%d too big", qtfs_epoll.event_nums);
 				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
 			qtfs_info("epoll arg set, epfd:%d event nums:%d events.",
@@ -223,8 +227,10 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			if (qtfs_epoll.kevents == NULL) {
 				qtfs_err("epoll kernel events kmalloc failed.");
 				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
+			write_unlock(&qtfs_epoll_rwlock);
 			break;
 		case QTFS_IOCTL_EPOLL_THREAD_INIT:
 			ret = qtfs_server_epoll_init();
@@ -235,7 +241,9 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				ret = QTERROR;
 				break;
 			}
+			write_lock(&qtfs_epoll_rwlock);
 			ret = qtfs_server_epoll_thread(qtfs_epoll_var);
+			write_unlock(&qtfs_epoll_rwlock);
 			if (ret == QTEXIT) {
 				qtfs_info("qtfs epoll thread exit.");
 				qtfs_epoll_cut_conn(qtfs_epoll_var);
@@ -284,12 +292,12 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				if (strlen(g_whitelist[tmp->type]->wl[i].path) != g_whitelist[tmp->type]->wl[i].len) {
 					g_whitelist[tmp->type] = NULL;
 					kfree(tmp);
-					write_unlock(&g_whitelist_rwlock)
+					write_unlock(&g_whitelist_rwlock);
 					return QTERROR;
 				}
 				qtfs_info("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
 			}
-			write_unlock(&g_whitelist_rwlock)
+			write_unlock(&g_whitelist_rwlock);
 			break;
 		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_CLEARALL:
@@ -315,6 +323,7 @@ static int __init qtfs_server_init(void)
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
 	rwlock_init(&g_whitelist_rwlock);
+	rwlock_init(&qtfs_epoll_rwlock);
 
  	write_lock(&g_whitelist_rwlock);
 	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
