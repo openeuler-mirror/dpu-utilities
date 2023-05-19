@@ -1586,10 +1586,12 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 			struct qtserver_arg arg;
 			arg.data = req->data;
 			arg.out = rsp->data;
+			read_lock(&g_userp_rwlock);
 			arg.userp = &qtfs_userps[pvar->cur_threadidx];
 			if (arg.userp->userp == NULL || arg.userp->userp2 == NULL)
 				qtfs_err("server run userp or userp2 is invalid");
 			rsp->len = qtfs_server_handles[req->type].handle(&arg);
+			read_unlock(&g_userp_rwlock);
 			rsp->type = req->type;
 			rsp->err = QTFS_OK;
 			totalproc++;

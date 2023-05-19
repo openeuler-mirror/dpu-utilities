@@ -315,7 +315,7 @@ retry:
 			goto retry;
 		}
 		if (ret < 0) {
-			qtfs_err("qtfs recv get invalidelen is:%lu", ret);
+			qtfs_err("qtfs recv get invalidelen is:%d", ret);
 			return ret;
 		}
 		total += ret;
