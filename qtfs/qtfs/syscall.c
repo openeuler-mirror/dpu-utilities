@@ -241,7 +241,7 @@ int qtfs_dir_to_qtdir(char *dir, char *qtdir, size_t len)
 	int ret = 0;
 	struct path path;
 
-	if (strlen(dir) + 1 > len || len < MAX_PATH_LEN) {
+	if (strlen(dir) + 1 > len) {
 		strlcpy(qtdir, dir, len);
 		return -EINVAL;
 	}
@@ -259,6 +259,12 @@ int qtfs_dir_to_qtdir(char *dir, char *qtdir, size_t len)
 	return ret;
 }
 
+static size_t qtfs_strlen(const char *s)
+{
+	if (s == NULL)
+		return 0;
+	return strlen(s);
+}
 
 static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		unsigned long flags, void *data)
@@ -279,7 +285,7 @@ static long qtfs_remote_mount(char *dev_name, char __user *dir_name, char *type,
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
-	totallen = strlen(dev_name) + strlen(kernel_dir) + strlen(type) + strlen(data) + 4;
+	totallen = qtfs_strlen(dev_name) + qtfs_strlen(kernel_dir) + qtfs_strlen(type) + qtfs_strlen(data) + 4;
 	if (totallen > sizeof(req->buf)) {
 		qtfs_err("qtfs remote mount devname:%s, dir_name:%s failed, options too long.\n", dev_name, kernel_dir);
 		kfree(kernel_dir);
