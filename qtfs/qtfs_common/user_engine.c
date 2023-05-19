@@ -261,6 +261,7 @@ end:
 
 int qtfs_whitelist_init(int fd)
 {
+	int mount_whitelist = 0;
 	int ret, i;
 	GKeyFile *config = g_key_file_new();
 	g_key_file_load_from_file(config, WHITELIST_FILE, G_KEY_FILE_KEEP_COMMENTS|G_KEY_FILE_KEEP_TRANSLATIONS, NULL);
@@ -271,8 +272,17 @@ int qtfs_whitelist_init(int fd)
 			// failure of one whitelist type should not stop others.
 			continue;
 		}
+		if (i == QTFS_WHITELIST_MOUNT)
+			mount_whitelist = 1;
 	}
 	g_key_file_free(config);
+	// if wl file not exist or mount not set, result is mount_whitelist == 0, stop the engine
+	if (mount_whitelist == 0) {
+		engine_err("Please create whitelist file and add white list items.");
+		engine_err("At least one [Mount] whitelist is required for the qtfs to work normally.");
+		return -1;
+	}
+		
 	return 0;
 }
 
@@ -312,22 +322,7 @@ static int qtfs_engine_env_check(char *argv[])
 			return -1;
 		}
 	}
-	fd = open(QTFS_SERVER_DEV, O_RDONLY|O_NONBLOCK);
-	if (fd < 0) {
-		engine_err("not find server dev:%s", QTFS_SERVER_DEV);
-		return -1;
-	}
-	ret = ioctl(fd, QTFS_IOCTL_ALLINFO, &diag);
-	close(fd);
-	if (ret != QTOK) {
-		engine_err("check ioctl return failed:%d", ret);
-		return -1;
-	}
 
-	if (qtfs_engine_check_port(diag.server_port, diag.server_ip) < 0)
-		goto err;
-	if (qtfs_engine_check_port(diag.server_port + 1, diag.server_ip) < 0)
-		goto err;
 	if (qtfs_engine_check_port(atoi(argv[4]), argv[3]) < 0)
 		goto err;
 

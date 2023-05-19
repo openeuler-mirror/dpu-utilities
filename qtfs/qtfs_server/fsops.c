@@ -52,7 +52,7 @@ bool in_white_list(char *path, int type)
 	read_lock(&g_whitelist_rwlock);
 	if (!g_whitelist[type]) {
 		read_unlock(&g_whitelist_rwlock);
-		return true;
+		return false;
 	}
 	for (i = 0; i < g_whitelist[type]->len; i++) {
 		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
