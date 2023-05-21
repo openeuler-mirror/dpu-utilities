@@ -318,10 +318,6 @@ void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar)
 void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir)
 {
 	struct qtreq *req = (dir == QTFS_SEND) ? pvar->vec_send.iov_base : pvar->vec_recv.iov_base;
-	if (!req) {
-		WARN_ON(1);
-		return NULL;
-	}
 	return req->data;
 }
 
@@ -741,12 +737,14 @@ void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 
 void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar)
 {
+	int ret = 0;
+
 	if (!pvar) {
 		qtfs_err("qtfs_conn_var_s is null!!");
 		return;
 	}
 
-	int ret = qtfs_sm_exit(pvar);
+	ret = qtfs_sm_exit(pvar);
 	if (ret) {
 		qtfs_err("qtfs epoll put param exit failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));
 	}

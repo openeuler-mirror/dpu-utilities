@@ -223,6 +223,12 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 	struct socket *sock = pvar->conn_var.sock_var.client_sock;
 	int ret;
 	struct sockaddr_in saddr;
+
+	if (!sock) {
+		qtfs_err("Invalid client sock, which is null\n");
+		return -EINVAL;
+	}
+
 	saddr.sin_family = AF_INET;
 	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
 	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);

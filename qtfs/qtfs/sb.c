@@ -336,10 +336,10 @@ ssize_t qtfs_readiter(struct kiocb *kio, struct iov_iter *iov)
 			qtfs_conn_put_param(pvar);
 			return QTFS_PTR_ERR(rsp);
 		}
-		if (rsp->d.ret == QTFS_ERR || rsp->d.len <= 0) {
+		if (rsp->d.ret == QTFS_ERR || rsp->d.len <= 0 || rsp->d.len > leftlen) {
 			if (rsp->d.len != 0)
 				qtfs_info("qtfs readiter error: %ld.", rsp->d.len);
-			ret = (ssize_t)rsp->d.len;
+			ret = (rsp->d.len > leftlen) ? leftlen : (ssize_t)rsp->d.len;
 			qtfs_conn_put_param(pvar);
 			return (ret > 0) ? allcnt - leftlen + ret : allcnt - leftlen;
 		}
@@ -570,8 +570,8 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 		return -EINVAL;
 	}
 
-	WARN_ON(size >= MAX_PATH_LEN);
 	if (size >= MAX_PATH_LEN) {
+		WARN_ON(1);
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}

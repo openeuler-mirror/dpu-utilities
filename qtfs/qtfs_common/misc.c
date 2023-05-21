@@ -285,6 +285,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				__putname(name);
 				goto err_end;
 			}
+			name->len = strlen(qtsock_wl.wl[index]) + 1;
 			if (sizeof(struct qtsock_whitelist) + name->len + 1 > PATH_MAX) {
 				qtfs_err("invalid message length:%ld during qtsock whitelist get", sizeof(struct qtsock_whitelist) + name->len);
 				read_unlock(&qtsock_wl.rwlock);
