@@ -17,6 +17,7 @@
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/eventpoll.h>
+#include <linux/atomic.h>
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -375,8 +376,15 @@ static int qtfs_remote_umount(char __user *name, int flags)
 	return ret;
 }
 
+static atomic_t replace_available = ATOMIC_INIT(1);
+
 int qtfs_syscall_init(void)
 {
+	if (!atomic_dec_and_test(&replace_available)) {
+		atomic_inc(&replace_available);
+		return -EBUSY;
+	}
+
 	symbols_origin[SYMBOL_SYSCALL_MOUNT] = qtfs_kern_syms.sys_call_table[__NR_mount];
 	symbols_origin[SYMBOL_SYSCALL_UMOUNT] = qtfs_kern_syms.sys_call_table[__NR_umount2];
 	symbols_origin[SYMBOL_SYSCALL_EPOLL_CTL] = qtfs_kern_syms.sys_call_table[__NR_epoll_ctl];
@@ -421,5 +429,6 @@ int qtfs_syscall_fini(void)
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
 	qtfs_info("qtfs mount umount and epoll_ctl resumed\n");
+	atomic_inc(&replace_available);
 	return 0;
 }

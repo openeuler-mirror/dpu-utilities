@@ -306,6 +306,8 @@ void rexec_clear_pids()
             rexec_err("remove unuse pidmap file:%s failed", path);
         }
     }
+
+    closedir(dir);
     return;
 }
 
