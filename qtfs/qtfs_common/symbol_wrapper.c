@@ -157,8 +157,15 @@ __SYSCALL_DEFINEx(3, _qtfs_connect, int, fd, struct sockaddr __user *, uservaddr
 	return qtfs_uds_remote_connect_user(fd, uservaddr, addrlen);
 }
 
+static atomic_t replace_available = ATOMIC_INIT(1);
+
 int qtfs_syscall_replace_start(void)
 {
+	if (!atomic_dec_and_test(&replace_available)) {
+		atomic_inc(&replace_available);
+		return -EBUSY;
+	}
+
 	symbols_origin[SYMBOL_SYSCALL_CONNECT] = qtfs_kern_syms.sys_call_table[__NR_connect];
 #ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
@@ -187,7 +194,7 @@ void qtfs_syscall_replace_stop(void)
 	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_CONNECT];
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
-	return;
+	atomic_inc(&replace_available);
 }
 
 #define SYSCALL_TYPE(type) (type (*)(const struct pt_regs *))
