@@ -723,6 +723,11 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 {
 	int ret;
+	if (!pvar) {
+		qtfs_err("qtfs_conn_var_s is null!!");
+		return;
+	}
+
 	ret = qtfs_mutex_lock_interruptible(&g_param_mutex);
 	if (ret) {
 		llist_add(&pvar->lazy_put, &g_lazy_put_llst);
@@ -732,16 +737,19 @@ void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 	pvar->conn_ops->conn_msg_clear(pvar);
 	list_move_tail(&pvar->lst, &g_vld_lst);
 	mutex_unlock(&g_param_mutex);
-	return;
 }
 
 void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar)
 {
+	if (!pvar) {
+		qtfs_err("qtfs_conn_var_s is null!!");
+		return;
+	}
+
 	int ret = qtfs_sm_exit(pvar);
 	if (ret) {
 		qtfs_err("qtfs epoll put param exit failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));
 	}
-	return;
 }
 
 void qtfs_conn_list_cnt(void)
@@ -772,6 +780,5 @@ void qtfs_conn_list_cnt(void)
 #ifdef QTFS_CLIENT
 	mutex_unlock(&g_param_mutex);
 #endif
-	return;
 }
 
