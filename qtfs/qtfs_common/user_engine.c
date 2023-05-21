@@ -64,7 +64,6 @@ struct engine_arg {
 	int thread_idx;
 };
 
-#define QTFS_USERP_MAXSIZE 65536
 #define QTFS_USERP_SIZE QTFS_USERP_MAXSIZE
 #define QTFS_SERVER_FILE "/dev/qtfs_server"
 
@@ -106,7 +105,9 @@ static struct qtfs_server_userp_s *qtfs_engine_thread_init(int fd, int thread_nu
 	struct qtfs_thread_init_s init_userp;
 	init_userp.thread_nums = thread_nums;
 	init_userp.userp = userp;
-	(void)ioctl(fd, QTFS_IOCTL_THREAD_INIT, (unsigned long)&init_userp);
+	if (ioctl(fd, QTFS_IOCTL_THREAD_INIT, (unsigned long)&init_userp) == QTERROR) {
+		goto rollback;
+	}
 	return userp;
 rollback:
 	qtfs_engine_userp_free(userp, thread_nums);
@@ -270,7 +271,8 @@ int qtfs_whitelist_init(int fd)
 		if (ret != 0) {
 			engine_err("failed to set whitelist item %s, get error:%d", wl_type_str[i], ret);
 			// failure of one whitelist type should not stop others.
-			continue;
+			g_key_file_free(config);
+			return -1;
 		}
 		if (i == QTFS_WHITELIST_MOUNT)
 			mount_whitelist = 1;
@@ -356,6 +358,10 @@ int main(int argc, char *argv[])
 		close(fd);
 		return -1;
 	}
+	ret = ioctl(fd, QTFS_IOCTL_EXIT, 1);
+	if (ret == QTERROR) {
+		goto end;
+	}
 	ret = qtfs_whitelist_init(fd);
 	if (ret)
 		goto end;
@@ -370,7 +376,6 @@ int main(int argc, char *argv[])
 		ret = -1;
 		goto end;
 	}
-	(void)ioctl(fd, QTFS_IOCTL_EXIT, 1);
 	signal(SIGINT, qtfs_signal_int);
 	signal(SIGKILL, qtfs_signal_int);
 	signal(SIGTERM, qtfs_signal_int);
@@ -404,6 +409,7 @@ engine_free:
 	qtfs_engine_userp_free(userp, thread_nums);
 	engine_out("qtfs engine join epoll thread.");
 end:
+	(void)ioctl(fd, QTFS_IOCTL_EXIT, 0);
 	close(epfd);
 	close(fd);
 	engine_out("qtfs engine over.");

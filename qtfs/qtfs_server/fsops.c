@@ -246,7 +246,7 @@ static int handle_mount(struct qtserver_arg *arg)
 
 	ret = kern_path(req->path, LOOKUP_DIRECTORY, &path);
 	if (ret) {
-		qtfs_err("handle mount path:%s not exist.\n", req->path);
+		qtfs_err("handle mount path:%s kern_path failed, ret: %d.\n", req->path, ret);
 		rsp->ret = QTFS_ERR;
 	} else {
 		rsp->ret = QTFS_OK;
@@ -542,7 +542,7 @@ static int handle_lookup(struct qtserver_arg *arg)
 	int ret;
 	ret = kern_path(req->fullname, 0, &path);
 	if (ret) {
-		qtfs_info("qtfs handle lookup(%s) not exist, ret%d.\n", req->fullname, ret);
+		qtfs_info("qtfs handle lookup(%s) kern_path failed, ret%d.\n", req->fullname, ret);
 		rsp->errno = (ret == -ENOENT ? 0 : ret);
 		rsp->ret = QTFS_ERR;
 	} else {
@@ -567,7 +567,7 @@ static int qtfs_filldir(struct dir_context *ctx, const char *name, int namelen,
 	int reclen = ALIGN(offsetof(struct qtfs_dirent64, d_name) + namelen + 1, sizeof(u64));
 	int prev_reclen;
 
-	if (reclen > buf->count)
+	if (reclen > buf->count || !buf->dir || !name)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 		return false;
 #else
