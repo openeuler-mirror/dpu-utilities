@@ -34,6 +34,7 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <glib.h>
+#include <sys/file.h>
 
 #include "rexec_sock.h"
 #include "rexec.h"
@@ -531,6 +532,15 @@ void rexec_hash_remove_direct(GHashTable *table, int key)
 }
 #pragma GCC diagnostic pop
 
+int check_socket_lock(void)
+{
+	int lock_fd = open(REXEC_LOCK_PATH, O_RDONLY | O_CREAT, 0600);
+	if (lock_fd == -1)
+		return -EINVAL;
+
+	return flock(lock_fd, LOCK_EX | LOCK_NB);
+}
+
 int main(int argc, char *argv[])
 {
     mode_t newmask = 0077;
@@ -544,6 +554,11 @@ int main(int argc, char *argv[])
     if (access(REXEC_RUN_PATH, F_OK) != 0) {
         mkdir(REXEC_RUN_PATH, 0755);
     }
+
+    if (check_socket_lock() < 0) {
+	    return -1;
+    }
+
     if (rexec_pid_hashmap_init(&child_hash) != 0) {
         rexec_white_list_free(&rexec_wl);
         return -1;
