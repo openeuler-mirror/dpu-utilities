@@ -422,7 +422,7 @@ static int rexec_event_new_process(struct rexec_event *event)
     int newconnfd = rexec_sock_step_accept(event->fd);
     if (newconnfd < 0) {
         rexec_err("Accept failed, ret:%d errno:%d", newconnfd, errno);
-        return REXEC_EVENT_OK;
+        return REXEC_EVENT_ERR;
     }
     //     主进程只负责接收新链接，基于newconnfd的新消息由子进程自己去接收，但是最
     // 后父进程要进入监听此链接的状态，是为了联动kill（对端杀死client进程则本端
