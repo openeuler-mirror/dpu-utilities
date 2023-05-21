@@ -737,12 +737,14 @@ void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar)
 
 void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar)
 {
+	int ret = 0;
+
 	if (!pvar) {
 		qtfs_err("qtfs_conn_var_s is null!!");
 		return;
 	}
 
-	int ret = qtfs_sm_exit(pvar);
+	ret = qtfs_sm_exit(pvar);
 	if (ret) {
 		qtfs_err("qtfs epoll put param exit failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));
 	}
