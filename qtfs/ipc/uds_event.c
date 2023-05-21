@@ -211,6 +211,7 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	char buf[sizeof(struct uds_tcp2tcp) + sizeof(struct uds_proxy_remote_conn_req)] = {0};
 	struct uds_tcp2tcp *bdmsg = (struct uds_tcp2tcp *)buf;
 	struct uds_proxy_remote_conn_req *msg = (struct uds_proxy_remote_conn_req *)bdmsg->data;
+	struct uds_proxy_remote_conn_rsp rsp;
 	int len;
 	memset(buf, 0, sizeof(buf));
 	len = recv(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req), MSG_WAITALL);
@@ -229,21 +230,6 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	}
 	if (msg->type != SOCK_STREAM && msg->type != SOCK_DGRAM) {
 		uds_err("uds type:%d invalid", msg->type);
-		return EVENT_ERR;
-	}
-
-	struct uds_conn_arg tcp = {
-		.cs = UDS_SOCKET_CLIENT,
-	};
-	int ret;
-	if ((ret = uds_build_tcp_connection(&tcp)) < 0) {
-		uds_err("step2 build tcp connection failed, return:%d", ret);
-		goto end;
-	}
-	bdmsg->msgtype = MSGCNTL_UDS;
-	bdmsg->msglen = sizeof(struct uds_proxy_remote_conn_req);
-	if (write(tcp.connfd, bdmsg, sizeof(struct uds_tcp2tcp) + sizeof(struct uds_proxy_remote_conn_req)) < 0) {
-		uds_err("send msg to tcp failed");
 		goto end;
 	}
 
@@ -253,16 +239,37 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 		goto end;
 	}
 
+	struct uds_conn_arg tcp = {
+		.cs = UDS_SOCKET_CLIENT,
+	};
+	int ret;
+	if ((ret = uds_build_tcp_connection(&tcp)) < 0) {
+		uds_err("step2 build tcp connection failed, return:%d", ret);
+		free(priv);
+		goto end;
+	}
+	bdmsg->msgtype = MSGCNTL_UDS;
+	bdmsg->msglen = sizeof(struct uds_proxy_remote_conn_req);
+	if (write(tcp.connfd, bdmsg, sizeof(struct uds_tcp2tcp) + sizeof(struct uds_proxy_remote_conn_req)) < 0) {
+		uds_err("send msg to tcp failed");
+		free(priv);
+		close(tcp.connfd);
+		goto end;
+	}
+
 	uds_log("step2 recv sun path:%s, add step3 event fd:%d", msg->sun_path, tcp.connfd);
 	memcpy(priv, msg, sizeof(struct uds_proxy_remote_conn_req));
 	if (uds_add_event(tcp.connfd, evt, uds_event_build_step3, priv) == NULL) {
 		uds_err("failed to add event, fd:%d", tcp.connfd);
 		// 新事件添加失败，本事件也要删除，否则残留在中间状态
 		free(priv);
+		close(tcp.connfd);
 		return EVENT_DEL;
 	}
-
+	return EVENT_OK;
 end:
+	rsp.ret = 0;
+	write(evt->fd, &rsp, sizeof(struct uds_proxy_remote_conn_rsp));
 	return EVENT_OK;
 }
 
@@ -307,6 +314,8 @@ int uds_event_build_step3(void *arg, int epfd, struct uds_event_global_var *p_ev
 	
 	struct uds_event *newevt = uds_add_event(uds.sockfd, evt, uds_event_build_step4, NULL);
 	if (newevt == NULL) {
+		close(uds.sockfd);
+		uds_err("uds_add_event uds_event_build_step4 is failed\n");
 		goto event_del;
 	}
 	evt->tmout = UDS_EVENT_WAIT_TMOUT;
@@ -399,6 +408,7 @@ int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_re
 	evt->peer = uds_add_event(targ.connfd, evt, uds_event_uds2tcp, NULL);
 	if (evt->peer == NULL) {
 		uds_err("failed to add new event fd:%d", targ.connfd);
+		close(targ.connfd);
 		goto err_ack;
 	}
 	evt->handler = uds_event_tcp2uds;
@@ -724,6 +734,7 @@ int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt, i
 	}
 	if (pipe(fd) == -1) {
 		uds_err("pipe syscall error, errno:%d", errno);
+		close(tcp.connfd);
 		return EVENT_ERR;
 	}
 	if (p_pipe->dir == SCM_PIPE_READ) {
@@ -959,6 +970,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 					goto close_event;
 				if (scmfd < 0)
 					goto err;
+				if (fdnum >= MAX_FDS) {
+					uds_err("fdnum >= MAX_FDS\n");
+					continue;
+				}
 				fds[fdnum++] = scmfd;
 				uds_msg_scmfd_combine_msg(&msg, &cmsg, &msg_controllen, scmfd);
 				break;

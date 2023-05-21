@@ -302,6 +302,9 @@ struct uds_event *uds_add_event(int fd, struct uds_event *peer, int (*handler)(v
 	int hash = fd % p_uds_var->work_thread_num;
 	if (newevt == NULL || p_uds_var->efd[hash] <= 0) {
 		uds_err("alloc event failed, efd:%d hash:%d", p_uds_var->efd[hash], hash);
+		if(newevt != NULL) {
+			free(newevt);
+		}
 		return NULL;
 	}
 
@@ -378,12 +381,13 @@ struct uds_event *uds_init_unix_listener(const char *addr, int (*handler)(void *
 	struct uds_conn_arg *parg = &arg;
 
 	parg->cs = UDS_SOCKET_SERVER;
-	strncpy(parg->sun_path, addr, sizeof(parg->sun_path));
+	strncpy(parg->sun_path, addr, sizeof(parg->sun_path) - 1);
 	parg->udstype = SOCK_STREAM;
 	if (uds_build_unix_connection(parg) != 0)
 		return NULL;
 	udsevt = uds_add_event(parg->sockfd, NULL, handler, NULL);
 	if (udsevt == NULL) {
+		close(parg->sockfd);
 		uds_err("add unix listener event failed.");
 		return NULL;
 	}
@@ -493,6 +497,7 @@ int uds_env_prepare()
 	if ((dir = opendir(UDS_BUILD_CONN_DIR)) == NULL) {
 		if (mkdir(UDS_BUILD_CONN_DIR, 0600) < 0) {
 			uds_err("mkdir %s failed.", UDS_BUILD_CONN_DIR);
+			return EVENT_ERR;
 		}
 	} else {
 		closedir(dir);
@@ -580,19 +585,22 @@ static int uds_glob_var_init(char *argv[])
 
 	p_uds_var->work_thread = (struct uds_thread_arg *)malloc(sizeof(struct uds_thread_arg) * p_uds_var->work_thread_num);
 	if (p_uds_var->work_thread == NULL) {
+		free(p_uds_var->efd);
 		uds_err("work thread var malloc failed.");
 		return -1;
 	}
 	p_uds_var->tcp.port = atoi(argv[3]);
 	strncpy(p_uds_var->tcp.addr, argv[2], sizeof(p_uds_var->tcp.addr) - 1);
 	p_uds_var->tcp.peerport = atoi(argv[5]);
-	strncpy(p_uds_var->tcp.peeraddr, argv[4], sizeof(p_uds_var->tcp.addr));
+	strncpy(p_uds_var->tcp.peeraddr, argv[4], sizeof(p_uds_var->tcp.peeraddr) - 1);
 
 	uds_log("uds proxy param thread num:%d ip:%s port:%u peerip:%s port:%u",
 			p_uds_var->work_thread_num, p_uds_var->tcp.addr, p_uds_var->tcp.port,
 			 p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
 	g_event_var = (struct uds_event_global_var *)malloc(sizeof(struct uds_event_global_var) * p_uds_var->work_thread_num);
 	if (g_event_var == NULL) {
+		free(p_uds_var->efd);
+		free(p_uds_var->work_thread);
 		uds_err("event variable malloc failed");
 		return -1;
 	}
