@@ -36,6 +36,7 @@
 #include <glib.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
+#include <sys/file.h>
 
 #include "comm.h"
 #include "uds_main.h"
@@ -616,6 +617,15 @@ void uds_helpinfo(char *argv[])
 	return;
 }
 
+int check_socket_lock(void)
+{
+	int lock_fd = open(UDS_LOCK_ADDR, O_RDONLY | O_CREAT, 0600);
+	if (lock_fd == -1)
+		return -EINVAL;
+
+	return flock(lock_fd, LOCK_EX | LOCK_NB);
+}
+
 #ifdef QTFS_SERVER
 int uds_proxy_main(int argc, char *argv[])
 {
@@ -635,6 +645,12 @@ int main(int argc, char *argv[])
 		uds_err("proxy prepare environment failed.");
 		return -1;
 	}
+
+	if (check_socket_lock() < 0) {
+		uds_err("another proxy running");
+		return -1;
+	}
+
 	if (uds_hash_init() != EVENT_OK) {
 		uds_err("proxy hash init failed.");
 		return -1;

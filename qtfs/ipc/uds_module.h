@@ -19,6 +19,7 @@
 #define UDS_BUILD_CONN_ADDR 	"/var/run/qtfs/remote_uds.sock"
 #define UDS_DIAG_ADDR 		"/var/run/qtfs/uds_proxy_diag.sock"
 #define UDS_LOGLEVEL_UPD 	"/var/run/qtfs/uds_loglevel.sock"
+#define UDS_LOCK_ADDR		"/var/run/qtfs/uds.lock"
 #define UDS_BUILD_CONN_DIR 	"/var/run/qtfs/"
 
 #define UDS_PROXY_SUFFIX ".proxy"
