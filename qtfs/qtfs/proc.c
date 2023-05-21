@@ -163,6 +163,7 @@ struct dentry *qtfs_proc_lookup(struct inode *parent_inode, struct dentry *child
 		path_put(&spath);
 
 		kfree(tmp);
+		tmp = NULL;
 		inode = qtfs_iget(parent_inode->i_sb, &ii);
 		if (inode == NULL) {
 			qtfs_err("%s: failed to get inode for %s", __func__, cpath);

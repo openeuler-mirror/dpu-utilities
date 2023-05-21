@@ -318,10 +318,6 @@ void qtfs_conn_msg_clear(struct qtfs_conn_var_s *pvar)
 void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir)
 {
 	struct qtreq *req = (dir == QTFS_SEND) ? pvar->vec_send.iov_base : pvar->vec_recv.iov_base;
-	if (!req) {
-		WARN_ON(1);
-		return NULL;
-	}
 	return req->data;
 }
 

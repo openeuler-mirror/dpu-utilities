@@ -30,6 +30,10 @@ static int miss_open(struct qtreq *miss)
 	struct qtreq_close *req;
 	struct qtrsp_close *rsp;
 	struct qtfs_conn_var_s *pvar = NULL;
+	if (missrsp == NULL) {
+		qtfs_err("input response is NULL.");
+		return QTFS_ERR;
+	}
 	if (missrsp->ret == QTFS_ERR)
 		return QTFS_OK; // no need to close
 
@@ -42,12 +46,11 @@ static int miss_open(struct qtreq *miss)
 	req->fd = missrsp->fd;
 	qtfs_err("miss open proc fd:%d.", req->fd);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_CLOSE, sizeof(struct qtreq_close));
+	qtfs_conn_put_param(pvar);
 	if (IS_ERR_OR_NULL(rsp)) {
-		qtfs_conn_put_param(pvar);
 		return QTFS_ERR;
 	}
 
-	qtfs_conn_put_param(pvar);
 	return QTFS_OK;
 }
 
