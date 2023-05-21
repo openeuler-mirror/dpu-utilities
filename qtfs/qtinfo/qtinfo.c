@@ -276,7 +276,7 @@ static int qtinfo_opt_l(int fd, char *level)
 
 	ret = ioctl(fd, QTFS_IOCTL_LOGLEVEL, level);
 	if (ret != QTOK) {
-		qtinfo_out("Set qtfs log level:%s failed.", level);
+		qtinfo_err("Set qtfs log level:%s failed.", level);
 		return ret;
 	}
 	qtinfo_out("Set qtfs log level to %s success.", level);
