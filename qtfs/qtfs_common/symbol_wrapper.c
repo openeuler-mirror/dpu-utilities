@@ -178,13 +178,13 @@ void qtfs_syscall_replace_stop(void)
 {
 #ifdef __x86_64__
 	make_rw((unsigned long)qtfs_kern_syms.sys_call_table);
-	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_CONNECT];
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (void *)qtfs_kallsyms_lookup_name("__x64_sys_connect");
 	make_ro((unsigned long)qtfs_kern_syms.sys_call_table);
 #endif
 
 #ifdef __aarch64__
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL);
-	qtfs_kern_syms.sys_call_table[__NR_connect] = (unsigned long *)symbols_origin[SYMBOL_SYSCALL_CONNECT];
+	qtfs_kern_syms.sys_call_table[__NR_connect] = (void *)qtfs_kallsyms_lookup_name("__arm64_sys_connect");
 	update_mapping_prot(__pa_symbol(start_rodata), (unsigned long)start_rodata, section_size, PAGE_KERNEL_RO);
 #endif
 	return;
