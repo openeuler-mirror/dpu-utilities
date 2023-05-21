@@ -190,11 +190,7 @@ connecting:
 	}
 end:
 	g_qtfs_epoll_thread = NULL;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0))
 	return 0;
-#else
-	do_exit(0);
-#endif
 }
 
 struct file_operations qtfs_misc_fops = {

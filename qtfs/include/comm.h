@@ -27,6 +27,8 @@
 #define QTSOCK_WL_MAX_NUM 64
 #define QTFS_WL_MAX_NUM 64 // QTFS server white list
 
+#define QTFS_USERP_MAXSIZE 65536
+
 #define QTFS_MAX_EPEVENTS_NUM 64
 
 extern struct qtinfo *qtfs_diag_info;

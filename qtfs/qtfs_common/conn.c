@@ -208,7 +208,7 @@ int qtfs_uds_remote_init(void)
 void qtfs_uds_remote_exit(void)
 {
 	int i = 0;
-	read_lock(&qtsock_wl.rwlock);
+	write_lock(&qtsock_wl.rwlock);
 	for (i = 0; i < qtsock_wl.nums; i++) {
 		if (qtsock_wl.wl[i]) {
 			kfree(qtsock_wl.wl[i]);
@@ -220,7 +220,7 @@ void qtfs_uds_remote_exit(void)
 		qtsock_wl.wl = NULL;
 	}
 	qtsock_wl.nums = 0;
-	read_unlock(&qtsock_wl.rwlock);
+	write_unlock(&qtsock_wl.rwlock);
 	return;
 }
 

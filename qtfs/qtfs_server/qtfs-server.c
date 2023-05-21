@@ -196,8 +196,17 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
-			for (i = 0; i < init_userp.thread_nums; i++)
+			for (i = 0; i < init_userp.thread_nums; i++) {
+				if (qtfs_userps[i].size > QTFS_USERP_MAXSIZE || 
+					!access_ok(qtfs_userps[i].userp, qtfs_userps[i].size) || 
+					!access_ok(qtfs_userps[i].userp2, qtfs_userps[i].size)) {
+					qtfs_err("userp set failed");
+					ret = QTERROR;
+					write_unlock(&g_userp_rwlock);
+					break;
+				}
 				qtfs_info("userp set idx:%d size:%lu", i, qtfs_userps[i].size);
+			}
 			write_unlock(&g_userp_rwlock);
 			break;
 		case QTFS_IOCTL_THREAD_RUN:
@@ -230,6 +239,18 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
+			if (qtfs_epoll.epfd < 3) {
+				qtfs_err("epoll epfd set failed, epfd:%d should be greater than 2", qtfs_epoll.epfd);
+				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
+				break;
+			}
+			if (!access_ok(qtfs_epoll.events, qtfs_epoll.event_nums * sizeof(struct epoll_event))) {
+				qtfs_err("epoll events set failed, check pointer of qtfs_epoll.events failed");
+				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
+				break;
+			}
 			qtfs_info("epoll arg set, epfd:%d event nums:%d events.",
 						qtfs_epoll.epfd, qtfs_epoll.event_nums);
 			qtfs_epoll.kevents = (struct epoll_event *)kmalloc(sizeof(struct epoll_event) *
@@ -246,12 +267,13 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			ret = qtfs_server_epoll_init();
 			break;
 		case QTFS_IOCTL_EPOLL_THREAD_RUN:
+			write_lock(&qtfs_epoll_rwlock);
 			if (qtfs_epoll_var == NULL) {
 				qtfs_err("qtfs epoll thread run failed, var is invalid.");
 				ret = QTERROR;
+				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
-			write_lock(&qtfs_epoll_rwlock);
 			ret = qtfs_server_epoll_thread(qtfs_epoll_var);
 			write_unlock(&qtfs_epoll_rwlock);
 			if (ret == QTEXIT) {
@@ -265,6 +287,14 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				ret = QTERROR;
 				break;
 			}
+			write_lock(&g_whitelist_rwlock);
+			for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
+				if (g_whitelist[i] != NULL) {
+					kfree(g_whitelist[i]);
+					g_whitelist[i] = NULL;
+				}
+			}
+			write_unlock(&g_whitelist_rwlock);
 			qtfs_info("qtfs server threads run set to:%lu.", arg);
 			qtfs_server_thread_run = arg;
 			break;
@@ -299,7 +329,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 			g_whitelist[tmp->type] = tmp;
 			for (i = 0; i < g_whitelist[tmp->type]->len; i++) {
-				if (strlen(g_whitelist[tmp->type]->wl[i].path) != g_whitelist[tmp->type]->wl[i].len) {
+				if (strnlen(g_whitelist[tmp->type]->wl[i].path, WHITELIST_MAX_PATH_LEN) != g_whitelist[tmp->type]->wl[i].len) {
 					g_whitelist[tmp->type] = NULL;
 					kfree(tmp);
 					write_unlock(&g_whitelist_rwlock);
