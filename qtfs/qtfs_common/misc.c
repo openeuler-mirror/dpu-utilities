@@ -210,7 +210,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				goto err_end;
 			}
 			write_lock(&qtsock_wl.rwlock);
-			if (name->len < 0 || name->len > MAX_PATH_LEN - 1) {
+			if (name->len <= 0 || name->len > MAX_PATH_LEN - 1) {
 				qtfs_err("invalid whitelist itern length: %d!", name->len);
 				write_unlock(&qtsock_wl.rwlock);
 				__putname(name);
