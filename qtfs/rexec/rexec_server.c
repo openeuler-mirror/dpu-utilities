@@ -459,6 +459,10 @@ static void rexec_server_mainloop()
         close(main_epoll_fd);
         return;
     }
+    if (chmod(REXEC_UDS_CONN, 0600) < 0) {
+	rexec_err("failed to set uds sock file mode:%s errno:%d", REXEC_UDS_CONN, errno);
+	return;
+    }
     if (rexec_set_inherit(ser.sockfd, false) < 0) {
         rexec_err("cs conn fd fd set inherit to false failed.");
     }
