@@ -96,8 +96,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 		for (i = 0; i < n; i++) {
 			req->events[i].data = qtfs_epoll.kevents[i].data;
 			req->events[i].events = qtfs_epoll.kevents[i].events;
-			qtfs_info("epoll thread head req:%lx data:%lx(offset:%lx).",
-											(unsigned long)req, req->events[i].data, (unsigned long)&req->events[i].data);
+			qtfs_info("epoll thread head req:%lx.", (unsigned long)req);
 		}
 		req->event_nums = n;
 		sendlen = sizeof(struct qtreq_epollevt) - sizeof(req->events) + n * sizeof(struct qtreq_epoll_event);

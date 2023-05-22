@@ -139,7 +139,7 @@ int uds_event_pre_hook(struct uds_event_global_var *p_event_var)
 int uds_event_post_hook(struct uds_event_global_var *p_event_var)
 {
 	for (int i = 0; i < p_event_var->cur; i++) {
-		uds_log("event:%lx fd:%d free by its peer", p_event_var->tofree[i], p_event_var->tofree[i]->fd);
+		uds_log("event:%d fd:%d free by its peer", i, p_event_var->tofree[i]->fd);
 		uds_del_event(p_event_var->tofree[i]);
 	}
 	return 0;
@@ -519,7 +519,7 @@ static int uds_msg_scm_regular_file(int scmfd, int tcpfd, struct uds_event_globa
 	struct uds_msg_scmrights *p_scmr = (struct uds_msg_scmrights *)&p_msg->data;
 	char *fdproc = calloc(1, UDS_PATH_MAX);
 	if (fdproc == NULL) {
-		uds_err("failed to calloc memory:%lx", fdproc);
+		uds_err("failed to calloc memory");
 		return EVENT_ERR;
 	}
 	sprintf(fdproc, "/proc/self/fd/%d", scmfd);

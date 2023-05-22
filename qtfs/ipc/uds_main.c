@@ -527,10 +527,10 @@ void uds_hash_destroy()
 int uds_hash_insert_dirct(GHashTable *table, int key, struct uds_event *value)
 {
 	if (g_hash_table_insert(table, (gpointer)key, value) == 0) {
-		uds_err("Hash table key:%d value:0x%lx is already exist, update it.", key, value);
+		uds_err("Hash table key:%d is already exist, update it.", key);
 		return -1;
 	}
-	uds_log("Hash insert key:%d value:0x%lx", key, value);
+	uds_log("Hash insert key:%d", key);
 	return 0;
 }
 
