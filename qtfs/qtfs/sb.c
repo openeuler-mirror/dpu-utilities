@@ -852,8 +852,11 @@ int qtfs_new_entry(struct inode *inode, struct dentry *dentry)
 	if (IS_ERR(d)) {
 		return PTR_ERR(d);
 	}
-	if (d)
+	if (d) {
+		if (d->d_inode && S_ISDIR(d->d_inode->i_mode))
+			d->d_time = jiffies;
 		dput(d);
+	}
 	return 0;
 }
 
@@ -1083,6 +1086,10 @@ struct dentry *qtfs_lookup(struct inode *parent_inode, struct dentry *child_dent
 	d = d_splice_alias(inode, child_dentry);
 	qtfs_debug("qtfs lookup fullname:%s mode:%o(rsp:%o), ino:%lu(rsp:%lu).",
 			req->fullname, inode->i_mode, rsp->inode_info.mode, inode->i_ino, rsp->inode_info.i_ino);
+	if (d) {
+		if (d->d_inode && S_ISDIR(d->d_inode->i_mode))
+			d->d_time = jiffies;
+	}
 
 	qtfs_conn_put_param(pvar);
 	return d;
@@ -1292,6 +1299,8 @@ int qtfs_getattr(const struct path *path, struct kstat *stat, u32 req_mask, unsi
 		return ret;
 	}
 	*stat = rsp->stat;
+	if (path->dentry && path->dentry->d_inode && S_ISDIR(path->dentry->d_inode->i_mode))
+		path->dentry->d_time = jiffies;
 	qtfs_debug("qtfs getattr success:<%s> blksiz:%u size:%lld mode:%o ino:%llu pathino:%lu. %s\n", req->path, rsp->stat.blksize,
 			rsp->stat.size, rsp->stat.mode, rsp->stat.ino, inode->i_ino, rsp->stat.ino != inode->i_ino ? "delete current inode" : "");
 	if (inode->i_ino != rsp->stat.ino || inode->i_mode != rsp->stat.mode) {
@@ -1493,6 +1502,40 @@ const struct xattr_handler *qtfs_xattr_handlers[] = {
 	NULL
 };
 
+int qtfs_dentry_revalidate(struct dentry *dentry, unsigned int flags)
+{
+	struct qtfs_conn_var_s *pvar = NULL;
+	struct qtreq_mount *req = NULL;
+	struct qtrsp_mount *rsp = NULL;
+
+	// 1 means valid; 0 means invalid
+	if (dentry && dentry->d_inode && S_ISDIR(dentry->d_inode->i_mode)) {
+		if (jiffies - dentry->d_time < 2000)
+			return 1;
+
+		pvar = qtfs_conn_get_param();
+		if (!pvar)
+			return 0;
+
+		req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
+		qtfs_fullname(req->path, dentry, PATH_MAX);
+		rsp = qtfs_remote_run(pvar, QTFS_REQ_MOUNT, strlen(req->path));
+		if (IS_ERR_OR_NULL(rsp) || rsp->ret != QTFS_OK) {
+			qtfs_conn_put_param(pvar);
+			return 0;
+		}
+
+		qtfs_conn_put_param(pvar);
+		dentry->d_time = jiffies;
+		return 1;
+	}
+	return 1;
+}
+
+const struct dentry_operations qtfs_dentry_ops = {
+	.d_revalidate = qtfs_dentry_revalidate,
+};
+
 static int qtfs_fill_super(struct super_block *sb, void *priv_data, int silent)
 {
 	struct inode *root_inode;
@@ -1526,6 +1569,7 @@ static int qtfs_fill_super(struct super_block *sb, void *priv_data, int silent)
 	sb->s_fs_info = priv;
 	sb->s_op = &qtfs_ops;
 	sb->s_time_gran = 1;
+	sb->s_d_op = &qtfs_dentry_ops;
 
 	sb->s_root = d_make_root(root_inode);
 	return 0;
