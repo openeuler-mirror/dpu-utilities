@@ -4,7 +4,7 @@ Path=/proc/sys/kernel/sched_autogroup_enabled;/proc/sys/vm;/sys/bus/pci;/sys/dev
 [Write]
 Path=/proc/sys/kernel/sched_autogroup_enabled;/proc/sys/vm;/sys/bus/pci;/sys/devices/pic;/sys/devices/system/node;/sys/kernel/mm;/sys/fs/cgroup;/home/VMs;/sys/fs/cgroup;/var/lib/libvirt/qemu
 
-[Readiter]
+[Read]
 Path=/sys/module/kvm;/proc;/home/VMs;/sys/kernel/mm/transparent_hugepage;/sys/devices/system/cpu/online;/sys/devices/system/node;/sys/devices;/sys/firmware;/var/lib/libvirt/qemu;/sys/fs/cgroup
 
 [Readdir]
@@ -33,3 +33,4 @@ Path=/sys/bus/pci/drivers/pcieport/unbind;/sys/bus/pci/drivers_probe;/sys/device
 
 [Mount]
 Path=/home/VMs;/var/lib/libvirt;/proc;/sys;/dev/pts;/dev/vfio
+

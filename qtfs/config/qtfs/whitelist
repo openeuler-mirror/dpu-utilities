@@ -4,7 +4,7 @@ Path=/var/lib/libvirt/qemu
 [Write]
 Path=/var/lib/libvirt/qemu
 
-[Readiter]
+[Read]
 Path=/var/lib/libvirt/qemu
 
 [Readdir]
