@@ -1324,8 +1324,8 @@ int qtfs_setattr(struct dentry *dentry, struct iattr *attr)
 	QTFS_FULLNAME(req->path, dentry, sizeof(req->path));
 	req->attr = *attr;
 	req->attr.ia_file = NULL;
-	qtfs_info("iattr iavalid:%u mode:0x%o size:%lld file:0x%lx\n",
-			req->attr.ia_valid, req->attr.ia_mode, req->attr.ia_size, (unsigned long)req->attr.ia_file);
+	qtfs_info("iattr iavalid:%u mode:0x%o size:%lld\n",
+			req->attr.ia_valid, req->attr.ia_mode, req->attr.ia_size);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_SETATTR, QTFS_SEND_SIZE(struct qtreq_setattr, req->path));
 	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);

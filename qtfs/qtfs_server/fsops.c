@@ -806,8 +806,8 @@ static int handle_setattr(struct qtserver_arg *arg)
 		goto end;
 	}
 
-	qtfs_info("handle setattr iattr success iavalid:%u mode:%o size:%lld file:0x%lx\n",
-			req->attr.ia_valid, req->attr.ia_mode, req->attr.ia_size, (unsigned long)req->attr.ia_file);
+	qtfs_info("handle setattr iattr success iavalid:%u mode:%o size:%lld\n",
+			req->attr.ia_valid, req->attr.ia_mode, req->attr.ia_size);
 	rsp->ret = QTFS_OK;
 
 end:
@@ -1412,8 +1412,8 @@ int handle_epollctl(struct qtserver_arg *arg)
 	}
 	qtinfo_cntinc((req->op == EPOLL_CTL_ADD) ? QTINF_EPOLL_ADDFDS : QTINF_EPOLL_DELFDS);
 	rsp->ret = QTFS_OK;
-	qtfs_info("handle do epoll ctl success, fd:%d op:%x data:%lx poll_t:%x.",
-			req->fd, req->op, req->event.data, (unsigned)req->event.events);
+	qtfs_info("handle do epoll ctl success, fd:%d op:%x poll_t:%x.",
+			req->fd, req->op, (unsigned)req->event.events);
 
 	return sizeof(struct qtrsp_epollctl);
 }
