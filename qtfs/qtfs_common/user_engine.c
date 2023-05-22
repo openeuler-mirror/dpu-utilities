@@ -271,8 +271,7 @@ int qtfs_whitelist_init(int fd)
 		if (ret != 0) {
 			engine_err("failed to set whitelist item %s, get error:%d", wl_type_str[i], ret);
 			// failure of one whitelist type should not stop others.
-			g_key_file_free(config);
-			return -1;
+			continue;
 		}
 		if (i == QTFS_WHITELIST_MOUNT)
 			mount_whitelist = 1;
