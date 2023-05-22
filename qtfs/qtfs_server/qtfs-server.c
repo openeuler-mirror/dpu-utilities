@@ -178,7 +178,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
-			if (qtfs_userps == NULL || init_userp.thread_nums > QTFS_MAX_THREADS) {
+			if (qtfs_userps == NULL || init_userp.thread_nums > QTFS_MAX_THREADS || init_userp.thread_nums == 0) {
 				qtfs_err("qtfs ioctl thread init userps invalid thread nums:%d.", init_userp.thread_nums);
 				write_unlock(&g_userp_rwlock);
 				return QTERROR;
@@ -232,7 +232,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				write_unlock(&qtfs_epoll_rwlock);
 				break;
 			}
-			if (qtfs_epoll.event_nums > QTFS_MAX_EPEVENTS_NUM) {
+			if (qtfs_epoll.event_nums > QTFS_MAX_EPEVENTS_NUM || qtfs_epoll.event_nums == 0) {
 				qtfs_err("epoll arg set failed, event nums:%d too big", qtfs_epoll.event_nums);
 				ret = QTERROR;
 				write_unlock(&qtfs_epoll_rwlock);
@@ -302,7 +302,7 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				qtfs_err("qtfs ioctl white init copy from user failed.");
 				return QTERROR;
 			}
-			if (len < 0 || len > QTFS_WL_MAX_NUM) {
+			if (len <= 0 || len > QTFS_WL_MAX_NUM) {
 				qtfs_err("qtfs ioctl white list len:%d invalid", len);
 				return QTERROR;
 			}

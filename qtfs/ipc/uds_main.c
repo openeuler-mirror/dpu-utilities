@@ -470,10 +470,18 @@ void uds_thread_create()
 	if ((logevt = uds_init_unix_listener(UDS_LOGLEVEL_UPD, uds_event_debug_level)) == NULL)
 		goto end2;
 
+	if (chmod(UDS_BUILD_CONN_ADDR, UDS_FILE_MODE) < 0 ||
+		chmod(UDS_DIAG_ADDR, UDS_FILE_MODE) < 0 ||
+		chmod(UDS_LOGLEVEL_UPD, UDS_FILE_MODE) < 0) {
+		uds_err("set sock file mode to %o failed, errno:%d", UDS_FILE_MODE, errno);
+		goto end3;
+	}
+
 	ret = uds_thread_execute();
 	if (ret < 0) {
 		uds_err("uds create thread failed.");
 	}
+end3:
 	uds_del_event(logevt);
 end2: 
 	uds_del_event(diagevt);

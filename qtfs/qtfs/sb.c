@@ -115,12 +115,17 @@ static inline char *qtfs_mountpoint_path_init(struct dentry *dentry, struct path
 			}
 		}
 		len = strlen(ret);
+		if (len == 0) {
+			qtfs_err("mount path len invalid.");
+			goto end;
+		}
 		fsinfo->mnt_path = (char *)kmalloc(len + 1, GFP_KERNEL);
 		if (fsinfo->mnt_path) {
 			strlcpy(fsinfo->mnt_path, ret, len + 1);
 		}
 		qtfs_debug("d_absolute_path get mnt path:%s", fsinfo->mnt_path);
 	}
+end:
 	path_put(path);
 	__putname(name);
 	return fsinfo->mnt_path;
@@ -1387,7 +1392,7 @@ const char *qtfs_getlink(struct dentry *dentry,
 		len = strlen(fsinfo->mnt_path) + strlen(rsp->path) + 1;
 	else
 		len = strlen(rsp->path) + 1;
-	if (len > MAX_PATH_LEN) {
+	if (len > MAX_PATH_LEN || len == 0) {
 		qtfs_err("qtfs getlink failed. path name too long:%s - %s\n", fsinfo->mnt_path, rsp->path);
 		qtfs_conn_put_param(pvar);
 		return ERR_PTR(-EINVAL);
