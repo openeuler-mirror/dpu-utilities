@@ -558,7 +558,7 @@ int main(int argc, char *argv[])
         return -1;
     }
     if (access(REXEC_RUN_PATH, F_OK) != 0) {
-        mkdir(REXEC_RUN_PATH, 0755);
+        mkdir(REXEC_RUN_PATH, 0700);
     }
 
     if (check_socket_lock() < 0) {

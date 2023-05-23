@@ -263,9 +263,9 @@ end:
 void rexec_create_pidmap_path()
 {
     if (access(REXEC_RUN_PATH, F_OK) != 0) {
-        mkdir(REXEC_RUN_PATH, 0755);
+        mkdir(REXEC_RUN_PATH, 0700);
     }
-    mkdir(REXEC_PIDMAP_PATH, 0755);
+    mkdir(REXEC_PIDMAP_PATH, 0700);
     return;
 }
 
