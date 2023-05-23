@@ -263,7 +263,9 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			write_unlock(&qtfs_epoll_rwlock);
 			break;
 		case QTFS_IOCTL_EPOLL_THREAD_INIT:
+			write_lock(&qtfs_epoll_rwlock);
 			ret = qtfs_server_epoll_init();
+			write_unlock(&qtfs_epoll_rwlock);
 			break;
 		case QTFS_IOCTL_EPOLL_THREAD_RUN:
 			write_lock(&qtfs_epoll_rwlock);
