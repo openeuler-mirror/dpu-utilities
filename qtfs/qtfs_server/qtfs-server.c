@@ -323,6 +323,11 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				kfree(tmp);
 				return QTERROR;
 			}
+			if (tmp->len != len) {
+				qtfs_err("memory of qtfs white list from engine was tampered.");
+				kfree(tmp);
+				return QTERROR;
+			}
 			write_lock(&g_whitelist_rwlock);
 			if (g_whitelist[tmp->type] != NULL) {
 				kfree(g_whitelist[tmp->type]);
