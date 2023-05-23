@@ -183,18 +183,11 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case QTFS_IOCTL_QTSOCK_WL_ADD: {
 			struct qtsock_whitelist *name;
 			struct qtsock_whitelist head;
-			read_lock(&qtsock_wl.rwlock);
-			if (qtsock_wl.nums < 0 || qtsock_wl.nums >= QTSOCK_WL_MAX_NUM) {
-				qtfs_err("qtsock white list num:%d cant add any more.", qtsock_wl.nums);
-				read_unlock(&qtsock_wl.rwlock);
-				goto err_end;
-			}
-			read_unlock(&qtsock_wl.rwlock);
 			if (copy_from_user(&head, (void *)arg, sizeof(struct qtsock_whitelist))) {
 				qtfs_err("ioctl qtsock wl add copy from user failed");
 				goto err_end;
 			}
-			if (head.len < 0 || head.len >= PATH_MAX - sizeof(struct qtsock_whitelist)) {
+			if (head.len <= 0 || head.len >= MAX_PATH_LEN - sizeof(struct qtsock_whitelist) - 1) {
 				qtfs_err("invalid qtsock whitelist add head length:%d!", head.len);
 				goto err_end;
 			}
@@ -203,17 +196,22 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				qtfs_err("failed to getname during qtsock whitelist add!");
 				goto err_end;
 			}
-			memset(name, 0, PATH_MAX);
+			memset(name, 0, MAX_PATH_LEN);
 			if (copy_from_user(name, (void *)arg, sizeof(struct qtsock_whitelist) + head.len)) {
 				qtfs_err("ioctl qtsock failed");
 				__putname(name);
 				goto err_end;
 			}
-			write_lock(&qtsock_wl.rwlock);
-			if (name->len <= 0 || name->len > MAX_PATH_LEN - 1) {
+			if (name->len <= 0 || name->len >= MAX_PATH_LEN - sizeof(struct qtsock_whitelist) - 1) {
 				qtfs_err("invalid whitelist itern length: %d!", name->len);
-				write_unlock(&qtsock_wl.rwlock);
 				__putname(name);
+				goto err_end;
+			}
+			write_lock(&qtsock_wl.rwlock);
+			if (qtsock_wl.nums < 0 || qtsock_wl.nums >= QTSOCK_WL_MAX_NUM) {
+				qtfs_err("qtsock white list num:%d cant add any more.", qtsock_wl.nums);
+				__putname(name);
+				write_unlock(&qtsock_wl.rwlock);
 				goto err_end;
 			}
 			qtsock_wl.wl[qtsock_wl.nums] = (char *)kmalloc(name->len + 1, GFP_KERNEL);
