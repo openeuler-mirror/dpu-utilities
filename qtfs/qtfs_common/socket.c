@@ -4,6 +4,7 @@
 #include <linux/tcp.h>
 #include <net/tcp.h>
 #include <linux/un.h>
+#include <linux/vm_sockets.h>
 
 #include "comm.h"
 #include "conn.h"
@@ -166,10 +167,20 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock;
 	int ret;
+	int sock_family = AF_VSOCK;
+#ifdef QTFS_TEST_MODE
 	struct sockaddr_in saddr;
-	saddr.sin_family = AF_INET;
+	sock_family = AF_INET;
+	saddr.sin_family = sock_family;
 	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
 	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
+#else
+	struct sockaddr_vm saddr;
+	sock_family = AF_VSOCK;
+	saddr.svm_family = sock_family;
+	saddr.svm_port = htonl(pvar->conn_var.sock_var.vm_port);
+	saddr.svm_cid = htonl(pvar->conn_var.sock_var.vm_cid);
+#endif
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar) && qtfs_server_main_sock != NULL) {
 		qtfs_info("qtfs server main sock is set, valid or out-of-date?");
@@ -181,7 +192,7 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	}
 	qtfs_info("qtfs sock server init enter threadidx:%d", pvar->cur_threadidx);
 
-	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
+	ret = sock_create_kern(&init_net, sock_family, SOCK_STREAM, 0, &sock);
 	if (ret) {
 		qtfs_err("qtfs sock server init create sock failed.\n");
 		goto err_end;
@@ -190,7 +201,7 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	sock_set_reuseaddr(sock->sk);
 	QTSOCK_SET_KEEPX(sock, 5);
 
-	ret = sock->ops->bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
+	ret = sock->ops->bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
 	if (ret < 0) {
 		qtfs_err("qtfs sock server bind error: %d.\n", ret);
 		goto err_end;
@@ -222,16 +233,21 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 {
 	struct socket *sock = pvar->conn_var.sock_var.client_sock;
 	int ret;
+#ifdef QTFS_TEST_MODE
 	struct sockaddr_in saddr;
-
+	saddr.sin_family = AF_INET;
+	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
+	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
+#else
+	struct sockaddr_vm saddr;
+	saddr.svm_family = AF_VSOCK;
+	saddr.svm_port = htonl(pvar->conn_var.sock_var.vm_port);
+	saddr.svm_cid = htonl(pvar->conn_var.sock_var.vm_cid);
+#endif
 	if (!sock) {
 		qtfs_err("Invalid client sock, which is null\n");
 		return -EINVAL;
 	}
-
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
-	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
 
 	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), SOCK_NONBLOCK);
 	if (ret < 0) {
@@ -248,7 +264,11 @@ static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
 	struct socket *sock;
 	int ret;
 
+#ifdef QTFS_TEST_MODE
 	ret = sock_create_kern(&init_net, AF_INET, SOCK_STREAM, 0, &sock);
+#else
+	ret = sock_create_kern(&init_net, AF_VSOCK, SOCK_STREAM, 0, &sock);
+#endif
 	if (ret) {
 		qtfs_err("qtfs sock client init create sock failed.\n");
 		return -EFAULT;

@@ -88,6 +88,10 @@ struct qtfs_sock_var_s {
 	struct socket *client_sock;
 	char addr[20];
 	unsigned short port;
+
+	// for vsock
+	unsigned int vm_port;
+	unsigned int vm_cid;
 };
 
 struct qtfs_pvar_ops_s {
