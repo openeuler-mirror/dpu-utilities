@@ -40,18 +40,21 @@ qtfs的特性：
 服务端安装：
     
     1. cd qtfs_server
-    2. make clean && make
+    2. make clean && make -j
     3. insmod qtfs_server.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
-    4. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
+    4. 配置白名单，将qtfs/config/qtfs/whitelist文件拷贝至/etc/qtfs/下，请手动配置需要的白名单选项，至少需要配置一个Mount白名单才能启动后续服务。
+    5. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
+    Tips: 默认的qtfs连接使用vsock方式，如果需要在两台虚拟机或服务器之间使用网络测试本项目，请在第二步make命令后加上调试选项，即make -j QTFS_TEST_MODE=1。该模式暴露网络端口，有可能造成安全隐患，请谨慎使用。
 
 客户端安装：
     
     1. cd qtfs
-    2. make clean && make
+    2. make clean && make -j
     3. insmod qtfs.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
 	4. cd ../ipc/
 	5. make clean && make && make install
 	6. nohup udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &
+	Tips: 默认的qtfs连接使用vsock方式，如果需要在两台虚拟机或服务器之间使用网络测试本项目，请在第二步make命令后加上调试选项，即make -j QTFS_TEST_MODE=1。该模式暴露网络端口，有可能造成安全隐患，请谨慎使用。
 
 ## 使用说明
 

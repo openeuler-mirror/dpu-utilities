@@ -68,8 +68,8 @@ bool in_white_list(char *path, int type)
 		wl_len = g_whitelist[type]->wl[i].len;
 		if (!strncmp(path, g_whitelist[type]->wl[i].path, g_whitelist[type]->wl[i].len)){
 			//到这一行说明path长度起码是大于等于wl长度，那么以下情况是不符合白名单匹配的
-			//path的wl_len字符非结束符也不是/
-			if (path[wl_len] != '\0' && path[wl_len] != '/') {
+			//wl不是以/结尾，且path的wl_len字符非结束符也不是/
+			if (g_whitelist[type]->wl[i].path[wl_len - 1] != '/' && path[wl_len] != '\0' && path[wl_len] != '/') {
 				continue;
 			}
 			in_wl = i;
