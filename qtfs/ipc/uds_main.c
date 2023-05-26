@@ -562,6 +562,8 @@ static void uds_rlimit()
 	struct rlimit lim;
 
 	getrlimit(RLIMIT_NOFILE, &lim);
+	if (lim.rlim_cur >= UDS_FD_LIMIT)
+		return;
 	uds_log("uds proxy fd cur limit:%d, change to:%d", lim.rlim_cur, UDS_FD_LIMIT);
 	lim.rlim_cur = UDS_FD_LIMIT;
 	setrlimit(RLIMIT_NOFILE, &lim);
@@ -671,7 +673,9 @@ int main(int argc, char *argv[])
 		uds_err("proxy hash init failed.");
 		return -1;
 	}
+#ifndef QTFS_SERVER
 	uds_rlimit();
+#endif
 	signal(SIGPIPE, uds_sig_pipe);
 	if (uds_glob_var_init(argv) < 0) {
 		uds_err("global var init failed.");
