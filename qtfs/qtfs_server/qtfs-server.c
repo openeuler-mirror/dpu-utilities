@@ -29,6 +29,7 @@
 
 int qtfs_server_thread_run = 1;
 DEFINE_RWLOCK(g_userp_rwlock);
+struct qtserver_fd_bitmap qtfs_fd_bitmap;
 
 long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
@@ -160,6 +161,28 @@ long qtfs_server_epoll_init(void)
 	return QTOK;
 }
 
+int qtfs_server_fd_bitmap_init(void)
+{
+	struct rlimit fd_rlim;
+	if (qtfs_fd_bitmap.bitmap != NULL) {
+		qtfs_info("free old bitmap");
+		kfree(qtfs_fd_bitmap.bitmap);
+		qtfs_fd_bitmap.bitmap = NULL;
+		qtfs_fd_bitmap.nbits = 0;
+	}
+	// fd_rlim is get from current task struct, can be trusted
+	fd_rlim = current->signal->rlim[RLIMIT_NOFILE];
+	qtfs_info("task rlimit cur:%lu max:%lu", fd_rlim.rlim_cur, fd_rlim.rlim_max);
+	qtfs_fd_bitmap.bitmap = (unsigned long *)kmalloc(BITS_TO_BYTES(fd_rlim.rlim_cur), GFP_KERNEL);
+	if (qtfs_fd_bitmap.bitmap == NULL) {
+		qtfs_err("kmalloc len:%lu failed.", BITS_TO_BYTES(fd_rlim.rlim_cur));
+		return -1;
+	}
+	qtfs_fd_bitmap.nbits = fd_rlim.rlim_cur;
+	bitmap_zero(qtfs_fd_bitmap.bitmap, qtfs_fd_bitmap.nbits);
+	return 0;
+}
+
 long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int i, len;
@@ -171,6 +194,11 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		case QTFS_IOCTL_THREAD_INIT:
 			if (!write_trylock(&g_userp_rwlock)) {
 				qtfs_err("try lock userps failed.");
+				return QTERROR;
+			}
+			if (qtfs_server_fd_bitmap_init() < 0) {
+				qtfs_err("fd bitmap init failed.");
+				write_unlock(&g_userp_rwlock);
 				return QTERROR;
 			}
 			if (copy_from_user(&init_userp, (void __user *)arg, sizeof(struct qtfs_thread_init_s))) {
@@ -391,6 +419,8 @@ static int __init qtfs_server_init(void)
 		return -1;
 	}
 	memset(qtfs_userps, 0, QTFS_MAX_THREADS * sizeof(struct qtfs_server_userp_s));
+	qtfs_fd_bitmap.bitmap = NULL;
+	qtfs_fd_bitmap.nbits = 0;
 	qtfs_conn_param_init();
 	if (qtfs_syscall_replace_start()) {
 		qtfs_err("qtfs syscall replace failed.");
@@ -438,6 +468,11 @@ static void __exit qtfs_server_exit(void)
 	if (qtfs_userps != NULL) {
 		kfree(qtfs_userps);
 		qtfs_userps = NULL;
+	}
+	if (qtfs_fd_bitmap.bitmap != NULL) {
+		kfree(qtfs_fd_bitmap.bitmap);
+		qtfs_fd_bitmap.bitmap = NULL;
+		qtfs_fd_bitmap.nbits = 0;
 	}
 	write_unlock(&g_userp_rwlock);
 

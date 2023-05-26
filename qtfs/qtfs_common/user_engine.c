@@ -31,6 +31,8 @@
 #include <glib.h>
 #include <malloc.h>
 #include <errno.h>
+#include <sys/resource.h>
+#include <sys/prctl.h>
 
 #include <sys/epoll.h>
 
@@ -332,6 +334,20 @@ err:
 	return -1;
 }
 
+#define QTFS_ENGINE_FD_LIMIT 65536
+static void engine_rlimit()
+{
+	struct rlimit lim;
+
+	getrlimit(RLIMIT_NOFILE, &lim);
+	if (lim.rlim_cur >= QTFS_ENGINE_FD_LIMIT)
+		return;
+	engine_out("engine fd cur limit:%d, change to:%d", lim.rlim_cur, QTFS_ENGINE_FD_LIMIT);
+	lim.rlim_cur = QTFS_ENGINE_FD_LIMIT;
+	setrlimit(RLIMIT_NOFILE, &lim);
+	return;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = 0;
@@ -344,6 +360,7 @@ int main(int argc, char *argv[])
 		engine_err("Environment check failed, engine exit.");
 		return -1;
 	}
+	engine_rlimit();
 	int thread_nums = atoi(argv[1]);
 	int fd = open(QTFS_SERVER_FILE, O_RDONLY);
 	if (fd < 0) {

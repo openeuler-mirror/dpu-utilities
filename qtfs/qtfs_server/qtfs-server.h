@@ -20,6 +20,7 @@ extern int qtfs_mod_exiting;
 extern struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
 extern rwlock_t g_whitelist_rwlock;
 extern rwlock_t g_userp_rwlock;
+extern struct qtserver_fd_bitmap qtfs_fd_bitmap;
 
 struct qtserver_arg {
 	char *data;
@@ -32,6 +33,11 @@ struct qtserver_ops {
 	// return int is output len.
 	int (*handle) (struct qtserver_arg *);
 	char str[32];
+};
+
+struct qtserver_fd_bitmap {
+	unsigned int nbits;
+	unsigned long *bitmap;
 };
 
 int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar);
