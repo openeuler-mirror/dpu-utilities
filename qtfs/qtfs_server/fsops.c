@@ -44,6 +44,7 @@
 #define REQ(arg) (arg->data)
 #define RSP(arg) (arg->out)
 #define USERP(arg) (arg->userp)
+DEFINE_MUTEX(fd_bitmap_lock);
 
 bool in_white_list(char *path, int type)
 {
@@ -111,13 +112,16 @@ static int handle_ioctl(struct qtserver_arg *arg)
 	struct qtreq_ioctl *req = (struct qtreq_ioctl *)REQ(arg);
 	struct qtrsp_ioctl *rsp = (struct qtrsp_ioctl *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-	if (req->d.fd < 0 || req->d.fd > qtfs_fd_bitmap.nbits || !test_bit(req->d.fd, qtfs_fd_bitmap.bitmap)) {
+	mutex_lock(&fd_bitmap_lock);
+	if (req->d.fd < 0 || qtfs_fd_bitmap.bitmap == NULL || req->d.fd > qtfs_fd_bitmap.nbits || !test_bit(req->d.fd, qtfs_fd_bitmap.bitmap)) {
+		mutex_unlock(&fd_bitmap_lock);
 		qtfs_err("ioctl invalid fd:%d", req->d.fd);
 		rsp->ret = QTFS_ERR;
 		rsp->size = 0;
 		rsp->errno = -EINVAL;
 		return sizeof(struct qtrsp_ioctl) - sizeof(rsp->buf);
 	}
+	mutex_unlock(&fd_bitmap_lock);
 
 	switch (req->d.cmd) {
 	case FS_IOC_FSGETXATTR:
@@ -272,7 +276,7 @@ int handle_open(struct qtserver_arg *arg)
 	struct qtreq_open *req = (struct qtreq_open *)REQ(arg);
 	struct qtrsp_open *rsp = (struct qtrsp_open *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
-	if (!in_white_list(req->path, QTFS_WHITELIST_OPEN)) {
+	if (!in_white_list(req->path, QTFS_WHITELIST_OPEN) || qtfs_fd_bitmap.bitmap == NULL) {
 		qtfs_err("handle open path:%s not permited", req->path);
 		rsp->ret = QTFS_ERR;
 		rsp->fd = -EACCES;
@@ -308,7 +312,9 @@ int handle_open(struct qtserver_arg *arg)
 		rsp->fd = (fd < 0) ? fd : -EINVAL;
 		return sizeof(struct qtrsp_open);
 	}
+	mutex_lock(&fd_bitmap_lock);
 	__set_bit(fd, qtfs_fd_bitmap.bitmap);
+	mutex_unlock(&fd_bitmap_lock);
 	rsp->ret = QTFS_OK;
 	rsp->fd = fd;
 	return sizeof(struct qtrsp_open);
@@ -331,11 +337,13 @@ int handle_close(struct qtserver_arg *arg)
 #else
 	rsp->ret = close_fd(req->fd);
 #endif
-	if (req->fd > qtfs_fd_bitmap.nbits || !test_bit(req->fd, qtfs_fd_bitmap.bitmap)) {
+	mutex_lock(&fd_bitmap_lock);
+	if (req->fd > qtfs_fd_bitmap.nbits || qtfs_fd_bitmap.bitmap == NULL || !test_bit(req->fd, qtfs_fd_bitmap.bitmap)) {
 		qtfs_err("close fd:%d bitmap is notset", req->fd);
 	} else {
 		__clear_bit(req->fd, qtfs_fd_bitmap.bitmap);
 	}
+	mutex_unlock(&fd_bitmap_lock);
 	qtfs_info("handle close file, fd:%d ret:%d", req->fd, rsp->ret);
 	return sizeof(struct qtrsp_close);
 }
@@ -354,11 +362,14 @@ static int handle_readiter(struct qtserver_arg *arg)
 	struct qtrsp_readiter *rsp = (struct qtrsp_readiter *)RSP(arg);
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
-	if (req->fd < 0 || req->fd > qtfs_fd_bitmap.nbits || !test_bit(req->fd, qtfs_fd_bitmap.bitmap)) {
+	mutex_lock(&fd_bitmap_lock);
+	if (req->fd < 0 || qtfs_fd_bitmap.bitmap == NULL || req->fd > qtfs_fd_bitmap.nbits || !test_bit(req->fd, qtfs_fd_bitmap.bitmap)) {
+		mutex_unlock(&fd_bitmap_lock);
 		qtfs_err("unset bitmap fd:%d is error request, fd limit:%u", req->fd, qtfs_fd_bitmap.nbits);
 		rsp->d.errno = -EINVAL;
 		goto early_end;
 	}
+	mutex_unlock(&fd_bitmap_lock);
 	file = fget(req->fd);
 	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("handle readiter error, open failed.\n");
@@ -468,10 +479,13 @@ static int handle_write(struct qtserver_arg *arg)
 	int idx = 0, leftlen = 0, ret = 0, len = 0;
 	off_t seek;
 
-	if (req->d.fd < 0 || req->d.fd > qtfs_fd_bitmap.nbits || !test_bit(req->d.fd, qtfs_fd_bitmap.bitmap)) {
+	mutex_lock(&fd_bitmap_lock);
+	if (req->d.fd < 0 || qtfs_fd_bitmap.bitmap == NULL || req->d.fd > qtfs_fd_bitmap.nbits || !test_bit(req->d.fd, qtfs_fd_bitmap.bitmap)) {
+		mutex_unlock(&fd_bitmap_lock);
 		qtfs_err("unset bitmap fd:%d is error request, fd limit:%u", req->d.fd, qtfs_fd_bitmap.nbits);
 		goto early_end;
 	}
+	mutex_unlock(&fd_bitmap_lock);
 	file = fget(req->d.fd);
 	if (IS_ERR_OR_NULL(file)) {
 		qtfs_err("qtfs handle write error, open failed.\n");
