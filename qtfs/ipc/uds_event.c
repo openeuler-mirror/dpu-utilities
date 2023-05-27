@@ -944,6 +944,10 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 				int len;
 				int scmfd;
 				struct uds_msg_scmrights *p_scm = (struct uds_msg_scmrights *) p_msg->data;
+				if (p_msg->msglen >= sizeof(p_scm->path)) {
+					uds_err("recv msg len invalid:%d", p_msg->msglen);
+					goto err;
+				}
 				memset(p_scm->path, 0, sizeof(p_scm->path));
 				// SCM RIGHTS msg proc
 				len = recv(evt->fd, p_msg->data, p_msg->msglen, MSG_WAITALL);
