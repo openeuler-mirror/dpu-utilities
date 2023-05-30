@@ -2,7 +2,7 @@
 
 ## 介绍
 
-qtfs是一个共享文件系统项目，可部署在host-dpu的硬件架构上，也可以部署在2台服务器之间。以客户端服务器的模式工作，使客户端能通过qtfs访问服务端的指定文件系统，就像访问本地文件系统一样。
+qtfs是一个共享文件系统项目，可部署在host-dpu的硬件架构上，也可以部署在host-vm或同一台host的vm-vm之间，通过vsock建立安全通信通道。以客户端服务器的模式工作，使客户端能通过qtfs访问服务端的指定文件系统，就像访问本地文件系统一样。
 
 qtfs的特性：
 + 支持挂载点传播；
@@ -24,6 +24,7 @@ qtfs的特性：
 ## 安装教程
 
 目录说明：
++ **rexec**：跨主机二进制生命周期管理组件，在该目录下编译rexec和rexec_server。
 + **ipc**: 跨主机unix domain socket协同组件，在该目录下编译udsproxyd二进制和libudsproxy.so库。
 + **qtfs**: 客户端内核模块相关代码，直接在该目录下编译客户端ko。
 + **qtfs_server**: 服务端内核模块相关代码，直接在该目录下编译服务端ko和相关程序。
@@ -31,7 +32,52 @@ qtfs的特性：
 + **demo**、**test**、**doc**: 测试程序、演示程序以及项目资料等。
 + 根目录: 是客户端与服务端都能用到的公共模块代码。
 
-首先找两台服务器（或虚拟机）配置内核编译环境：
+### VSOCK通信模式
+
+选择host-vm或同一台host上的vm-vm作为qtfs的client与server进行测试，通信通道为vsock：
+
+	1. 启动vm时为vm配置vsock通道，vm可参考如下配置，将vsock段加在devices配置内：
+```
+	<devices>
+	  ...
+	  <vsock model='virtio'>
+	    <cid auto='no' address='10'/>
+	    <alias name='vsock0'/>
+	    <address type='pci' domain='0x0000' bus='0x05' slot='0x00' function='0x0'/>
+	  </vsock>
+	  ...
+    </devices>
+```
+	2. 要求内核版本在5.10或更高版本。
+    3. 安装内核开发包：yum install kernel-devel。
+	4. 假设host服务器ip为192.168.10.10，dpu为192.168.10.11
+
+服务端安装：
+
+	1. cd qtfs_server
+    2. make clean && make -j
+    3. insmod qtfs_server.ko qtfs_server_vsock_cid=2 qtfs_server_vsock_port=12345 qtfs_log_level=WARN
+	4. 配置白名单，将qtfs/config/qtfs/whitelist文件拷贝至/etc/qtfs/下，请手动配置需要的白名单选项，至少需要配置一个Mount白名单才能启动后续服务。
+	5. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
+	Tips: 这里的cid需要根据配置决定，如果host作为server端，则cid固定配置为2，如果vm作为server端，则需要配置为前面xml中的cid字段，本例中为10。
+
+客户端安装：
+    
+    1. cd qtfs
+    2. make clean && make -j
+    3. insmod qtfs.ko qtfs_server_vsock_cid=2 qtfs_server_vsock_port=12345 qtfs_log_level=WARN
+	4. cd ../ipc/
+	5. make clean && make && make install
+	6. nohup udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &
+	Tips：这里的cid和port配置为与server端一致即可。
+
+其他注意事项：
+	
+	1. 如果vsock不通，需要检查host是否插入了vhost_vsock内核模块：modprobe vhost_vsock。
+
+### 测试模式，仅用于测试环境：
+
+找两台服务器（或虚拟机）配置内核编译环境：
 
     1. 要求内核版本在5.10或更高版本。
     2. 安装内核开发包：yum install kernel-devel。
@@ -40,29 +86,29 @@ qtfs的特性：
 服务端安装：
     
     1. cd qtfs_server
-    2. make clean && make -j
+    2. make clean && make -j QTFS_TEST_MODE=1
     3. insmod qtfs_server.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
     4. 配置白名单，将qtfs/config/qtfs/whitelist文件拷贝至/etc/qtfs/下，请手动配置需要的白名单选项，至少需要配置一个Mount白名单才能启动后续服务。
     5. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
-    Tips: 默认的qtfs连接使用vsock方式，如果需要在两台虚拟机或服务器之间使用网络测试本项目，请在第二步make命令后加上调试选项，即make -j QTFS_TEST_MODE=1。该模式暴露网络端口，有可能造成安全隐患，请谨慎使用。
+    Tips: 该模式暴露网络端口，有可能造成安全隐患，仅能用于功能验证测试，勿用于实际生产环境。
 
 客户端安装：
     
     1. cd qtfs
-    2. make clean && make -j
+    2. make clean && make -j QTFS_TEST_MODE=1
     3. insmod qtfs.ko qtfs_server_ip=x.x.x.x qtfs_server_port=12345 qtfs_log_level=WARN
 	4. cd ../ipc/
 	5. make clean && make && make install
 	6. nohup udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &
-	Tips: 默认的qtfs连接使用vsock方式，如果需要在两台虚拟机或服务器之间使用网络测试本项目，请在第二步make命令后加上调试选项，即make -j QTFS_TEST_MODE=1。该模式暴露网络端口，有可能造成安全隐患，请谨慎使用。
+	Tips: 该模式暴露网络端口，有可能造成安全隐患，仅能用于功能验证测试，勿用于实际生产环境。
 
 ## 使用说明
 
 安装完成后，客户端通过挂载把服务端的文件系统让客户端可见，例如：
     
-    mount -t qtfs / /root/mnt/
+    mount -t qtfs /home /root/mnt/
 
-客户端进入"/root/mnt"后便可查看到server端的所有文件，以及对其进行相关操作。
+客户端进入"/root/mnt"后便可查看到server端/home目录下的所有文件，以及对其进行相关操作。此操作受到白名单的控制，需要挂载路径在server端白名单的Mount列表，或者在其子目录下，且后续的查看或读写操作都需要开放对应的白名单项才能进行。
 
 ## 参与贡献
 

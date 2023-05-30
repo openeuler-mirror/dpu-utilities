@@ -128,6 +128,9 @@ static void *qtfs_engine_kthread(void *arg)
 			engine_out("qtfs server thread:%d exit.", parg->thread_idx);
 			break;
 		}
+		if (ret != QTOK) {
+			usleep(1000);
+		}
 	}
 
 end:
@@ -170,6 +173,9 @@ static void *qtfs_engine_epoll_thread(void *data)
 		if (ret == QTEXIT) {
 			engine_out("qtfs server epoll thread exit.");
 			break;
+		}
+		if (ret != QTOK) {
+			usleep(1000);
 		}
 	}
 end:

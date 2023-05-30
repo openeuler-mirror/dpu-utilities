@@ -12,8 +12,14 @@
 #include "req.h"
 #include "symbol_wrapper.h"
 
+#ifdef QTFS_TEST_MODE
 char qtfs_server_ip[20] = "127.0.0.1";
 int qtfs_server_port = 12345;
+#else
+unsigned int qtfs_server_vsock_port = 12345;
+unsigned int qtfs_server_vsock_cid = 2; // host cid in vm is always 2
+#endif
+
 #ifdef QTFS_SERVER
 struct socket *qtfs_server_main_sock = NULL;
 #endif
@@ -156,7 +162,11 @@ static int qtfs_conn_sock_server_accept(struct qtfs_conn_var_s *pvar)
 	if (ret < 0) {
 		return ret;
 	}
+#ifdef QTFS_TEST_MODE
 	QTSOCK_SET_KEEPX(sock, 5);
+#else
+	sock_set_keepalive(sock->sk);
+#endif
 
 	qtfs_info("qtfs accept a client connection.\n");
 	qtfs_sock_recvtimeo_set(pvar->conn_var.sock_var.client_sock, QTFS_SOCK_RCVTIMEO, 0);
@@ -178,8 +188,8 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	struct sockaddr_vm saddr;
 	sock_family = AF_VSOCK;
 	saddr.svm_family = sock_family;
-	saddr.svm_port = htonl(pvar->conn_var.sock_var.vm_port);
-	saddr.svm_cid = htonl(pvar->conn_var.sock_var.vm_cid);
+	saddr.svm_port = pvar->conn_var.sock_var.vm_port;
+	saddr.svm_cid = pvar->conn_var.sock_var.vm_cid;
 #endif
 
 	if (!QTCONN_IS_EPOLL_CONN(pvar) && qtfs_server_main_sock != NULL) {
@@ -199,7 +209,12 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	}
 
 	sock_set_reuseaddr(sock->sk);
+#ifdef QTFS_TEST_MODE
 	QTSOCK_SET_KEEPX(sock, 5);
+#else
+	sock_set_keepalive(sock->sk);
+#endif
+
 
 	ret = sock->ops->bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
 	if (ret < 0) {
@@ -241,20 +256,24 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 #else
 	struct sockaddr_vm saddr;
 	saddr.svm_family = AF_VSOCK;
-	saddr.svm_port = htonl(pvar->conn_var.sock_var.vm_port);
-	saddr.svm_cid = htonl(pvar->conn_var.sock_var.vm_cid);
+	saddr.svm_port = pvar->conn_var.sock_var.vm_port;
+	saddr.svm_cid = pvar->conn_var.sock_var.vm_cid;
 #endif
 	if (!sock) {
 		qtfs_err("Invalid client sock, which is null\n");
 		return -EINVAL;
 	}
 
-	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), SOCK_NONBLOCK);
+	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), 0);
 	if (ret < 0) {
 		qtfs_err("sock addr(%s): connect get ret: %d\n", pvar->conn_var.sock_var.addr, ret);
 		return ret;
 	}
+#ifdef QTFS_TEST_MODE
 	QTSOCK_SET_KEEPX(sock, 5);
+#else
+	sock_set_keepalive(sock->sk);
+#endif
 
 	qtfs_sock_recvtimeo_set(pvar->conn_var.sock_var.client_sock, QTFS_SOCK_RCVTIMEO, 0);
 	return 0;
@@ -273,7 +292,11 @@ static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
 		qtfs_err("qtfs sock client init create sock failed.\n");
 		return -EFAULT;
 	}
+#ifdef QTFS_TEST_MODE
 	QTSOCK_SET_KEEPX(sock, 5);
+#else
+	sock_set_keepalive(sock->sk);
+#endif
 	pvar->conn_var.sock_var.client_sock = sock;
 
 	return 0;
@@ -470,6 +493,7 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 
 int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
 {
+#ifdef QTFS_TEST_MODE
 	// fill conn_pvar struct here
 	strlcpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, sizeof(pvar->conn_var.sock_var.addr));
 	if (QTCONN_IS_EPOLL_CONN(pvar)) {
@@ -477,7 +501,15 @@ int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
 	} else {
 		pvar->conn_var.sock_var.port = qtfs_server_port;
 	}
-
+#else
+	// vsock
+	if (QTCONN_IS_EPOLL_CONN(pvar)) {
+		pvar->conn_var.sock_var.vm_port = qtfs_server_vsock_port + 1;
+	} else {
+		pvar->conn_var.sock_var.vm_port = qtfs_server_vsock_port;
+	}
+	pvar->conn_var.sock_var.vm_cid = qtfs_server_vsock_cid;
+#endif
 	pvar->conn_ops = &qtfs_conn_sock_ops;
 	return 0;
 }
