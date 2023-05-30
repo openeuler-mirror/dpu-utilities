@@ -32,7 +32,10 @@ extern struct qtfs_server_userp_s *qtfs_userps;
 extern char qtfs_conn_type[20];
 extern char qtfs_server_ip[20];
 extern int qtfs_server_port;
+extern unsigned int qtfs_server_vsock_port;
+extern unsigned int qtfs_server_vsock_cid;
 extern int qtfs_conn_max_conn;
+
 extern struct socket *qtfs_server_main_sock;
 extern struct qtfs_conn_var_s *qtfs_thread_var[QTFS_MAX_THREADS];
 extern struct qtfs_conn_var_s *qtfs_epoll_var;
@@ -42,6 +45,7 @@ extern struct qtinfo *qtfs_diag_info;
 extern bool qtfs_epoll_mode;
 extern struct qtsock_wl_stru qtsock_wl;
 extern struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops;
+
 #define qtfs_conn_get_param(void) _qtfs_conn_get_param(__func__)
 
 #define QTFS_CONN_SOCK_TYPE "socket"
