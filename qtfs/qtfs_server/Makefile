@@ -4,6 +4,15 @@ else
 ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../ipc/ -I$(src)/../include/ -DQTFS_SERVER
 endif
 
+CFLAGS += -g -O2
+CFLAGS += -fstack-protector-strong
+CFLAGS += -fPIE -pie -fPIC
+CFLAGS += -D_FORTIFY_SOURCE=2
+LDFLAGS += -s
+LDFLAGS += -Wl,-z,now
+LDFLAGS += -Wl,-z,noexecstack
+LDFLAGS += -fPIE -pie
+
 KBUILD=/lib/modules/$(shell uname -r)/build/
 COMM=../qtfs_common/
 COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o $(COMM)/socket.o
@@ -23,16 +32,16 @@ qtfs_server:
 	QTFS_TEST_MODE."
 
 engine: uds_event.o uds_main.o user_engine.o
-	gcc -O2 -o engine $^ -lpthread $(DEPGLIB) -I../ -I../ipc/ -DQTFS_SERVER
+	gcc $(LDFLAGS) -o engine $^ -lpthread $(DEPGLIB) -I../ -I../ipc/ -DQTFS_SERVER
 
 user_engine.o:
-	cc -g -c -o user_engine.o ../qtfs_common/user_engine.c $(DEPGLIB) -I../ -DQTFS_SERVER
+	cc $(CFLAGS) -c -o user_engine.o ../qtfs_common/user_engine.c $(DEPGLIB) -I../ -DQTFS_SERVER
 
 uds_event.o:
-	cc -g -c -o uds_event.o ../ipc/uds_event.c -DQTFS_SERVER $(DEPGLIB)
+	cc $(CFLAGS) -c -o uds_event.o ../ipc/uds_event.c -DQTFS_SERVER $(DEPGLIB)
 
 uds_main.o:
-	cc -g -c -o uds_main.o ../ipc/uds_main.c -DQTFS_SERVER $(DEPGLIB)
+	cc $(CFLAGS) -c -o uds_main.o ../ipc/uds_main.c -DQTFS_SERVER $(DEPGLIB)
 
 clean:
 	make -C $(KBUILD) M=$(PWD) clean
