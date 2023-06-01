@@ -65,12 +65,6 @@ struct rexec_event {
     int (*handler)(struct rexec_event *);
 };
 
-enum {
-    REXEC_EVENT_OK,
-    REXEC_EVENT_ERR,
-    REXEC_EVENT_DEL,
-};
-
 static int rexec_add_event(int efd, int fd, int pid, int (*handler)(struct rexec_event *))
 {
     struct rexec_event *event = (struct rexec_event *)malloc(sizeof(struct rexec_event));
@@ -86,6 +80,7 @@ static int rexec_add_event(int efd, int fd, int pid, int (*handler)(struct rexec
     evt.events = EPOLLIN;
     if (-1 == epoll_ctl(efd, EPOLL_CTL_ADD, event->fd, &evt)) {
         rexec_err("epoll ctl add fd:%d event failed.", event->fd);
+        free(event);
         return -1;
     }
     return 0;
@@ -136,15 +131,6 @@ static int rexec_event_handshake(struct rexec_event *event)
     rexec_log("Rexec recv son pid:%d, connfd:%d", sonpid, connfd);
 
     rexec_hash_insert_direct(child_hash, sonpid, connfd);
-    
-    struct rexec_msg head;
-    head.msgtype = REXEC_PIDMAP;
-    head.msglen = 0;
-    head.pid = sonpid;
-    ret = write(connfd, &head, sizeof(struct rexec_msg));
-    if (ret <= 0) {
-        rexec_err("Rexec send son pid:%d to client failed, ret:%d errno:%d", sonpid, ret, errno);
-    }
     rexec_add_event(main_epoll_fd, connfd, sonpid, rexec_event_process_manage);
 
     // 成功后同样要删除这个pipe监听事件，删除时会close掉fd
@@ -326,7 +312,7 @@ static int rexec_start_new_process(int newconnfd)
         int scmfd = -1;
         int len = sizeof(struct rexec_msg);
         memset(&head, 0, sizeof(struct rexec_msg));
-        int ret = rexec_recvmsg(newconnfd, (char *)&head, len, &scmfd, MSG_WAITALL);
+        ret = rexec_recvmsg(newconnfd, (char *)&head, len, &scmfd, MSG_WAITALL);
         if (ret <= 0) {
             rexec_log("recvmsg ret:%d, errno:%d", ret, errno);
             goto err_to_parent;
@@ -375,13 +361,44 @@ static int rexec_start_new_process(int newconnfd)
         goto err_free;
     }
 
+    char *ack;
     int mypid = getpid();
+    char msg[sizeof(struct rexec_msg) + 1];
+    struct rexec_msg *pm = msg;
+    pm->msgtype = REXEC_PIDMAP;
+    pm->msglen = 0;
+    pm->pid = mypid;
+    ret = write(newconnfd, pm, sizeof(struct rexec_msg));
+    if (ret <= 0) {
+        rexec_err("Rexec send son pid:%d to client failed, ret:%d errno:%d", mypid, ret, errno);
+    } else {
+retry:
+        rexec_log("Waiting for rexec client handshake...");
+        ret = read(newconnfd, pm, sizeof(struct rexec_msg) + 1);
+        if (ret <= 0) {
+            rexec_err("Recv handshake failed, ret:%d err:%d", ret, errno);
+            goto err_to_parent;
+        }
+        if (pm->msgtype != REXEC_HANDSHAKE) {
+            rexec_err("Recv unexpected msg:%d", pm->msgtype);
+            goto retry;
+        }
+        ack = pm->msg;
+        if (*ack != '1') {
+            rexec_err("recv error handshake ack from client:%c, exit now", *ack);
+            goto err_to_parent;
+        }
+    }
     // 写会PID必须放在基于newconnfd接收完所有消息之后，
     // 后面newconnfd的控制权交回父进程rexec server服务进程
-    write(pipefd[PIPE_WRITE], &mypid, sizeof(int));
+    if (write(pipefd[PIPE_WRITE], &mypid, sizeof(int)) <= 0) {
+        rexec_err("write pid to parent failed, pipefd:%d.", pipefd[PIPE_WRITE]);
+    }
     // 子进程不再使用pipe write和connfd
     close(pipefd[PIPE_WRITE]);
     close(newconnfd);
+
+    rexec_log("handshake over normaly, continue to exec new process:%s.", binary);
 
     // rexec_shim_entry argv like:
     //      argv[0]: binary
