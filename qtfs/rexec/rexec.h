@@ -25,6 +25,13 @@ enum {
 };
 
 enum {
+    REXEC_EVENT_OK,
+    REXEC_EVENT_DEL, // del this event
+    REXEC_EVENT_EXIT, // exit process
+    REXEC_EVENT_ERR,
+};
+
+enum {
     REXEC_STDIN = 0x5a,
     REXEC_STDOUT,
     REXEC_STDERR,
@@ -45,6 +52,7 @@ enum rexec_msgtype {
     REXEC_KILL,             // kill process
     REXEC_PIPE,             // client send a pipefd as stdin/out/err to server
     REXEC_PIDMAP,           // server send remote process's pid to client
+    REXEC_HANDSHAKE,
 };
 
 struct rexec_msg {
