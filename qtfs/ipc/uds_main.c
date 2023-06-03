@@ -37,6 +37,7 @@
 #include <sys/resource.h>
 #include <sys/prctl.h>
 #include <sys/file.h>
+#include <linux/vm_sockets.h>
 
 #include "comm.h"
 #include "uds_main.h"
@@ -179,15 +180,24 @@ void uds_main_loop(int efd, struct uds_thread_arg *arg)
 #define UDS_MAX_LISTEN_NUM 64
 int uds_build_tcp_connection(struct uds_conn_arg *arg)
 {
+	int family = AF_VSOCK;
 	if (arg->cs > UDS_SOCKET_SERVER) {
 		uds_err("cs type %d is error.", arg->cs);
 		return -1;
 	}
-	struct sockaddr_in sock_addr = {
-		.sin_family = AF_INET,
-	};
-	int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+#ifdef UDS_TEST_MODE
+	family = AF_INET;
+	struct sockaddr_in sock_addr;
+	memset(&sock_addr, 0, sizeof(sock_addr));
+	sock_addr.sin_family = AF_INET;
+#else
+	family = AF_VSOCK;
+	struct sockaddr_vm sock_addr;
+	memset(&sock_addr, 0, sizeof(sock_addr));
+	sock_addr.svm_family = AF_VSOCK;
+#endif
 
+	int sock_fd = socket(family, SOCK_STREAM, 0);
 	if (sock_fd < 0) {
 		uds_err("As %s failed, socket fd: %d, errno:%d.",
 				(arg->cs == UDS_SOCKET_CLIENT) ? "client" : "server",
@@ -197,8 +207,13 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 	arg->sockfd = sock_fd;
 
 	if (arg->cs == UDS_SOCKET_SERVER) {
+#ifdef UDS_TEST_MODE
 		sock_addr.sin_port = htons(p_uds_var->tcp.port);
 		sock_addr.sin_addr.s_addr = inet_addr(p_uds_var->tcp.addr);
+#else
+		sock_addr.svm_port = p_uds_var->vsock.port;
+		sock_addr.svm_cid = p_uds_var->vsock.cid;
+#endif
 		if (bind(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
 			uds_err("As tcp server failed, bind error, errno:%d.",
 					errno);
@@ -209,13 +224,22 @@ int uds_build_tcp_connection(struct uds_conn_arg *arg)
 			goto close_and_return;
 		}
 	} else {
+#ifdef UDS_TEST_MODE
 		sock_addr.sin_port = htons(p_uds_var->tcp.peerport);
 		sock_addr.sin_addr.s_addr = inet_addr(p_uds_var->tcp.peeraddr);
-		if (connect(arg->sockfd, (struct sockaddr *)&sock_addr, sizeof(struct sockaddr_in)) < 0) {
+#else
+		sock_addr.svm_port = p_uds_var->vsock.peerport;
+		sock_addr.svm_cid = p_uds_var->vsock.peercid;
+#endif	
+		if (connect(arg->sockfd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
 			goto close_and_return;
 		}
 		arg->connfd = sock_fd;
+#ifdef UDS_TEST_MODE
 		uds_log("Connect to tcp server successed, ip:%s port:%u", p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
+#else
+		uds_log("Connect to vsock server successed, cid:%u port:%u", p_uds_var->vsock.peercid, p_uds_var->vsock.peerport);
+#endif
 	}
 
 	return 0;
@@ -599,6 +623,7 @@ static int uds_glob_var_init(char *argv[])
 		uds_err("work thread var malloc failed.");
 		return -1;
 	}
+#ifdef UDS_TEST_MODE
 	p_uds_var->tcp.port = atoi(argv[3]);
 	strncpy(p_uds_var->tcp.addr, argv[2], sizeof(p_uds_var->tcp.addr) - 1);
 	p_uds_var->tcp.peerport = atoi(argv[5]);
@@ -607,6 +632,14 @@ static int uds_glob_var_init(char *argv[])
 	uds_log("uds proxy param thread num:%d ip:%s port:%u peerip:%s port:%u",
 			p_uds_var->work_thread_num, p_uds_var->tcp.addr, p_uds_var->tcp.port,
 			 p_uds_var->tcp.peeraddr, p_uds_var->tcp.peerport);
+#else
+	// vsock param: <thread num> <local cid> <local port> <peer cid> <peer port>
+	// port and peerport is checked before
+	p_uds_var->vsock.cid = atoi(argv[2]);
+	p_uds_var->vsock.port = myport;
+	p_uds_var->vsock.peercid = atoi(argv[4]);
+	p_uds_var->vsock.peerport = peerport;
+#endif
 	g_event_var = (struct uds_event_global_var *)malloc(sizeof(struct uds_event_global_var) * p_uds_var->work_thread_num);
 	if (g_event_var == NULL) {
 		free(p_uds_var->efd);

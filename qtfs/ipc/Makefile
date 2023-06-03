@@ -3,6 +3,9 @@ CFLAGS += -g -O2
 CFLAGS += -fstack-protector-strong
 CFLAGS += -fPIE -pie -fPIC
 CFLAGS += -D_FORTIFY_SOURCE=2
+ifdef UDS_TEST_MODE
+CFLAGS += -DUDS_TEST_MODE
+endif
 LDFLAGS += -s
 LDFLAGS += -Wl,-z,now
 LDFLAGS += -Wl,-z,noexecstack
@@ -12,6 +15,10 @@ all: udsproxyd libudsproxy.so
 
 udsproxyd: uds_event.o uds_main.o
 	gcc $(LDFLAGS) -o udsproxyd $^ -I../ $(DEPGLIB)
+	@test -z $(UDS_TEST_MODE) || echo "Important risk warning: The test mode is turned on,\
+	and udsproxyd will expose the network port, which will bring security risks and is only for\
+	testing! If you do not understand the risks, please don't use or compile again without\
+	UDS_TEST_MODE."
 
 uds_event.o:
 	cc $(CFLAGS) -c -o uds_event.o uds_event.c $(DEPGLIB)
