@@ -111,15 +111,21 @@ struct uds_global_var {
 	struct uds_thread_arg *work_thread;
 	int loglevel;
 	char **logstr;
+#ifdef UDS_TEST_MODE
 	struct _tcp {
 		char addr[20];
 		unsigned short port;
 		char peeraddr[20];
 		unsigned short peerport;
 	} tcp;
-	struct _uds {
-		char sun_path[UDS_SUN_PATH_LEN];
-	} uds;
+#else
+	struct _vsock {
+		unsigned int cid;
+		unsigned int port;
+		unsigned int peercid;
+		unsigned int peerport;
+	} vsock;
+#endif
 };
 enum uds_cs {
 	UDS_SOCKET_CLIENT = 1,
