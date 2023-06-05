@@ -431,7 +431,7 @@ err_to_parent:
         write(pipefd[PIPE_WRITE], &errpid, sizeof(int));
     } while (0);
 
-    return ret;
+    exit(0);
 }
 
 // 道生一
