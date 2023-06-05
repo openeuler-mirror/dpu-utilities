@@ -1,5 +1,6 @@
 ifdef QTFS_TEST_MODE
 ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../ipc/ -I$(src)/../include/ -DQTFS_SERVER -DQTFS_TEST_MODE
+CFLAGS += -DUDS_TEST_MODE
 else
 ccflags-y += -I$(src)/../ -I$(src) -I$(src)/../ipc/ -I$(src)/../include/ -DQTFS_SERVER
 endif
