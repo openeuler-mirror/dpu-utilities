@@ -1510,29 +1510,41 @@ const struct xattr_handler *qtfs_xattr_handlers[] = {
 int qtfs_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	struct qtfs_conn_var_s *pvar = NULL;
-	struct qtreq_mount *req = NULL;
-	struct qtrsp_mount *rsp = NULL;
-
-	// 1 means valid; 0 means invalid
-	if (dentry && dentry->d_inode && S_ISDIR(dentry->d_inode->i_mode)) {
+	struct qtreq_getattr *req;
+	struct qtrsp_getattr *rsp;
+	struct inode *inode = dentry->d_inode;
+	if (dentry && dentry->d_inode) {
 		if (jiffies - dentry->d_time < 2000)
 			return 1;
-
 		pvar = qtfs_conn_get_param();
-		if (!pvar)
+		if (!pvar) {
+			qtfs_err("Failed to get qtfs sock var\n");
 			return 0;
+		}
 
 		req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 		qtfs_fullname(req->path, dentry, PATH_MAX);
-		rsp = qtfs_remote_run(pvar, QTFS_REQ_MOUNT, strlen(req->path));
-		if (IS_ERR_OR_NULL(rsp) || rsp->ret != QTFS_OK) {
+		req->request_mask = STATX_BASIC_STATS;
+		req->query_flags = 0;
+
+		rsp = qtfs_remote_run(pvar, QTFS_REQ_GETATTR, QTFS_SEND_SIZE(struct qtreq_getattr, req->path));
+		if (IS_ERR_OR_NULL(rsp)) {
+			qtfs_conn_put_param(pvar);
+			return 0;
+		}
+		if (rsp->ret) {
 			qtfs_conn_put_param(pvar);
 			return 0;
 		}
 
+		if (!inode || inode->i_ino != rsp->stat.ino || inode->i_mode != rsp->stat.mode) {
+			if (inode->i_nlink > 0)
+				drop_nlink(inode);
+			qtfs_conn_put_param(pvar);
+			return 0;
+		}
 		qtfs_conn_put_param(pvar);
 		dentry->d_time = jiffies;
-		return 1;
 	}
 	return 1;
 }
