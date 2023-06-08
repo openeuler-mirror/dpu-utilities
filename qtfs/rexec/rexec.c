@@ -109,7 +109,7 @@ static int rexec_io(struct rexec_client_event *evt)
         ret = write(evt->outfd, buf, len);
         if (ret <= 0) {
             rexec_err("Read from fd:%d len:%d write to fd:%d failed ret:%d", evt->fd, len, evt->outfd, ret);
-            return REXEC_EVENT_EXIT;
+            return REXEC_EVENT_DEL;
         }
         if (ret != len) {
             rexec_err("Read from fd:%d len:%d but write to fd:%d ret:%d", evt->fd, len, evt->outfd, ret);
@@ -285,7 +285,7 @@ static int rexec_run(int efd, int connfd, char *argv[])
         for (int i = 0; i < n; i++) {
             struct rexec_client_event *evt = (struct rexec_client_event *)evts[i].data.ptr;
             int ret = evt->handler(evt);
-            if (evts[i].events & EPOLLHUP || ret == REXEC_EVENT_EXIT) {
+            if (ret == REXEC_EVENT_EXIT) {
                 process_exit = 1;
             }
             if (ret == REXEC_EVENT_DEL) {
