@@ -152,6 +152,7 @@ int uds_event_insert(int efd, struct uds_event *event);
 int uds_hash_insert_dirct(GHashTable *table, int key, struct uds_event *value);
 void *uds_hash_lookup_dirct(GHashTable *table, int key);
 int uds_hash_remove_dirct(GHashTable *table, int key);
+int uds_recv_with_timeout(int fd, char *msg, int len);
 
 #ifdef QTFS_SERVER
 int uds_proxy_main(int argc, char *argv[]);

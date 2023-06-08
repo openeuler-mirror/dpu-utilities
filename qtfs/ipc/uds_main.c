@@ -88,6 +88,42 @@ int uds_event_delete(int efd, int fd)
 	return 0;
 }
 
+int uds_recv_with_timeout(int fd, char *msg, int len)
+{
+#define TMOUT_BLOCK_SIZE 1024
+#define TMOUT_UNIT_MS 20
+#define TMOUT_INTERVAL 1
+#define TMOUT_MAX_MS 1000
+	int total_recv = 0;
+	int ret;
+	int tmout_ms = ((len / TMOUT_BLOCK_SIZE) + 1) * TMOUT_UNIT_MS;
+	if (len <= 0 || msg == NULL || fd < 0) {
+		uds_err("invalid param fd:%d len:%d or %s", fd, len, (msg == NULL) ? "msg is NULL" : "msg is not NULL");
+		return 0;
+	}
+	if (tmout_ms > TMOUT_MAX_MS)
+		tmout_ms = TMOUT_MAX_MS;
+	do {
+		ret = recv(fd, &msg[total_recv], len - total_recv, 0);
+		if (ret < 0) {
+			uds_err("recv failed ret:%d errno:%d", ret, errno);
+			return ret;
+		}
+		total_recv += ret;
+		if (total_recv > len) {
+			uds_err("fatal error total recv:%d longger than target len:%d", total_recv, len);
+			return 0;
+		}
+		if (total_recv == len) {
+			return total_recv;
+		}
+		usleep(TMOUT_INTERVAL * 1000);
+		tmout_ms -= TMOUT_INTERVAL;
+	} while (tmout_ms > 0);
+	uds_err("Fatal error, the target recv len:%d and only %d length is received when it time out", len, total_recv);
+	return 0;
+}
+
 #pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
 int uds_event_tmout_item(gpointer key, gpointer value, gpointer data)
 {

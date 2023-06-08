@@ -214,7 +214,7 @@ int uds_event_build_step2(void *arg, int epfd, struct uds_event_global_var *p_ev
 	struct uds_proxy_remote_conn_rsp rsp;
 	int len;
 	memset(buf, 0, sizeof(buf));
-	len = recv(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req), MSG_WAITALL);
+	len = uds_recv_with_timeout(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req));
 	if (len == 0) {
 		uds_err("recv err msg:%d errno:%d", len, errno);
 		return EVENT_DEL;
@@ -390,7 +390,7 @@ int uds_event_tcp_listener(void *arg, int epfd, struct uds_event_global_var *p_e
 int uds_build_connect2uds(struct uds_event *evt, struct uds_proxy_remote_conn_req *msg)
 {
 	struct uds_conn_arg targ;
-	int len = recv(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req), MSG_WAITALL);
+	int len = uds_recv_with_timeout(evt->fd, msg, sizeof(struct uds_proxy_remote_conn_req));
 	if (len <= 0) {
 		uds_err("recv failed, len:%d errno:%d", len, errno);
 		return EVENT_ERR;
@@ -441,7 +441,7 @@ err_ack:
 
 int uds_build_pipe_proxy(int efd, struct uds_event *evt, struct uds_stru_scm_pipe *msg)
 {
-	int len = recv(evt->fd, msg, sizeof(struct uds_stru_scm_pipe), MSG_WAITALL);
+	int len = uds_recv_with_timeout(evt->fd, msg, sizeof(struct uds_stru_scm_pipe));
 	if (len <= 0) {
 		uds_err("recv failed, len:%d errno:%d", len, errno);
 		return EVENT_ERR;
@@ -477,7 +477,7 @@ int uds_event_remote_build(void *arg, int epfd, struct uds_event_global_var *p_e
 	int len;
 	int ret = EVENT_OK;
 	memset(p_event_var->iov_base, 0, p_event_var->iov_len);
-	len = recv(evt->fd, bdmsg, sizeof(struct uds_tcp2tcp), MSG_WAITALL);
+	len = uds_recv_with_timeout(evt->fd, bdmsg, sizeof(struct uds_tcp2tcp));
 	if (len <= 0) {
 		uds_err("read no msg from sock:%d, len:%d", evt->fd, len);
 		return EVENT_DEL;
@@ -711,7 +711,7 @@ int uds_msg_tcp2uds_scm_pipe(struct uds_tcp2tcp *p_msg, struct uds_event *evt, i
 	int scmfd;
 	int fd[SCM_PIPE_NUM];
 	struct uds_stru_scm_pipe *p_pipe = (struct uds_stru_scm_pipe *)p_msg->data;
-	int len = recv(evt->fd, p_pipe, p_msg->msglen, MSG_WAITALL);
+	int len = uds_recv_with_timeout(evt->fd, p_pipe, p_msg->msglen);
 	if (len <= 0) {
 		uds_err("recv data failed, len:%d", len);
 		return EVENT_DEL;
@@ -913,7 +913,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 	msg.msg_controllen = p_event_var->msg_controlsendlen;
 
 	while (1) {
-		int len = recv(evt->fd, p_msg, sizeof(struct uds_tcp2tcp), MSG_WAITALL);
+		int len = uds_recv_with_timeout(evt->fd, p_msg, sizeof(struct uds_tcp2tcp));
 		if (len <= 0) {
 			uds_err("recv no msg maybe sock is closed, delete this tcp2uds event, len:%d.", len);
 			goto close_event;
@@ -932,7 +932,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 					uds_err("normal msg repeat recv fd:%d", evt->fd);
 					goto err;
 				}
-				normal_msg_len = recv(evt->fd, p_event_var->iov_base_send, p_msg->msglen, MSG_WAITALL);
+				normal_msg_len = uds_recv_with_timeout(evt->fd, p_event_var->iov_base_send, p_msg->msglen);
 				if (normal_msg_len <= 0) {
 					uds_err("recv msg error:%d fd:%d", len, evt->fd);
 					goto close_event;
@@ -950,7 +950,7 @@ int uds_event_tcp2uds(void *arg, int epfd, struct uds_event_global_var *p_event_
 				}
 				memset(p_scm->path, 0, sizeof(p_scm->path));
 				// SCM RIGHTS msg proc
-				len = recv(evt->fd, p_msg->data, p_msg->msglen, MSG_WAITALL);
+				len = uds_recv_with_timeout(evt->fd, p_msg->data, p_msg->msglen);
 				if (len <= 0) {
 					uds_err("recv data failed len:%d", p_msg->msglen);
 					return EVENT_DEL;
