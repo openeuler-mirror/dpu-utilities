@@ -2,15 +2,26 @@
 | ---- | --------- | ---- | ------------------------------------------------------------ |
 | V1.0 | 2022/12/5 | 李强 | 创建文档                                                     |
 | V1.1 | 2023/2/6  | 李强 | 增加uds proxy组件部署介绍；增加rexec组件部署介绍；修改libvirt相关描述，适配uds proxy组件。 |
-| V1.2 | 2023/3/22 | 李强 | rexec重构后，更新rexec组件部署说明。                           |
-| V1.3 | 2023/3/27 | 李强 | qtfs为connect syscall适配uds做改动                            |
+| V1.2 | 2023/3/22 | 李强 | rexec重构后，更新rexec组件部署说明。                         |
+| V1.3 | 2023/3/27 | 李强 | qtfs为connect syscall适配uds做改动。                         |
+| V1.4 | 2023/6/9  | 李强 | 将默认的组件链接方式改为vsock，网络改为测试模式。            |
 
 
 # **1** 硬件准备
 
+## 测试模式
+
 需准备2台物理机（虚机当前未试过），网络互通。
 
 其中一台作为DPU模拟，另一台作为HOST模拟。在本文档中用DPU和HOST指代这两台服务器。
+
+注意：测试模式因为会暴露网络端口且不做连接认证，存在网络安全风险，仅能用于内部测试验证，不要用于实际生产环境。
+
+## vsock模式
+
+需要DPU加HOST，且DPU能支持通过virtio提供vsock通信方式。
+
+目前还未基于真实的支持DPU vsock的环境调试过，本文档当前仅描述基于测试模式的方法，下面的内容依然默认使用测试模式。
 
 
 # **2** libvirt卸载架构图
@@ -40,7 +51,7 @@ udsproxyd是一个跨主机的unix domain socket代理服务，需要分别部�
 ```bash
 cd qtfs/ipc
 
-make && make install
+make -j UDS_TEST_MODE=1 && make install
 ```
 
 当前最新版本下，qtfs server侧的engine服务已经整合了udsproxyd的能力，所以server侧若部署了qtfs后不需要再额外启动udsproxyd。client侧则单独拉起udsproxyd服务：
