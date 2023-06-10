@@ -20,7 +20,7 @@
 #include <linux/version.h>
 #include <asm-generic/ioctls.h>
 #include <asm-generic/termbits.h>
-
+#include <linux/if_tun.h>
 
 #include "conn.h"
 #include "qtfs-mod.h"
@@ -561,7 +561,7 @@ int qtfs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	return 0;
 }
 
-long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsigned int size)
+long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsigned int size, int argtype)
 {
 	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	struct qtreq_ioctl *req;
@@ -575,19 +575,22 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 		return -EINVAL;
 	}
 
-	if (size >= MAX_PATH_LEN) {
-		WARN_ON(1);
+	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
+	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
+	if (size >= sizeof(req->path)) {
+		qtfs_err("do ioctl failed, size:%u too big:%u", size, sizeof(req->path));
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
-	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
-	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 
 	priv = (struct private_data *)filp->private_data;
 	req->d.fd = priv->fd;
-
+	req->d.argtype = argtype;
 	req->d.cmd = cmd;
-	if (size > 0) {
+	if (argtype) {
+		req->d.arg = arg;
+		len = sizeof(struct qtreq_ioctl) - sizeof(req->path);
+	} else if (size > 0) {
 		ret = copy_from_user(req->path, (char __user *)arg, size);
 		if (ret) {
 			qtfs_err("%s: copy_from_user, size %u failed.", __func__, size);
@@ -597,7 +600,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + size;
 		req->d.size = size;
 	} else {
-		len = sizeof(struct qtreq_ioctl) - sizeof(req->path) + strlen(req->path) + 1;
+		len = sizeof(struct qtreq_ioctl) - sizeof(req->path);
 	}
 
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_IOCTL, len);
@@ -623,27 +626,41 @@ out:
 	return (long)ret;
 }
 
+#define QTFS_IOCTL_CASE_WITH_BREAK(size, argtype)\
+	{\
+		ret = qtfs_do_ioctl(filp, cmd, arg, size, argtype);\
+		break;\
+	}
 long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+	unsigned int size;
+	long ret;
 	switch(cmd) {
+		// all case of size 0 type 0 enter here
 		case FS_IOC_FSGETXATTR:
 		case TCGETS:
-			return qtfs_do_ioctl(filp, cmd, arg, 0);
+			QTFS_IOCTL_CASE_WITH_BREAK(0, 0);
+		// all case of size 0 type 1 enter here
+		case TUNSETPERSIST:
+			QTFS_IOCTL_CASE_WITH_BREAK(0, 1);
 		case FS_IOC_FSSETXATTR:
-			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct fsxattr));
+			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct fsxattr), 0);
 		case TCSETS:
-			return qtfs_do_ioctl(filp, cmd, arg, sizeof(struct ktermios));
+			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ktermios), 0);
+		case TUNSETIFF:
+			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ifreq), 0);
 		default: {
 			char *fullname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
 			if (!fullname)
 				return -ENOMEM;
 			memset(fullname, 0, MAX_PATH_LEN);
 			qtfs_fullname(fullname, filp->f_path.dentry, MAX_PATH_LEN);
-			qtfs_err("qtfs ioctl get not support cmd:%d file:%s TCGETS:%d", cmd, fullname, TCGETS);
+			qtfs_err("qtfs ioctl get not support cmd:%d file:%s", cmd, fullname);
 			kfree(fullname);
 			return -EOPNOTSUPP;
 		}
 	}
+	return ret;
 }
 
 loff_t qtfs_dir_file_llseek(struct file *file, loff_t offset, int whence)

@@ -29,6 +29,7 @@
 #include <linux/uio.h>
 #include <linux/blkdev.h>
 #include <linux/version.h>
+#include <linux/if_tun.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
 #include <linux/fdtable.h>
 #endif
@@ -105,8 +106,20 @@ static inline void qtfs_inode_info_fill(struct inode_info *ii, struct inode *ino
 	return;
 }
 
+#define QTFS_IOCTL_HANDLE_WITH_BREAK(rspsize)\
+	{\
+		ret = copy_from_user(rsp->buf, userp->userp, rspsize);\
+		if (ret) {\
+			qtfs_err("cmd:%d copy_from_user failed with:%d\n", req->d.cmd, ret);\
+			rsp->errno = -EFAULT;\
+			goto err;\
+		}\
+		rsp->size = rspsize;\
+		break;\
+	}
 static int handle_ioctl(struct qtserver_arg *arg)
 {
+	unsigned long ioctl_arg;
 	int ret;
 	int iret;
 	struct qtreq_ioctl *req = (struct qtreq_ioctl *)REQ(arg);
@@ -123,81 +136,44 @@ static int handle_ioctl(struct qtserver_arg *arg)
 	}
 	mutex_unlock(&fd_bitmap_lock);
 
-	switch (req->d.cmd) {
-	case FS_IOC_FSGETXATTR:
-		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
-		if (iret) {
-			qtfs_err("fsgetxattr ioctl failed with %d\n", iret);
-			rsp->errno = iret;
-			goto err;
+	if (req->d.argtype) {
+		ioctl_arg = req->d.arg;
+	} else {
+		if (req->d.size) {
+			if (req->d.size <= 0 || req->d.size > sizeof(req->path) || req->d.size >= userp->size) {
+				rsp->errno = -EINVAL;
+				goto err;
+			}
+			ret = copy_to_user(userp->userp, req->path, req->d.size);
+			if (ret) {
+				qtfs_err("cmd:%d copy_to_user failed with:%d", req->d.cmd, ret);
+				rsp->errno = -EFAULT;
+				goto err;
+			}
 		}
-		ret = copy_from_user(rsp->buf, userp->userp, sizeof(struct fsxattr));
-		if (ret) {
-			qtfs_err("fsgetxattr copy_from_user failed with %d\n", ret);
-			rsp->errno = -EFAULT;
-			goto err;
-		}
-		rsp->size = sizeof(struct fsxattr);
-		break;
-	case FS_IOC_FSSETXATTR:
-		if (req->d.size <= 0 || req->d.size > sizeof(req->path) || req->d.size >= userp->size) {
-			rsp->errno = -EINVAL;
-			goto err;
-		}
-		ret = copy_to_user(userp->userp, req->path, req->d.size);
-		if (ret) {
-			qtfs_err("fssetxattr copy_to_user failed with %d\n", ret);
-			rsp->errno = -EFAULT;
-			goto err;
-		}
-		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
-		if (iret) {
-			qtfs_err("fssetxattr ioctl failed with %d\n", iret);
-			rsp->errno = iret;
-			goto err;
-		}
-		rsp->size = 0;
-		break;
-	case TCGETS:
-		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
-		if (iret) {
-			qtfs_err("ioctl TCGETS failed with %d\n", iret);
-			rsp->errno = iret;
-			goto err;
-		}
-		qtfs_info("ioctl TCGETS ret:%d", iret);
-		
-		ret = copy_from_user(rsp->buf, userp->userp, sizeof(struct ktermios));
-		if (ret) {
-			qtfs_err("fsgetxattr copy_from_user failed with %d\n", ret);
-			rsp->errno = -EFAULT;
-			goto err;
-		}
-		rsp->size = sizeof(struct ktermios);
-		break;
-	case TCSETS:
-		if (req->d.size <= 0 || req->d.size > sizeof(req->path)) {
-			rsp->errno = -EINVAL;
-			goto err;
-		}
-		ret = copy_to_user(userp->userp, req->path, req->d.size);
-		if (ret) {
-			qtfs_err("tcsets copy_to_user failed with %d\n", ret);
-			rsp->errno = -EFAULT;
-			goto err;
-		}
-		qtfs_info("tcsets size:%u sizeof ktermios:%lu", req->d.size, sizeof(struct ktermios));
-		iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, (unsigned long)userp->userp);
-		if (iret) {
-			qtfs_err("tcsets ioctl failed with %d\n", iret);
-			rsp->errno = iret;
-			goto err;
-		}
-		rsp->size = 0;
-		break;
-	default:
-		rsp->errno = -EOPNOTSUPP;
+		ioctl_arg = (unsigned long)userp->userp;
+	}
+	iret = qtfs_syscall_ioctl(req->d.fd, req->d.cmd, ioctl_arg);
+	if (iret) {
+		qtfs_err("ioctl fd:%d cmd:%d failed with %d", req->d.fd, req->d.cmd, iret);
+		rsp->errno = iret;
 		goto err;
+	}
+	qtfs_info("ioctl fd:%d cmd:%d argtype:%d arg:%lx size:%u successed", req->d.fd, req->d.cmd, req->d.argtype, req->d.arg, req->d.size);
+	switch (req->d.cmd) {
+		case TUNSETPERSIST:
+		case TUNSETIFF:
+		case TCSETS:
+		case FS_IOC_FSSETXATTR:
+			rsp->size = 0;
+			break;
+		case FS_IOC_FSGETXATTR:
+			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct fsxattr));
+		case TCGETS:
+			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct ktermios));
+		default:
+			rsp->errno = -EOPNOTSUPP;
+			goto err;
 	}
 	rsp->ret = QTFS_OK;
 	rsp->errno = iret;
