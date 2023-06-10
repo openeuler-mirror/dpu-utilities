@@ -105,9 +105,12 @@ static struct qtfs_server_userp_s *qtfs_engine_thread_init(int fd, int thread_nu
 		}
 	}
 	struct qtfs_thread_init_s init_userp;
+	int ret;
 	init_userp.thread_nums = thread_nums;
 	init_userp.userp = userp;
-	if (ioctl(fd, QTFS_IOCTL_THREAD_INIT, (unsigned long)&init_userp) == QTERROR) {
+	ret = ioctl(fd, QTFS_IOCTL_THREAD_INIT, (unsigned long)&init_userp);
+	if (ret != QTOK) {
+		engine_err("Engine thread init failed reason:%s", (ret == EADDRINUSE) ? strerror(EADDRINUSE) : "userp init failed.");
 		goto rollback;
 	}
 	return userp;
