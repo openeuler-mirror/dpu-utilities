@@ -580,7 +580,7 @@ retry:
 		}
 		if (ret != 0) {
 			qtfs_conn_put_param(pvar);
-			return NULL;
+			return (IS_ERR_VALUE((long)ret) ? ERR_PTR((long)ret) : NULL);
 		}
 		strlcpy(pvar->who_using, func, QTFS_FUNCTION_LEN);
 		return pvar;
@@ -636,18 +636,18 @@ retry:
 		qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 		// put to vld list
 		qtfs_conn_put_param(pvar);
-		return NULL;
+		return (IS_ERR_VALUE((long)ret) ? ERR_PTR((long)ret) : NULL);
 	}
 	qtfs_thread_var[pvar->cur_threadidx] = pvar;
 #else
 	pvar->cs = QTFS_CONN_SOCK_SERVER;
 	if (!pvar->conn_ops->conn_inited(pvar)) {
-		if (qtfs_sm_active(pvar)) {
+		if ((ret = qtfs_sm_active(pvar)) != 0) {
 			qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 			// put to vld list
 			mutex_unlock(&g_param_mutex);
 			qtfs_conn_put_param(pvar);
-			return NULL;
+			return (IS_ERR_VALUE((long)ret) ? ERR_PTR((long)ret) : NULL);
 		}
 		mutex_unlock(&g_param_mutex);
 	} else {
@@ -657,7 +657,7 @@ retry:
 		if (ret) {
 			qtfs_err("qtfs get param active connection failed, ret:%d curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 			qtfs_conn_put_param(pvar);
-			return NULL;
+			return (IS_ERR_VALUE((long)ret) ? ERR_PTR((long)ret) : NULL);
 		}
 	}
 #endif

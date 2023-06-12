@@ -46,7 +46,16 @@ extern bool qtfs_epoll_mode;
 extern struct qtsock_wl_stru qtsock_wl;
 extern struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops;
 
-#define qtfs_conn_get_param(void) _qtfs_conn_get_param(__func__)
+struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *);
+static inline struct qtfs_conn_var_s *__qtfs_conn_get_param(const char *who_using)
+{
+	struct qtfs_conn_var_s *p = _qtfs_conn_get_param(who_using);
+	if (IS_ERR_OR_NULL(p))
+		return NULL;
+	return p;
+}
+#define qtfs_conn_get_param(void) __qtfs_conn_get_param(__func__)
+#define qtfs_conn_get_param_errcode(void) _qtfs_conn_get_param(__func__)
 
 #define QTFS_CONN_SOCK_TYPE "socket"
 #define QTFS_CONN_PCIE_TYPE "pcie"
@@ -172,7 +181,6 @@ void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir);
 void qtfs_conn_param_init(void);
 void qtfs_conn_param_fini(void);
 
-struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *);
 void qtfs_conn_put_param(struct qtfs_conn_var_s *pvar);
 struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void);
 void qtfs_epoll_cut_conn(struct qtfs_conn_var_s *pvar);

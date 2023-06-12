@@ -192,6 +192,14 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 	struct qtfs_thread_init_s init_userp;
 	switch (cmd) {
 		case QTFS_IOCTL_THREAD_INIT:
+			pvar = qtfs_conn_get_param_errcode();
+			if (IS_ERR_OR_NULL(pvar)) {
+				qtfs_err("init pvar get failed, pvar:%ld", (long)pvar);
+				if (PTR_ERR(pvar) == -EADDRINUSE)
+					return EADDRINUSE;
+			} else {
+				qtfs_conn_put_param(pvar);
+			}
 			if (!write_trylock(&g_userp_rwlock)) {
 				qtfs_err("try lock userps failed.");
 				return QTERROR;
