@@ -135,6 +135,8 @@ struct qtreq_ioctl {
 		unsigned int cmd;
 		unsigned int size;
 		int fd;
+		int argtype; // 0--use pointer arg, 1--use long arg
+		unsigned long arg; // for long type arg
 	} d;
 
 	char path[QTFS_TAIL_LEN(struct qtreq_ioctl_len)];
