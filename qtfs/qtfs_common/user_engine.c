@@ -33,7 +33,7 @@
 #include <errno.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
-
+#include <sys/file.h>
 #include <sys/epoll.h>
 
 #include "comm.h"
@@ -68,6 +68,16 @@ struct engine_arg {
 
 #define QTFS_USERP_SIZE QTFS_USERP_MAXSIZE
 #define QTFS_SERVER_FILE "/dev/qtfs_server"
+#define ENGINE_LOCK_ADDR "/var/run/qtfs/engine.lock"
+
+int engine_socket_lock(void)
+{
+	int lock_fd = open(ENGINE_LOCK_ADDR, O_RDONLY | O_CREAT, 0600);
+	if (lock_fd == -1)
+		return -EINVAL;
+
+	return flock(lock_fd, LOCK_EX | LOCK_NB);
+}
 
 int qtfs_fd;
 int engine_run = 1;
@@ -363,6 +373,10 @@ int main(int argc, char *argv[])
 	if (argc != 7) {
 		engine_out("Usage: %s <number of threads> <uds proxy thread num> <host ip> <uds proxy port> <dpu ip> <uds proxy port>.", argv[0]);
 		engine_out("     Example: %s 16 1 192.168.10.10 12121 192.168.10.11 12121.", argv[0]);
+		return -1;
+	}
+	if (engine_socket_lock() < 0) {
+		engine_err("Engine is running.");
 		return -1;
 	}
 	if (qtfs_engine_env_check(argv) < 0) {
