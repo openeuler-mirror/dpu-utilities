@@ -171,6 +171,8 @@ static int handle_ioctl(struct qtserver_arg *arg)
 			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct fsxattr));
 		case TCGETS:
 			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct ktermios));
+		case SIOCGIFHWADDR:
+			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct ifreq));
 		default:
 			rsp->errno = -EOPNOTSUPP;
 			goto err;
