@@ -648,6 +648,7 @@ long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		case TCSETS:
 			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ktermios), 0);
 		case TUNSETIFF:
+		case SIOCGIFHWADDR:
 			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ifreq), 0);
 		default: {
 			char *fullname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
