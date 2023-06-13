@@ -648,7 +648,27 @@ long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ktermios), 0);
 		case TUNSETIFF:
 		case SIOCGIFHWADDR:
+		case SIOCADDMULTI:
+		case SIOCBRADDIF:
+		case SIOCBRDELIF:
+		case TUNGETIFF:
+		case SIOCDELMULTI:
+		case SIOCDEVPRIVATE:
+		case SIOCETHTOOL:
+		case SIOCGIFADDR:
+		case SIOCGIFFLAGS:
+		case SIOCGIFINDEX:
+		case SIOCGIFMTU:
+		case SIOCSIFFLAGS:
+		case SIOCSIFHWADDR:
+		case SIOCSIFMTU:
+		case SIOCSIFNAME:
 			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct ifreq), 0);
+		case SIOCBRADDBR:
+		case SIOCBRDELBR:
+			QTFS_IOCTL_CASE_WITH_BREAK(IFNAMSIZ, 0);
+		case SIOCGIFVLAN:
+			QTFS_IOCTL_CASE_WITH_BREAK(sizeof(struct vlan_ioctl_args), 0);
 		default: {
 			char *fullname = kmalloc(MAX_PATH_LEN, GFP_KERNEL);
 			if (!fullname)

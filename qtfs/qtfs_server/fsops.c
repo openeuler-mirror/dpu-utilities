@@ -163,6 +163,18 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		case TUNSETIFF:
 		case TCSETS:
 		case FS_IOC_FSSETXATTR:
+		case SIOCADDMULTI:
+		case SIOCBRADDBR:
+		case SIOCBRDELBR:
+		case SIOCBRADDIF:
+		case SIOCBRDELIF:
+		case SIOCDELMULTI:
+		case SIOCDEVPRIVATE:
+		case SIOCETHTOOL:
+		case SIOCSIFFLAGS:
+		case SIOCSIFHWADDR:
+		case SIOCSIFMTU:
+		case SIOCSIFNAME:
 			rsp->size = 0;
 			break;
 		case FS_IOC_FSGETXATTR:
@@ -170,7 +182,14 @@ static int handle_ioctl(struct qtserver_arg *arg)
 		case TCGETS:
 			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct ktermios));
 		case SIOCGIFHWADDR:
+		case SIOCGIFADDR:
+		case SIOCGIFFLAGS:
+		case SIOCGIFINDEX:
+		case SIOCGIFMTU:
+		case TUNGETIFF:
 			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct ifreq));
+		case SIOCGIFVLAN:
+			QTFS_IOCTL_HANDLE_WITH_BREAK(sizeof(struct vlan_ioctl_args));
 		default:
 			rsp->errno = -EOPNOTSUPP;
 			goto err;
