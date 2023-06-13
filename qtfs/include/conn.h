@@ -43,8 +43,8 @@ extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
 extern int log_level;
 extern struct qtinfo *qtfs_diag_info;
 extern bool qtfs_epoll_mode;
-extern struct qtsock_wl_stru qtsock_wl;
 extern struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops;
+extern struct qtfs_wl g_qtfs_wl;
 
 struct qtfs_conn_var_s *_qtfs_conn_get_param(const char *);
 static inline struct qtfs_conn_var_s *__qtfs_conn_get_param(const char *who_using)
@@ -161,10 +161,14 @@ struct qtfs_conn_var_s {
 	struct msghdr msg_send;
 };
 
-struct qtsock_wl_stru {
-	int nums;
-	char **wl;
+struct qtfs_wl_cap {
+	unsigned int nums;
+	char *item[QTFS_WL_MAX_NUM];
+};
+
+struct qtfs_wl {
 	rwlock_t rwlock;
+	struct qtfs_wl_cap cap[QTFS_WHITELIST_MAX];
 };
 
 int qtfs_conn_init(struct qtfs_conn_var_s *pvar);
@@ -190,9 +194,6 @@ int qtfs_sm_reconnect(struct qtfs_conn_var_s *pvar);
 int qtfs_sm_exit(struct qtfs_conn_var_s *pvar);
 
 void qtfs_conn_list_cnt(void);
-
-int qtfs_uds_remote_init(void);
-void qtfs_uds_remote_exit(void);
 
 int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len);
 

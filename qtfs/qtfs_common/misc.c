@@ -26,6 +26,8 @@
 #include "req.h"
 #include "conn.h"
 
+struct qtfs_wl g_qtfs_wl;
+
 extern struct file_operations qtfs_misc_fops;
 struct mutex qtfs_diag_info_lock;
 
@@ -132,6 +134,131 @@ void qtfs_req_size(void)
 	qtfs_diag_info->rsp_size[QTFS_REQ_EPOLL_EVENT] = sizeof(struct qtrsp_epollevt);
 }
 
+void qtfs_whitelist_initset(void)
+{
+	int type;
+	rwlock_init(&g_qtfs_wl.rwlock);
+	for (type = 0; type < QTFS_WHITELIST_MAX; type++) {
+		memset(&g_qtfs_wl.cap[type], 0, sizeof(struct qtfs_wl_cap));
+	}
+	return;
+}
+
+static int qtfs_whitelist_dup_check(char *tar, struct qtfs_wl_cap *cap)
+{
+	int i;
+	for (i = 0; i < cap->nums; i++) {
+		if (strncmp(tar, cap->item[i], QTFS_PATH_MAX - 1) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+static int qtfs_whitelist_add(struct qtfs_wl_item *uitem)
+{
+	// uitem->type is checked
+	struct qtfs_wl_cap *cap = &g_qtfs_wl.cap[uitem->type];
+	write_lock(&g_qtfs_wl.rwlock);
+	if (cap->nums >= QTFS_WL_MAX_NUM) {
+		qtfs_err("qtfs add white list failed, nums:%u reach upper limit:%d", cap->nums, QTFS_WL_MAX_NUM);
+		goto err_end;
+	}
+	cap->item[cap->nums] = (char *)kmalloc(uitem->len + 1, GFP_KERNEL);
+	if (IS_ERR_OR_NULL(cap->item[cap->nums])) {
+		qtfs_err("kmalloc error");
+		goto err_end;
+	}
+	memset(cap->item[cap->nums], 0, uitem->len + 1);
+	if (copy_from_user(cap->item[cap->nums], uitem->path, uitem->len) ||
+			qtfs_whitelist_dup_check(cap->item[cap->nums], cap) == 1) {
+		qtfs_err("copy from user failed or item is a duplicate, len:%u type:%u", uitem->len, uitem->type);
+		kfree(cap->item[cap->nums]);
+		cap->item[cap->nums] = NULL;
+		goto err_end;
+	}
+	qtfs_info("Successed to add white list type:%u len:%u path:[%s]", uitem->type, uitem->len, cap->item[cap->nums]);
+	cap->nums++;
+	write_unlock(&g_qtfs_wl.rwlock);
+	return 0;
+
+err_end:
+	write_unlock(&g_qtfs_wl.rwlock);
+	return -1;
+}
+
+static int qtfs_whitelist_del(struct qtfs_wl_item *uitem)
+{
+	// type is checked
+	struct qtfs_wl_cap *cap = &g_qtfs_wl.cap[uitem->type];
+	write_lock(&g_qtfs_wl.rwlock);
+	if (uitem->index >= cap->nums) {
+		qtfs_err("White list del type:%u nums:%u, invalid index:%u", uitem->type, cap->nums, uitem->index);
+		goto err_end;
+	}
+	// free target index
+	kfree(cap->item[uitem->index]);
+	cap->item[uitem->index] = NULL;
+	if (cap->nums > 1) {
+		// if nums > 1 move last one to fill the hole
+		cap->item[uitem->index] = cap->item[cap->nums - 1];
+		cap->item[cap->nums - 1] = NULL;
+	}
+	qtfs_info("white list del type:%u total nums:%u delindex:%u", uitem->type, cap->nums, uitem->index);
+
+	cap->nums--;
+	write_unlock(&g_qtfs_wl.rwlock);
+	return 0;
+err_end:
+	write_unlock(&g_qtfs_wl.rwlock);
+	return -1;
+}
+
+static int qtfs_whitelist_get(struct qtfs_wl_item *uitem)
+{
+	// type is checked
+	struct qtfs_wl_cap *cap = &g_qtfs_wl.cap[uitem->type];
+	int len;
+	read_lock(&g_qtfs_wl.rwlock);
+	if (uitem->index >= cap->nums) {
+		qtfs_err("query white list invalid index:%u type:%u total nums:%u", uitem->index, uitem->type, cap->nums);
+		goto err_end;
+	}
+	len = strlen(cap->item[uitem->index]);
+	if (!access_ok(uitem->path, len)) {
+		qtfs_err("white list query pointer of userspace is not valid type:%u index:%u len:%d", uitem->type, uitem->index, len);
+		goto err_end;
+	}
+	if (copy_to_user(uitem->path, cap->item[uitem->index], len)) {
+		qtfs_err("white list query copy to user failed, type:%u index:%u len:%d", uitem->type, uitem->index, len);
+		goto err_end;
+	}
+	qtfs_info("white list query type:%u total nums:%u index:%u len:%d", uitem->type, cap->nums, uitem->index, len);
+	read_unlock(&g_qtfs_wl.rwlock);
+	return 0;
+
+err_end:
+	read_unlock(&g_qtfs_wl.rwlock);
+	return -1;
+}
+
+void qtfs_whitelist_clearall(void)
+{
+	struct qtfs_wl_cap *cap = NULL;
+	int type;
+	int item;
+	write_lock(&g_qtfs_wl.rwlock);
+	for (type = 0; type < QTFS_WHITELIST_MAX; type++) {
+		cap = &g_qtfs_wl.cap[type];
+		for (item = 0; item < cap->nums; item++) {
+			kfree(cap->item[item]);
+			cap->item[item] = NULL;
+		}
+		cap->nums = 0;
+	}
+	write_unlock(&g_qtfs_wl.rwlock);
+	return;
+}
+
 long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = QTOK;
@@ -176,125 +303,45 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				qtfs_epoll_mode = true;
 			}
 			break;
-		case QTFS_IOCTL_QTSOCK_WL_ADD: {
-			struct qtsock_whitelist *name;
-			struct qtsock_whitelist head;
-			if (copy_from_user(&head, (void *)arg, sizeof(struct qtsock_whitelist))) {
-				qtfs_err("ioctl qtsock wl add copy from user failed");
+		case QTFS_IOCTL_WL_ADD: {
+			struct qtfs_wl_item head;
+			if (copy_from_user(&head, (void *)arg, sizeof(struct qtfs_wl_item))) {
+				qtfs_err("ioctl wl add copy from user failed");
 				goto err_end;
 			}
-			if (head.len <= 0 || head.len >= MAX_PATH_LEN - sizeof(struct qtsock_whitelist) - 1) {
-				qtfs_err("invalid qtsock whitelist add head length:%d!", head.len);
+			if (head.len == 0 || head.len == MAX_PATH_LEN || head.type >= QTFS_WHITELIST_MAX ||
+					!access_ok(head.path, head.len)) {
+				qtfs_err("ioctl wl add len:%u type:%u invalid", head.len, head.type);
 				goto err_end;
 			}
-			name = __getname();
-			if (unlikely(!name)) {
-				qtfs_err("failed to getname during qtsock whitelist add!");
+			if (qtfs_whitelist_add(&head) != 0) {
+				qtfs_err("ioctl wl add failed!");
 				goto err_end;
 			}
-			memset(name, 0, MAX_PATH_LEN);
-			if (copy_from_user(name, (void *)arg, sizeof(struct qtsock_whitelist) + head.len)) {
-				qtfs_err("ioctl qtsock failed");
-				__putname(name);
-				goto err_end;
-			}
-			if (name->len <= 0 || name->len >= MAX_PATH_LEN - sizeof(struct qtsock_whitelist) - 1) {
-				qtfs_err("invalid whitelist itern length: %d!", name->len);
-				__putname(name);
-				goto err_end;
-			}
-			write_lock(&qtsock_wl.rwlock);
-			if (qtsock_wl.nums < 0 || qtsock_wl.nums >= QTSOCK_WL_MAX_NUM) {
-				qtfs_err("qtsock white list num:%d cant add any more.", qtsock_wl.nums);
-				__putname(name);
-				write_unlock(&qtsock_wl.rwlock);
-				goto err_end;
-			}
-			qtsock_wl.wl[qtsock_wl.nums] = (char *)kmalloc(name->len + 1, GFP_KERNEL);
-			if (qtsock_wl.wl[qtsock_wl.nums] == NULL) {
-				qtfs_err("kmalloc qtsock white list failed, len:%d.", name->len + 1);
-				write_unlock(&qtsock_wl.rwlock);
-				__putname(name);
-				goto err_end;
-			}
-			memset(qtsock_wl.wl[qtsock_wl.nums], 0, name->len + 1);
-			memcpy(qtsock_wl.wl[qtsock_wl.nums], name->data, name->len);
-			qtsock_wl.nums++;
-			write_unlock(&qtsock_wl.rwlock);
-			qtfs_info("add white list len:%d str:%s successed in idx:%d", name->len, name->data, qtsock_wl.nums - 1);
-			__putname(name);
 			break;
 		}
-		case QTFS_IOCTL_QTSOCK_WL_DEL:
-		{
-			int index;
-			if (copy_from_user(&index, (void *)arg, sizeof(int))) {
-				qtfs_err("qtsock white list delete copy from user failed");
+		case QTFS_IOCTL_WL_DEL:
+		case QTFS_IOCTL_WL_GET: {
+			struct qtfs_wl_item head;
+			if (copy_from_user(&head, (void *)arg, sizeof(struct qtfs_wl_item))) {
+				qtfs_err("ioctl wl del copy from user failed");
 				goto err_end;
 			}
-			if (index >= QTSOCK_WL_MAX_NUM || index < 0) {
-				qtfs_err("qtsock white list delete index:%d invalid, total items:%d", index, qtsock_wl.nums);
+			if (head.type >= QTFS_WHITELIST_MAX) {
+				qtfs_err("ioctl wl del invalid type:%u", head.type);
 				goto err_end;
 			}
-			write_lock(&qtsock_wl.rwlock);
-			// clear all white list
-			if (qtsock_wl.nums > 0 && index < qtsock_wl.nums) {
-				kfree(qtsock_wl.wl[index]);
-				qtsock_wl.wl[index] = NULL;
-				if (qtsock_wl.nums > 1) {
-					qtsock_wl.wl[index] = qtsock_wl.wl[qtsock_wl.nums - 1];
-					qtsock_wl.wl[qtsock_wl.nums - 1] = NULL;
+			if (cmd == QTFS_IOCTL_WL_DEL) {
+				if (qtfs_whitelist_del(&head) != 0) {
+					qtfs_err("ioctl wl del failed!");
+					goto err_end;
 				}
-				qtsock_wl.nums--;
 			} else {
-				qtfs_err("failed to delete items:%d current items number:%d", index, qtsock_wl.nums);
-				write_unlock(&qtsock_wl.rwlock);
-				goto err_end;
+				if (qtfs_whitelist_get(&head) != 0) {
+					qtfs_err("ioctl wl get failed!");
+					goto err_end;
+				}
 			}
-			write_unlock(&qtsock_wl.rwlock);
-			break;
-		}
-		case QTFS_IOCTL_QTSOCK_WL_GET:
-		{
-			int index;
-			struct qtsock_whitelist *name;
-			if (copy_from_user(&index, (void *)arg, sizeof(int))) {
-				qtfs_err("qtsock white list delete copy from user failed");
-				goto err_end;
-			}
-			if (index >= QTSOCK_WL_MAX_NUM || index < 0) {
-				qtfs_err("qtsock white list delete index:%d invalid", index);
-				goto err_end;
-			}
-			name = __getname();
-			if (unlikely(!name)) {
-				qtfs_err("failed to getname during qtsock whitelist get!");
-				goto err_end;
-			}
-			memset(name, 0, PATH_MAX);
-			read_lock(&qtsock_wl.rwlock);
-			if (index >= qtsock_wl.nums) {
-				qtfs_err("qtsock get info failed, index:%d is invalid:%d", index, qtsock_wl.nums);
-				read_unlock(&qtsock_wl.rwlock);
-				__putname(name);
-				goto err_end;
-			}
-			name->len = strlen(qtsock_wl.wl[index]) + 1;
-			if (sizeof(struct qtsock_whitelist) + name->len + 1 > PATH_MAX) {
-				qtfs_err("invalid message length:%ld during qtsock whitelist get", sizeof(struct qtsock_whitelist) + name->len);
-				read_unlock(&qtsock_wl.rwlock);
-				__putname(name);
-				goto err_end;
-			}
-			memcpy(name->data, qtsock_wl.wl[index], name->len);
-			read_unlock(&qtsock_wl.rwlock);
-			if (copy_to_user((void *)arg, name, sizeof(struct qtsock_whitelist) + name->len)) {
-				qtfs_err("copy to user failed");
-				__putname(name);
-				goto err_end;
-			}
-			qtfs_info("qtsock wl get index:%d wl:%s", index, name->data);
-			__putname(name);
 			break;
 		}
 	}

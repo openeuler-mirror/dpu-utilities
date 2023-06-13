@@ -188,6 +188,8 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int qtfs_missmsg_proc(struct qtfs_conn_var_s *pvar);
 int qtfs_utils_register(void);
 void qtfs_utils_destroy(void);
+void qtfs_whitelist_clearall(void);
+void qtfs_whitelist_initset(void);
 
 #endif
 
