@@ -43,7 +43,6 @@ struct qtfs_conn_var_s *qtfs_epoll_var = NULL;
 #ifdef QTFS_SERVER
 struct qtfs_server_userp_s *qtfs_userps = NULL;
 #endif
-struct qtsock_wl_stru qtsock_wl;
 
 // try to connect remote uds server, only for unix domain socket
 #define QTFS_UDS_PROXY_SUFFIX ".proxy"
@@ -105,17 +104,19 @@ static int qtfs_uds_remote_whitelist(const char *path)
 {
 	int i;
 	int ret = 1;
-	read_lock(&qtsock_wl.rwlock);
-	for (i = 0; i < qtsock_wl.nums; i++) {
-		if (strncmp(path, qtsock_wl.wl[i], strlen(qtsock_wl.wl[i])) == 0) {
-			if (strlen(path) > strlen(qtsock_wl.wl[i]) && path[strlen(qtsock_wl.wl[i])] != '/') {
+	struct qtfs_wl_cap *cap;
+	read_lock(&g_qtfs_wl.rwlock);
+	cap = &g_qtfs_wl.cap[QTFS_WHITELIST_UDSCONNECT];
+	for (i = 0; i < cap->nums; i++) {
+		if (strncmp(path, cap->item[i], strlen(cap->item[i])) == 0) {
+			if (strlen(path) > strlen(cap->item[i]) && path[strlen(cap->item[i])] != '/') {
 				continue;
 			}
 			ret = 0;
 			break;
 		}
 	}
-	read_unlock(&qtsock_wl.rwlock);
+	read_unlock(&g_qtfs_wl.rwlock);
 	return ret;
 }
 
@@ -191,37 +192,6 @@ int qtfs_uds_remote_connect_user(int fd, struct sockaddr __user *addr, int len)
 end:
 	fdput(f);
 	return sysret;
-}
-
-int qtfs_uds_remote_init(void)
-{
-	qtsock_wl.nums = 0;
-	qtsock_wl.wl = (char **)kmalloc(sizeof(char *) * QTSOCK_WL_MAX_NUM, GFP_KERNEL);
-	if (qtsock_wl.wl == NULL) {
-		qtfs_err("failed to kmalloc wl, max num:%d", QTSOCK_WL_MAX_NUM);
-		return -1;
-	}
-	rwlock_init(&qtsock_wl.rwlock);
-	return 0;
-}
-
-void qtfs_uds_remote_exit(void)
-{
-	int i = 0;
-	write_lock(&qtsock_wl.rwlock);
-	for (i = 0; i < qtsock_wl.nums; i++) {
-		if (qtsock_wl.wl[i]) {
-			kfree(qtsock_wl.wl[i]);
-			qtsock_wl.wl[i] = NULL;
-		}
-	}
-	if (qtsock_wl.wl) {
-		kfree(qtsock_wl.wl);
-		qtsock_wl.wl = NULL;
-	}
-	qtsock_wl.nums = 0;
-	write_unlock(&qtsock_wl.rwlock);
-	return;
 }
 
 int qtfs_conn_init(struct qtfs_conn_var_s *pvar)

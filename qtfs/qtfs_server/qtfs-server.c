@@ -46,9 +46,6 @@ struct qtfs_server_epoll_s qtfs_epoll = {
 };
 rwlock_t qtfs_epoll_rwlock;
 
-struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
-rwlock_t g_whitelist_rwlock;
-
 long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 {
 	int n;
@@ -185,10 +182,9 @@ int qtfs_server_fd_bitmap_init(void)
 
 long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int i, len;
+	int i;
 	long ret = 0;
 	struct qtfs_conn_var_s *pvar;
-	struct whitelist *tmp;
 	struct qtfs_thread_init_s init_userp;
 	switch (cmd) {
 		case QTFS_IOCTL_THREAD_INIT:
@@ -324,69 +320,16 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 				ret = QTERROR;
 				break;
 			}
-			write_lock(&g_whitelist_rwlock);
-			for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-				if (g_whitelist[i] != NULL) {
-					kfree(g_whitelist[i]);
-					g_whitelist[i] = NULL;
-				}
-			}
-			write_unlock(&g_whitelist_rwlock);
+			qtfs_whitelist_clearall();
 			qtfs_info("qtfs server threads run set to:%lu.", arg);
 			qtfs_server_thread_run = arg;
-			break;
-		case QTFS_IOCTL_WHITELIST:
-			if (copy_from_user(&len, (void __user *)arg, sizeof(int))) {
-				qtfs_err("qtfs ioctl white init copy from user failed.");
-				return QTERROR;
-			}
-			if (len <= 0 || len > QTFS_WL_MAX_NUM) {
-				qtfs_err("qtfs ioctl white list len:%d invalid", len);
-				return QTERROR;
-			}
-			tmp = (struct whitelist *)kmalloc(sizeof(struct whitelist) + sizeof(struct wl_item) * len, GFP_KERNEL);
-			if (!tmp) {
-				qtfs_err("qtfs ioctl whitelist alloc memory failed.");
-				return QTERROR;
-			}
-			if (copy_from_user(tmp, (void __user *)arg, sizeof(struct whitelist) + sizeof(struct wl_item) * len)) {
-				qtfs_err("qtfs ioctl white init copy from user failed.");
-				kfree(tmp);
-				return QTERROR;
-			}
-			if (tmp->type >= QTFS_WHITELIST_MAX) {
-				qtfs_err("qtfs white list type :%d invalid.", tmp->type);
-				kfree(tmp);
-				return QTERROR;
-			}
-			if (tmp->len != len) {
-				qtfs_err("memory of qtfs white list from engine was tampered.");
-				kfree(tmp);
-				return QTERROR;
-			}
-			write_lock(&g_whitelist_rwlock);
-			if (g_whitelist[tmp->type] != NULL) {
-				kfree(g_whitelist[tmp->type]);
-				g_whitelist[tmp->type] = NULL;
-			}
-			g_whitelist[tmp->type] = tmp;
-			for (i = 0; i < g_whitelist[tmp->type]->len; i++) {
-				if (strnlen(g_whitelist[tmp->type]->wl[i].path, WHITELIST_MAX_PATH_LEN) != g_whitelist[tmp->type]->wl[i].len) {
-					g_whitelist[tmp->type] = NULL;
-					kfree(tmp);
-					write_unlock(&g_whitelist_rwlock);
-					return QTERROR;
-				}
-				qtfs_info("init %d list:%d %s", tmp->type, i, g_whitelist[tmp->type]->wl[i].path);
-			}
-			write_unlock(&g_whitelist_rwlock);
 			break;
 		case QTFS_IOCTL_ALLINFO:
 		case QTFS_IOCTL_CLEARALL:
 		case QTFS_IOCTL_LOGLEVEL:
-		case QTFS_IOCTL_QTSOCK_WL_ADD:
-		case QTFS_IOCTL_QTSOCK_WL_DEL:
-		case QTFS_IOCTL_QTSOCK_WL_GET:
+		case QTFS_IOCTL_WL_ADD:
+		case QTFS_IOCTL_WL_DEL:
+		case QTFS_IOCTL_WL_GET:
 			ret = qtfs_misc_ioctl(file, cmd, arg);
 			break;
 		default:
@@ -400,18 +343,11 @@ long qtfs_server_misc_ioctl(struct file *file, unsigned int cmd, unsigned long a
 
 static int __init qtfs_server_init(void)
 {
-	int i;
 	qtfs_log_init(qtfs_log_level, sizeof(qtfs_log_level));
 	if (qtfs_kallsyms_hack_init() != 0)
 		return -1;
-	rwlock_init(&g_whitelist_rwlock);
 	rwlock_init(&qtfs_epoll_rwlock);
-
- 	write_lock(&g_whitelist_rwlock);
-	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		g_whitelist[i] = NULL;
-	}
-	write_unlock(&g_whitelist_rwlock);
+	qtfs_whitelist_initset();
 
 	qtfs_diag_info = (struct qtinfo *)kmalloc(sizeof(struct qtinfo), GFP_KERNEL);
 	if (qtfs_diag_info == NULL) {
@@ -438,13 +374,7 @@ static int __init qtfs_server_init(void)
 		qtfs_err("qtfs misc device register failed.");
 		goto err_misc;
 	}
-	if (qtfs_uds_remote_init()) {
-		qtfs_err("qtfs uds remote initialization failed.");
-		goto err;
-	}
 	return 0;
-err:
-	qtfs_misc_destroy();
 err_misc:
 	qtfs_syscall_replace_stop();
 err_syscall:
@@ -455,7 +385,6 @@ err_syscall:
 
 static void __exit qtfs_server_exit(void)
 {
-	int i;
 	qtfs_mod_exiting = true;
 	qtfs_server_thread_run = 0;
 
@@ -484,15 +413,7 @@ static void __exit qtfs_server_exit(void)
 	}
 	write_unlock(&g_userp_rwlock);
 
-	write_lock(&g_whitelist_rwlock);
-	for (i = 0; i < QTFS_WHITELIST_MAX; i++) {
-		if (g_whitelist[i] != NULL) {
-			kfree(g_whitelist[i]);
-		}
-	}
-	write_unlock(&g_whitelist_rwlock);
 	qtfs_misc_destroy();
-	qtfs_uds_remote_exit();
 	qtfs_syscall_replace_stop();
 	qtfs_info("qtfs server exit done.\n");
 	return;

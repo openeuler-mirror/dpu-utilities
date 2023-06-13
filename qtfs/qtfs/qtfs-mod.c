@@ -252,14 +252,8 @@ static int __init qtfs_init(void)
 	if (ret) {
 		goto utils_register_err;
 	}
-	ret = qtfs_uds_remote_init();
-	if (ret) {
-		goto uds_init_err;
-	}
 	qtfs_info("QTFS file system register success!\n");
 	return 0;
-uds_init_err:
-	qtfs_utils_destroy();
 utils_register_err:
 	qtfs_syscall_fini();
 syscall_init_err:
@@ -294,6 +288,7 @@ static void __exit qtfs_exit(void)
 		kfree(qtfs_epoll_var);
 		qtfs_epoll_var = NULL;
 	}
+	qtfs_whitelist_initset();
 
 	kfree(qtfs_diag_info);
 	qtfs_diag_info = NULL;
@@ -305,7 +300,6 @@ static void __exit qtfs_exit(void)
 	}
 	qtfs_utils_destroy();
 	kmem_cache_destroy(qtfs_inode_priv_cache);
-	qtfs_uds_remote_exit();
 	qtfs_syscall_replace_stop();
 	qtfs_info("QTFS file system unregister success!\n");
 	return;

@@ -401,25 +401,55 @@ static int qtinfo_opt_s()
 
 }
 
+char wl_type_str[QTFS_WHITELIST_MAX][16] = {
+#ifdef server
+	"Open",
+	"Write",
+	"Read",
+	"Readdir",
+	"Mkdir",
+	"Rmdir",
+	"Create",
+	"Unlink",
+	"Rename",
+	"Setattr",
+	"Setxattr",
+	"Mount",
+	"Kill",
+#endif
+	"Udsconnect"
+};
+
+int qtinfo_match_cap(char *cap)
+{
+	if (cap == NULL)
+		return -1;
+	for (int type = 0; type < QTFS_WHITELIST_MAX; type++) {
+		if (strcasecmp(wl_type_str[type], cap) == 0)
+			return type;
+	}
+	return -1;
+}
+
 #define PATH_MAX 4096
-static int qtinfo_opt_x(int fd, char *path)
+static int qtinfo_opt_x(int fd, char *path, char *cap)
 {
 	int ret = -1;
 	int index = 0;
-	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
-	if (item == NULL) {
-		qtinfo_err("malloc failed");
+	struct qtfs_wl_item head;
+	ret = qtinfo_match_cap(cap);
+	if (ret < 0) {
+		qtinfo_err("White list add type:%s unknown.", cap);
 		return -1;
 	}
-	memset(item, 0, PATH_MAX);
-	item->len = strlen(path);
-	if (item->len > PATH_MAX - sizeof(struct qtsock_whitelist)) {
-		qtinfo_err("item len:%d str:%s error", item->len, path);
-		free(item);
+	head.type = ret;
+	head.len = strlen(path);
+	if (head.len >= PATH_MAX || head.len == 0) {
+		qtinfo_err("White list add len:%u invalid", head.len);
 		return -1;
 	}
-	memcpy(item->data, path, item->len);
-	ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_ADD, item);
+	head.path = path;
+	ret = ioctl(fd, QTFS_IOCTL_WL_ADD, &head);
 	if (ret != QTOK) {
 		qtinfo_err("ioctl add white list failed");
 		ret = -1;
@@ -427,44 +457,64 @@ static int qtinfo_opt_x(int fd, char *path)
 		qtinfo_out("successed to add white list item:%s successed", path);
 		ret = 0;
 	}
-	free(item);
 	return ret;
 }
 
-static int qtinfo_opt_y(int fd, char *index)
+static int qtinfo_opt_y(int fd, char *index, char *cap)
 {
-	int idx = atoi(index);
-	int ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_DEL, &idx);
+	struct qtfs_wl_item head;
+	int ret = qtinfo_match_cap(cap);
+	if (ret < 0) {
+		qtinfo_err("White list delete type:%s unknown.", cap);
+		return -1;
+	}
+	head.index = atoi(index);
+	head.type = ret;
+	head.path = NULL;
+	head.len = 0;
+	ret = ioctl(fd, QTFS_IOCTL_WL_DEL, &head);
 	if (ret != QTOK) {
-		qtinfo_err("failed to delete white list index:%d", idx);
+		qtinfo_err("failed to delete white list index:%d", head.index);
 		return -1;
 	} else {
-		qtinfo_out("successed to delete white list index:%d", idx);
+		qtinfo_out("successed to delete white list index:%d", head.index);
 	}
 	return 0;
 }
 
-static int qtinfo_opt_z(int fd)
+static void qtinfo_opt_z_bytype(int fd, unsigned int type)
+{
+	int ret;
+	char query[PATH_MAX];
+	struct qtfs_wl_item head;
+	head.path = query;
+	head.type = type;
+	qtinfo_out("Get qtfs <%s> white list:", wl_type_str[type]);
+	for (unsigned int index = 0; index < QTFS_WL_MAX_NUM; index++) {
+		memset(head.path, 0, PATH_MAX);
+		head.index = index;
+		ret = ioctl(fd, QTFS_IOCTL_WL_GET, &head);
+		if (ret != QTOK)
+			break;
+		qtinfo_out("  [index:%d][path:%s]", index, head.path);
+	}
+	return;
+}
+
+static int qtinfo_opt_z(int fd, char *cap)
 {
 	int ret = -1;
 	int index = 0;
-	struct qtsock_whitelist *item = (struct qtsock_whitelist *)malloc(PATH_MAX);
-	if (item == NULL) {
-		qtinfo_err("malloc failed");
-		return -1;
+	ret = qtinfo_match_cap(cap);
+
+	if (ret >= 0 && ret < QTFS_WHITELIST_MAX) {
+		qtinfo_opt_z_bytype(fd, ret);
+		return 0;
 	}
-	qtinfo_out("Get remote uds white list:");
-	while (index < QTSOCK_WL_MAX_NUM) {
-		memset(item, 0, PATH_MAX);
-		item->len = index;
-		ret = ioctl(fd, QTFS_IOCTL_QTSOCK_WL_GET, item);
-		if (ret != QTOK)
-			break;
-		qtinfo_out("  [index:%d][path:%s]", index, item->data);
-		index++;
+	for (int i = 0; i < QTFS_WHITELIST_MAX; i++) {
+		qtinfo_opt_z_bytype(fd, i);
 	}
-	free(item);
-	return ret;
+	return 0;
 }
 
 static void qtinfo_help(char *exec)
@@ -480,15 +530,24 @@ static void qtinfo_help(char *exec)
 	qtinfo_out("  -u, Display unix socket proxy diagnostic info");
 	qtinfo_out("  -s, Set unix socket proxy log level(Increase by 1 each time)");
 #endif
-	qtinfo_out("  -x, Add a uds white list path(example: -x /home/)");
-	qtinfo_out("  -y, Delete a uds white list with index(example: -y 1)");
-	qtinfo_out("  -z, Get all uds white list");
+#ifdef server
+	qtinfo_out("  -w, White list type(open/write/read/readdir/mkdir/rmdir/create/\n"
+				"      unlink/rename/setattr/setxattr/mount/kill/udsconnect)");
+#endif
+#ifdef client
+	qtinfo_out("  -w, White list type(udsconnect)");
+#endif
+	qtinfo_out("  -x, Add a qtfs white list path(example: -x /home/, must use with -w)");
+	qtinfo_out("  -y, Delete a qtfs white list with index(example: -y 1, must use with -w)");
+	qtinfo_out("  -z, Get all qtfs white list(just use -z, or with white list type)");
 }
 
 int main(int argc, char *argv[])
 {
+#define MAX_CAP_LEN 16
 	int ret = -1;
 	int ch;
+	char wl_cap[MAX_CAP_LEN] = {0};
 	if ((argc == 1) || (argc == 2 && strcmp(argv[1], "--help") == 0)) {
 		qtinfo_help(argv[0]);
 		return -1;
@@ -501,9 +560,9 @@ int main(int argc, char *argv[])
 #endif
 	}
 #ifndef QTINFO_RELEASE
-	while ((ch = getopt(argc, argv, "acl:tp:usx:y:z")) != -1) {
+	while ((ch = getopt(argc, argv, "acl:tp:usw:x:y:z::")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "x:y:z")) != -1) {
+	while ((ch = getopt(argc, argv, "w:x:y:z::")) != -1) {
 #endif
 		switch (ch) {
 #ifndef QTINFO_RELEASE
@@ -529,14 +588,17 @@ int main(int argc, char *argv[])
 				ret = qtinfo_opt_s();
 				break;
 #endif
+			case 'w':
+				strncpy(wl_cap, optarg, MAX_CAP_LEN - 1);
+				break;
 			case 'x':
-				ret = qtinfo_opt_x(fd, optarg);
+				ret = qtinfo_opt_x(fd, optarg, wl_cap);
 				break;
 			case 'y':
-				ret = qtinfo_opt_y(fd, optarg);
+				ret = qtinfo_opt_y(fd, optarg, wl_cap);
 				break;
 			case 'z':
-				ret = qtinfo_opt_z(fd);
+				ret = qtinfo_opt_z(fd, optarg);
 				break;
 			default:
 				ret = 0;

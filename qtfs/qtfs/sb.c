@@ -578,7 +578,7 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 	req = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_SEND);
 	rsp = pvar->conn_ops->get_conn_msg_buf(pvar, QTFS_RECV);
 	if (size >= sizeof(req->path)) {
-		qtfs_err("do ioctl failed, size:%u too big:%u", size, sizeof(req->path));
+		qtfs_err("do ioctl failed, size:%u too big:%lu", size, sizeof(req->path));
 		qtfs_conn_put_param(pvar);
 		return -EINVAL;
 	}
@@ -633,7 +633,6 @@ out:
 	}
 long qtfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	unsigned int size;
 	long ret;
 	switch(cmd) {
 		// all case of size 0 type 0 enter here

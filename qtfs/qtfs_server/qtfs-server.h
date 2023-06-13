@@ -17,8 +17,6 @@
 extern int qtfs_server_thread_run;
 extern struct qtfs_server_epoll_s qtfs_epoll;
 extern int qtfs_mod_exiting;
-extern struct whitelist* g_whitelist[QTFS_WHITELIST_MAX];
-extern rwlock_t g_whitelist_rwlock;
 extern rwlock_t g_userp_rwlock;
 extern struct qtserver_fd_bitmap qtfs_fd_bitmap;
 
@@ -45,5 +43,7 @@ long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 int qtfs_misc_register(void);
 void qtfs_misc_destroy(void);
 long qtfs_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+void qtfs_whitelist_clearall(void);
+void qtfs_whitelist_initset(void);
 
 #endif

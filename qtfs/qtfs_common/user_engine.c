@@ -39,7 +39,22 @@
 #include "comm.h"
 #include "ipc/uds_main.h"
 
-char wl_type_str[QTFS_WHITELIST_MAX][10] = {"Open", "Write", "Read", "Readdir", "Mkdir", "Rmdir", "Create", "Unlink", "Rename", "Setattr", "Setxattr", "Mount"};
+char wl_type_str[QTFS_WHITELIST_MAX][16] = {
+	"Open",
+	"Write",
+	"Read",
+	"Readdir",
+	"Mkdir",
+	"Rmdir",
+	"Create",
+	"Unlink",
+	"Rename",
+	"Setattr",
+	"Setxattr",
+	"Mount",
+	"Kill",
+	"Udsconnect"
+	};
 
 #define engine_out(info, ...) \
 	do {\
@@ -57,8 +72,6 @@ char wl_type_str[QTFS_WHITELIST_MAX][10] = {"Open", "Write", "Read", "Readdir", 
 	} while (0);
 
 #define WHITELIST_FILE "/etc/qtfs/whitelist"
-
-struct whitelist *whitelist[QTFS_WHITELIST_MAX] = {0};
 
 struct engine_arg {
 	int psize;
@@ -227,58 +240,53 @@ int qtfs_epoll_init(int fd)
 	return epfd;
 }
 
-static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
+static void qtfs_whitelist_free_items(char **items, int64_t count)
 {
-	int64_t i, wl_count;
-	int ret;
-	char **items;
-	struct whitelist *whitelist = NULL;
-	if (type >= QTFS_WHITELIST_MAX) {
-		engine_err("whitelist item index out of range:%d, no more than %d.", type, QTFS_WHITELIST_MAX);
-		return -1;
-	}
-	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &wl_count, NULL);
-	if (wl_count <= 0) {
-		engine_err("Can't find whitelist item %s", wl_type_str[type]);
-		return -1;
-	}
-	if (wl_count > 64)
-		wl_count = 64;
-	whitelist = (struct whitelist *)malloc(sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
-	if (!whitelist) {
-		engine_err("alloc memory for whitelist failed");
-		ret = -ENOMEM;
-		goto end;
-	}
-	memset(whitelist, 0, sizeof(struct whitelist) + sizeof(struct wl_item) * wl_count);
-	engine_out("%s:\n", wl_type_str[type]);
-	whitelist->len = wl_count;
-	whitelist->type = type;
-	for(i = 0; i < wl_count; i++){
-		engine_out("%s\n", items[i]);
-		whitelist->wl[i].len = strlen(items[i]);
-		if (strlen(items[i]) >= sizeof(whitelist->wl[i].path)) {
-			engine_err("item[%s] too long. should less than %d", items[i], sizeof(whitelist->wl[i].path));
-			ret = -1;
-			goto end;
-		}
-		strncpy(whitelist->wl[i].path, items[i], sizeof(whitelist->wl[i].path));
-	}
-	ret = ioctl(fd, QTFS_IOCTL_WHITELIST, whitelist);
-	if (ret != 0) {
-		engine_err("Can't set whitelist item %s", wl_type_str[type]);
-	}
-end:
-	if (whitelist)
-		free(whitelist);
-	for (int j = 0; i < wl_count; j++) {
+	for (int j = 0; j < count; j++) {
 		if (items[j])
 			free(items[j]);
 	}
 	if (items)
 		free(items);
-	// whitelist will be free in qtfs_whitelist_init
-	return ret;
+	return;
+}
+
+static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
+{
+	int64_t i, wl_count;
+	int ret;
+	char **items;
+	struct qtfs_wl_item head;
+	items = g_key_file_get_string_list(config, wl_type_str[type], "Path", &wl_count, NULL);
+	if (wl_count <= 0) {
+		engine_err("Can't find whitelist item %s", wl_type_str[type]);
+		return -1;
+	}
+	if (wl_count > QTFS_WL_MAX_NUM)
+		wl_count = QTFS_WL_MAX_NUM;
+
+	head.type = type;
+	head.index = 0; // not use in add
+	for(i = 0; i < wl_count; i++){
+		head.len = strlen(items[i]);
+		if (head.len >= QTFS_PATH_MAX) {
+			engine_err("Whitelist type:%s invalid path:%s is too long(> %d)", wl_type_str[type], items[i], QTFS_PATH_MAX - 1);
+			continue;
+		}
+		head.path = items[i];
+		ret = ioctl(fd, QTFS_IOCTL_WL_ADD, &head);
+		if (ret == QTERROR) {
+			engine_err("Failed to add whitelist:%s type:%d, engine start failed.", items[i], type);
+			goto end;
+		}
+	}
+	engine_out("Successed to add white list items type:%s count:%d", wl_type_str[type], wl_count);
+	qtfs_whitelist_free_items(items, wl_count);
+	return 0;
+
+end:
+	qtfs_whitelist_free_items(items, wl_count);
+	return -1;
 }
 
 int qtfs_whitelist_init(int fd)
