@@ -1551,7 +1551,7 @@ int qtfs_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 	struct qtrsp_getattr *rsp;
 	struct inode *inode = dentry->d_inode;
 	if (dentry && dentry->d_inode) {
-		if (jiffies - dentry->d_time < 2000)
+		if (jiffies_to_msecs(jiffies - dentry->d_time) < 2000)
 			return 1;
 		pvar = qtfs_conn_get_param();
 		if (!pvar) {
