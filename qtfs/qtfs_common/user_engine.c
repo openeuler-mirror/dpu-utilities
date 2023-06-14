@@ -82,6 +82,23 @@ struct engine_arg {
 #define QTFS_USERP_SIZE QTFS_USERP_MAXSIZE
 #define QTFS_SERVER_FILE "/dev/qtfs_server"
 #define ENGINE_LOCK_ADDR "/var/run/qtfs/engine.lock"
+#define ENGINE_LOCK_FILE_DIR "/var/run/qtfs/"
+
+static int engine_env_prepare()
+{
+	DIR *dir;
+	if (access(ENGINE_LOCK_ADDR, 0) == 0)
+		return 0;
+	if ((dir = opendir(ENGINE_LOCK_FILE_DIR)) == NULL) {
+		if (mkdir(ENGINE_LOCK_FILE_DIR, 0600) < 0) {
+			engine_err("mkdir %s failed.", ENGINE_LOCK_FILE_DIR);
+			return -1;
+		}
+	} else {
+		closedir(dir);
+	}
+	return 0;
+}
 
 int engine_socket_lock(void)
 {
@@ -383,7 +400,7 @@ int main(int argc, char *argv[])
 		engine_out("     Example: %s 16 1 192.168.10.10 12121 192.168.10.11 12121.", argv[0]);
 		return -1;
 	}
-	if (engine_socket_lock() < 0) {
+	if (engine_env_prepare() != 0 || engine_socket_lock() < 0) {
 		engine_err("Engine is running.");
 		return -1;
 	}
