@@ -1636,6 +1636,7 @@ struct dentry *qtfs_fs_mount(struct file_system_type *fs_type,
 	struct qtrsp_mount *rsp = NULL;
 	struct dentry *ret;
 	struct qtfs_fs_info *priv = NULL;
+	int errno;
 	struct qtfs_conn_var_s *pvar = qtfs_conn_get_param();
 	if (!pvar) {
 		qtfs_err("Failed to get qtfs sock var\n");
@@ -1646,9 +1647,10 @@ struct dentry *qtfs_fs_mount(struct file_system_type *fs_type,
 	strlcpy(req->path, dev_name, PATH_MAX);
 	rsp = qtfs_remote_run(pvar, QTFS_REQ_MOUNT, strlen(dev_name));
 	if (IS_ERR_OR_NULL(rsp) || rsp->ret != QTFS_OK) {
-		qtfs_err("qtfs fs mount failed, path:<%s> not exist at peer.\n", dev_name);
+		errno = rsp->errno;
+		qtfs_err("qtfs fs mount failed, path:<%s> errno:%d.\n", dev_name, errno);
 		qtfs_conn_put_param(pvar);
-		return ERR_PTR(-ENOENT);
+		return (IS_ERR_VALUE((long)errno)) ? ERR_PTR(errno) : ERR_PTR(-EFAULT);
 	}
 
 	priv = (struct qtfs_fs_info *)kmalloc(sizeof(struct qtfs_fs_info), GFP_KERNEL);
