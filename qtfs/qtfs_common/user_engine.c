@@ -35,6 +35,7 @@
 #include <sys/prctl.h>
 #include <sys/file.h>
 #include <sys/epoll.h>
+#include <linux/vm_sockets.h>
 
 #include "comm.h"
 #include "ipc/uds_main.h"
@@ -333,60 +334,62 @@ int qtfs_whitelist_init(int fd)
 	return 0;
 }
 
-#ifdef QTFS_TEST_MODE
+#ifdef UDS_TEST_MODE
 static int qtfs_engine_check_port(unsigned short port, char *ip)
 #else
 static int qtfs_engine_check_port(unsigned short port, char *scid)
 #endif
 {
-#ifdef QTFS_TEST_MODE
-        struct sockaddr_in sin;
-        if (inet_pton(AF_INET, ip, &sin.sin_addr) != 1) {
-                engine_err("%s inet_pton error.", ip);
-                return -1;
-        }
-        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sockfd < 0) {
-                engine_err("socket error, fd:%", sockfd);
-                return -1;
-        }
-        bzero(&sin, sizeof(sin));
-        sin.sin_family = AF_INET;
-        sin.sin_port = htons(port);
-        if (bind(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0) {
-                engine_err("ip:%s port:%u bind failed, errno:%d.", ip, port, errno);
-                close(sockfd);
-                return -1;
-        }
-        close(sockfd);
+#ifdef UDS_TEST_MODE
+	struct sockaddr_in sin;
+	if (inet_pton(AF_INET, ip, &sin.sin_addr) != 1) {
+		engine_err("%s inet_pton error.", ip);
+		return -1;
+	}
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		engine_err("socket error, fd:%", sockfd);
+		return -1;
+	}
+	bzero(&sin, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(port);
+	if (bind(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0) {
+		engine_err("ip:%s port:%u bind failed, errno:%d.", ip, port, errno);
+		close(sockfd);
+		return -1;
+	}
+	close(sockfd);
 #else
 #define DEC     10
-        long cid = strtol(scid, NULL, DEC); // base 10
-        if (errno == ERANGE) {
-                engine_err("The cid value out of range\n");
-                return -1;
-        }
-
-        if (cid < 2 || cid >= 0xFFFFFFFF) {
-                engine_err("The cid value was invalid\n");
-                return -1;
-        }
-
-        struct sockaddr_vm saddr;
-        memset(&saddr, 0, sizeof(saddr));
-        saddr.svm_family = AF_VSOCK;
-        saddr.svm_port = htons(port);
-        saddr.svm_cid = cid;
-
-        int sock_fd = socket(saddr.svm_family, SOCK_STREAM, 0);
-        if (bind(sock_fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-                engine_err("cid:%u port:%u bind failed, errno:%d.", cid, port, errno);
-                close(sock_fd);
-                return -1;
-        }
-        close(sock_fd);
+	long cid = strtol(scid, NULL, DEC); // base 10
+	if (errno == ERANGE) {
+		engine_err("The cid value out of range\n");
+		return -1;
+	}
+	
+	if (cid != -1) {
+		if (cid < VMADDR_CID_HOST || cid > 0xFFFFFFFF) {
+			engine_err("The cid value[%ld] was invalid\n", cid);
+			return -1;
+		}
+	}
+	
+	struct sockaddr_vm saddr;
+	memset(&saddr, 0, sizeof(saddr));
+	saddr.svm_family = AF_VSOCK;
+	saddr.svm_port = port;
+	saddr.svm_cid = cid;
+	
+	int sock_fd = socket(saddr.svm_family, SOCK_STREAM, 0);
+	if (bind(sock_fd, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+		engine_err("cid:%u port:%u bind failed, errno:%d.", cid, port, errno);
+		close(sock_fd);
+		return -1;
+	}
+	close(sock_fd);
 #endif
-        return 0;
+	return 0;
 }
 
 #define IS_NUMBER(c) (c >= '0' && c <= '9')
