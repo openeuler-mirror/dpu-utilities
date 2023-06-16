@@ -165,6 +165,7 @@ struct qtreq_mount {
 };
 struct qtrsp_mount {
 	int ret;
+	int errno;
 };
 
 struct qtreq_open {

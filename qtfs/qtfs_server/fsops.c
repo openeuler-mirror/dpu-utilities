@@ -249,19 +249,21 @@ static int handle_mount(struct qtserver_arg *arg)
 	struct qtrsp_mount *rsp = (struct qtrsp_mount *)RSP(arg);
 	if (!in_white_list(req->path, QTFS_WHITELIST_MOUNT)) {
 		rsp->ret = QTFS_ERR;
-		return sizeof(rsp->ret);
+		rsp->errno = -EPERM;
+		return sizeof(rsp);
 	}
 
 	ret = kern_path(req->path, LOOKUP_DIRECTORY, &path);
 	if (ret) {
 		qtfs_err("handle mount path:%s kern_path failed, ret: %d.\n", req->path, ret);
 		rsp->ret = QTFS_ERR;
+		rsp->errno = -EINVAL;
 	} else {
 		rsp->ret = QTFS_OK;
 		qtfs_info("handle mount path:%s success.\n", req->path);
 		path_put(&path);
 	}
-	return sizeof(rsp->ret);
+	return sizeof(rsp);
 }
 
 int handle_open(struct qtserver_arg *arg)
