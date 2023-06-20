@@ -637,6 +637,7 @@ static int uds_glob_var_init(char *argv[])
 	int myport = atoi(argv[3]);
 	int peerport = atoi(argv[5]);
 	memset(p_uds_var, 0, sizeof(struct uds_global_var));
+	p_uds_var->loglevel = UDS_LOG_INFO;
 	p_uds_var->logstr = uds_log_str;
 	p_uds_var->work_thread_num = atoi(argv[1]);
 	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
@@ -722,7 +723,10 @@ int main(int argc, char *argv[])
 	mode_t newmask = 0077;
 	uds_log("change uds umask from:%o to %o", umask(newmask), newmask);
 #endif
-	p_uds_var->loglevel = UDS_LOG_INFO;
+	if (uds_glob_var_init(argv) < 0) {
+		uds_err("global var init failed.");
+		return -1;
+	}
 #define ARG_NUM 6
 	if (argc != ARG_NUM) {
 		uds_helpinfo(argv);
@@ -746,11 +750,6 @@ int main(int argc, char *argv[])
 	uds_rlimit();
 #endif
 	signal(SIGPIPE, uds_sig_pipe);
-	if (uds_glob_var_init(argv) < 0) {
-		uds_err("global var init failed.");
-		uds_hash_destroy();
-		return -1;
-	}
 	uds_thread_create();
 	uds_hash_destroy();
 
