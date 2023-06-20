@@ -151,7 +151,8 @@ static struct qtfs_server_userp_s *qtfs_engine_thread_init(int fd, int thread_nu
 	init_userp.userp = userp;
 	ret = ioctl(fd, QTFS_IOCTL_THREAD_INIT, (unsigned long)&init_userp);
 	if (ret != QTOK) {
-		engine_err("Engine thread init failed reason:%s", (ret == EADDRINUSE) ? strerror(EADDRINUSE) : "userp init failed.");
+		engine_err("Engine thread init failed reason:%s",
+		           (ret == EADDRINUSE) ? "Address already in use" : "userp init failed.");
 		goto rollback;
 	}
 	return userp;

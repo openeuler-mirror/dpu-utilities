@@ -589,6 +589,7 @@ int main(int argc, char *argv[])
     rexec_server_mainloop();
     rexec_pid_hashmap_destroy(child_hash);
     fclose(rexec_logfile);
+    rexec_logfile = NULL;
     return 0;
 }
 

@@ -509,14 +509,20 @@ static int rexec_handshake_proc(struct rexec_client_event *evt)
 static int rexec_handshake_init(int efd, int connfd)
 {
     char *hs_read = getenv("REXEC_HANDSHAKE_RD");
-    char *hs_write = getenv("REXEC_HANDSHAKE_WR");
-
-    if (hs_read == NULL || hs_write == NULL) {
-        rexec_log("handshake not in effect, read:%lx write%lx", hs_read, hs_write);
+    if (hs_read == NULL) {
+        rexec_log("handshake not in effect, read:%lx", hs_read);
         return 0;
     }
     g_rexec.rexec_hs_fd[PIPE_READ] = atoi(hs_read);
+
+    char *hs_write = getenv("REXEC_HANDSHAKE_WR");
+    if (hs_write == NULL) {
+        rexec_log("handshake not in effect, wirte:%lx", hs_write);
+        g_rexec.rexec_hs_fd[PIPE_READ] = -1;
+        return 0;
+    }
     g_rexec.rexec_hs_fd[PIPE_WRITE] = atoi(hs_write);
+
     if (g_rexec.rexec_hs_fd[PIPE_READ] <= STDERR_FILENO || g_rexec.rexec_hs_fd[PIPE_WRITE] <= STDERR_FILENO) {
         rexec_log("handshake invalid fd read:%d write:%d", g_rexec.rexec_hs_fd[PIPE_READ], g_rexec.rexec_hs_fd[PIPE_WRITE]);
         goto err_end;
