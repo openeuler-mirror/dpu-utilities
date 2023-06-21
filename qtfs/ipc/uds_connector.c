@@ -57,7 +57,7 @@
 static unsigned short uds_conn_get_sock_type(int sockfd)
 {
     unsigned short type;
-    int len = 2;
+    socklen_t len = 2;
     int ret = getsockopt(sockfd, SOL_SOCKET, SO_TYPE, &type, &len);
     if (ret < 0) {
         uds_err("get sock type failed, fd:%d", sockfd);
