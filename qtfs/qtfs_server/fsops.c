@@ -47,16 +47,37 @@
 #define USERP(arg) (arg->userp)
 DEFINE_MUTEX(fd_bitmap_lock);
 
-bool in_white_list(char *path, int type)
+enum {
+	WHITELIST_MATCH_PREFIX = 0,
+	WHITELIST_MATCH_EXACT,
+};
+
+static inline int qtfs_white_list_match(char *path, char *wl, int wl_len, int match_type)
+{
+	if (strncmp(path, wl, wl_len))
+		return 0;
+	switch (match_type) {
+		case WHITELIST_MATCH_PREFIX:
+			if (wl[wl_len - 1] != '/' && path[wl_len] != '\0' && path[wl_len] != '/')
+				return 0;
+			break;
+		case WHITELIST_MATCH_EXACT:
+			if (path[wl_len] != '\0')
+				return 0;
+			break;
+		default:
+			return 0;
+	}
+	// match success
+	return 1;
+}
+
+static bool _in_white_list(char *path, int type, int match_type)
 {
 	int i, in_wl = -1;
-	int wl_len = 0;
 	char *str;
 	struct qtfs_wl_cap *cap;
 
-	if (path[0] !='/' || type >= QTFS_WHITELIST_MAX) {
-		return false;
-	}
 	str = strstr(path, "/..");
 	if (str != NULL && (str[3] == '\0' || str[3] =='/')) {
 		return false;
@@ -65,19 +86,23 @@ bool in_white_list(char *path, int type)
 	read_lock(&g_qtfs_wl.rwlock);
 	cap = &g_qtfs_wl.cap[type];
 	for (i = 0; i < cap->nums; i++) {
-		wl_len = strlen(cap->item[i]);
-		if (!strncmp(path, cap->item[i], wl_len)) {
-			//到这一行说明path长度起码是大于等于wl长度，那么以下情况是不符合白名单匹配的
-			//wl不是以/结尾，且path的wl_len字符非结束符也不是/
-			if (cap->item[i][wl_len - 1] != '/' && path[wl_len] != '\0' && path[wl_len] != '/') {
-				continue;
-			}
+		if (qtfs_white_list_match(path, cap->item[i], strlen(cap->item[i]), match_type)) {
 			in_wl = i;
 			break;
 		}
 	}
 	read_unlock(&g_qtfs_wl.rwlock);
 	return in_wl != -1;
+}
+
+static bool in_white_list(char *path, int type)
+{
+	return _in_white_list(path, type, WHITELIST_MATCH_PREFIX);
+}
+
+static bool in_white_list_exact(char *path, int type)
+{
+	return _in_white_list(path, type, WHITELIST_MATCH_EXACT);
 }
 
 static inline void qtfs_inode_info_fill(struct inode_info *ii, struct inode *inode)
@@ -1490,8 +1515,22 @@ int remotesc_kill(struct qtserver_arg *arg)
 {
 	struct qtreq_sc_kill *req = (struct qtreq_sc_kill *)REQ(arg);
 	struct qtrsp_sc_kill *rsp = (struct qtrsp_sc_kill *)RSP(arg);
+	char tskcomm[TASK_COMM_LEN] = {0};
+	struct task_struct *t = qtfs_kern_syms.find_get_task_by_vpid((pid_t)req->pid);
+	if (!t) {
+		qtfs_err("Failed to get task by pid:%d", req->pid);
+		rsp->ret = -EINVAL;
+		goto end;
+	}
+	get_task_comm(tskcomm, t);
+	if (!in_white_list_exact(tskcomm, QTFS_WHITELIST_KILL)) {
+		qtfs_err("Failed to kill pid:%d, comm:%s not in kill white list", req->pid, tskcomm);
+		rsp->ret = -EPERM;
+		goto end;
+	}
 	rsp->ret = qtfs_syscall_kill(req->pid, req->signum);
 	qtfs_info("Recv remote kill request, pid:%d signum:%d ret:%ld", req->pid, req->signum, rsp->ret);
+end:
 	return sizeof(struct qtrsp_sc_kill);
 }
 
