@@ -42,6 +42,7 @@
 static int main_epoll_fd = -1;
 FILE *rexec_logfile = NULL;
 static GHashTable *child_hash = NULL;
+static volatile sig_atomic_t sig_chld_flag = 0;
 
 #define REXEC_WHITELIST_MAX_ITEMS 256
 struct rexec_white_list_str {
@@ -251,7 +252,7 @@ static int rexec_whitelist_check(char *binary)
 }
 
 #define IS_VALID_FD(fd) (fd > STDERR_FILENO)
-static void rexec_server_sig_chld(int num)
+static void handle_sig_chld(void)
 {
 	int status;
 	pid_t pid;
@@ -274,6 +275,12 @@ static void rexec_server_sig_chld(int num)
 		}
 	}
 	return;
+}
+
+static void rexec_server_sig_chld(int num)
+{
+    __sync_fetch_and_add(&sig_chld_flag, 1);
+    return;
 }
 
 static void rexec_server_sig_pipe(int signum)
@@ -493,6 +500,9 @@ static void rexec_server_mainloop()
 		goto end;
 	}
 	while (1) {
+		if (sig_chld_flag != 0 && __sync_fetch_and_sub(&sig_chld_flag, 1) != 0) {
+			handle_sig_chld();
+		}
 		int n = epoll_wait(main_epoll_fd, evts, REXEC_MAX_EVENTS, 1000);
 		if (n == 0)
 			continue;

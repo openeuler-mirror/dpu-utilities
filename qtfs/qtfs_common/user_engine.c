@@ -85,6 +85,8 @@ struct engine_arg {
 #define ENGINE_LOCK_ADDR "/var/run/qtfs/engine.lock"
 #define ENGINE_LOCK_FILE_DIR "/var/run/qtfs/"
 
+static volatile sig_atomic_t sig_int_flag = 0;
+
 static int engine_env_prepare()
 {
 	DIR *dir;
@@ -173,6 +175,18 @@ static void *qtfs_engine_kthread(void *arg)
 			engine_out("qtfs server thread:%d exit.", parg->thread_idx);
 			break;
 		}
+		if (sig_int_flag == 1) {
+			engine_out("qtfs engine recv SIGINT.");
+
+			if (qtfs_fd < 0) {
+				engine_err("qtfs engine signal int file:%s open failed, fd:%d.", QTFS_SERVER_FILE, qtfs_fd);
+				continue;
+			}
+			ret = ioctl(qtfs_fd, QTFS_IOCTL_EXIT, 0);
+			engine_out("qtfs engine send QTFS_IOCTL_EXIT to kernel, get return value:%d.", ret);
+			engine_run = 0;
+			break;
+		}
 		if (ret != QTOK) {
 			usleep(1000);
 		}
@@ -185,16 +199,7 @@ end:
 
 static void qtfs_signal_int(int signum)
 {
-	engine_out("qtfs engine recv signal number:%d.", signum);
-
-	if (qtfs_fd < 0) {
-		engine_err("qtfs engine signal int file:%s open failed, fd:%d.", QTFS_SERVER_FILE, qtfs_fd);
-		return;
-	}
-	long ret = ioctl(qtfs_fd, QTFS_IOCTL_EXIT, 0);
-	engine_out("qtfs engine send QTFS_IOCTL_EXIT to kernel, get return value:%d.", ret);
-	engine_run = 0;
-
+	sig_int_flag = 1;
 	return;
 }
 
@@ -477,7 +482,6 @@ int main(int argc, char *argv[])
 		goto end;
 	}
 	signal(SIGINT, qtfs_signal_int);
-	signal(SIGKILL, qtfs_signal_int);
 	signal(SIGTERM, qtfs_signal_int);
 
 	struct qtfs_server_userp_s *userp = qtfs_engine_thread_init(fd, thread_nums, QTFS_USERP_SIZE);
