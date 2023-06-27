@@ -102,76 +102,76 @@ int rexec_sock_step_accept(int sock_fd)
 // or a normal msg and a SCM_RIGHTS fd
 int rexec_sendmsg(int sockfd, char *msgbuf, int msglen, int scmfd)
 {
-    struct msghdr msg;
-    struct cmsghdr *cmsg = NULL;
-    struct iovec iov;
-    char buf[CMSG_SPACE(sizeof(scmfd))];
-    int ret;
+	struct msghdr msg;
+	struct cmsghdr *cmsg = NULL;
+	struct iovec iov;
+	char buf[CMSG_SPACE(sizeof(scmfd))];
+	int ret;
 
-    memset(&msg, 0, sizeof(msg));
-    iov.iov_base = (void *)msgbuf;
-    iov.iov_len = msglen;
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
+	memset(&msg, 0, sizeof(msg));
+	iov.iov_base = (void *)msgbuf;
+	iov.iov_len = msglen;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
 
-    msg.msg_control = buf;
-    msg.msg_controllen = sizeof(buf);
-    if (scmfd > 0) {
-        cmsg = CMSG_FIRSTHDR(&msg);
-        cmsg->cmsg_level = SOL_SOCKET;
-        cmsg->cmsg_type = SCM_RIGHTS;
-        cmsg->cmsg_len = CMSG_LEN(sizeof(scmfd));
-        /* Initialize the payload: */
-        memcpy(CMSG_DATA(cmsg), &scmfd, sizeof(scmfd));
-        msg.msg_controllen = cmsg->cmsg_len;
-    } else {
-        msg.msg_controllen = 0;
-    }
-    if ((ret = sendmsg(sockfd, &msg, 0)) != iov.iov_len) {
-        return ret;
-    }
-    return ret;
+	msg.msg_control = buf;
+	msg.msg_controllen = sizeof(buf);
+	if (scmfd > 0) {
+		cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_level = SOL_SOCKET;
+		cmsg->cmsg_type = SCM_RIGHTS;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(scmfd));
+		/* Initialize the payload: */
+		memcpy(CMSG_DATA(cmsg), &scmfd, sizeof(scmfd));
+		msg.msg_controllen = cmsg->cmsg_len;
+	} else {
+		msg.msg_controllen = 0;
+	}
+	if ((ret = sendmsg(sockfd, &msg, 0)) != iov.iov_len) {
+		return ret;
+	}
+	return ret;
 }
 
 int rexec_recvmsg(int sockfd, char *msgbuf, int len, int *scmfd, int flags)
 {
-    struct iovec iov;
-    struct msghdr msg;
-    int fd = -1;
-    struct cmsghdr *cmsg;
-    char buf[CMSG_SPACE(sizeof(fd))];
+	struct iovec iov;
+	struct msghdr msg;
+	int fd = -1;
+	struct cmsghdr *cmsg;
+	char buf[CMSG_SPACE(sizeof(fd))];
 
-    /* send at least one char */
-    memset(&msg, 0, sizeof(msg));
-    iov.iov_base = msgbuf;
-    iov.iov_len = len;
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
+	/* send at least one char */
+	memset(&msg, 0, sizeof(msg));
+	iov.iov_base = msgbuf;
+	iov.iov_len = len;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
 
-    msg.msg_control = buf;
-    msg.msg_controllen = sizeof(buf);
-    cmsg = CMSG_FIRSTHDR(&msg);
-    cmsg->cmsg_level = SOL_SOCKET;
-    cmsg->cmsg_type = SCM_RIGHTS;
-    cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
-    /* Initialize the payload: */
-    memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
-    msg.msg_controllen = cmsg->cmsg_len;
+	msg.msg_control = buf;
+	msg.msg_controllen = sizeof(buf);
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_RIGHTS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+	/* Initialize the payload: */
+	memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
+	msg.msg_controllen = cmsg->cmsg_len;
 
-    int ret = recvmsg(sockfd, &msg, flags);
-    if (ret < 0)
-        return ret;
+	int ret = recvmsg(sockfd, &msg, flags);
+	if (ret < 0)
+		return ret;
 
-    cmsg = CMSG_FIRSTHDR(&msg);
-    if (cmsg != NULL) {
-        memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
-        *scmfd = fd;
-    }
-    return ret;
+	cmsg = CMSG_FIRSTHDR(&msg);
+	if (cmsg != NULL) {
+		memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+		*scmfd = fd;
+	}
+	return ret;
 }
 
 

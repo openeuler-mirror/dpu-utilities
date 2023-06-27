@@ -17,8 +17,8 @@
 #define __REXEC_SOCK_H__
 
 enum {
-    REXEC_SOCK_CLIENT = 1,
-    REXEC_SOCK_SERVER,
+	REXEC_SOCK_CLIENT = 1,
+	REXEC_SOCK_SERVER,
 };
 
 #define UDS_SUN_PATH_LEN 108

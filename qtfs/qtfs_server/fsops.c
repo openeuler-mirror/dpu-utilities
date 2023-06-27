@@ -426,7 +426,7 @@ static int handle_readiter(struct qtserver_arg *arg)
 		rsp->d.errno = -ENOENT;
 		goto end;
 	}
-    	fullname = file_path(file, pathbuf, PATH_MAX);
+	fullname = file_path(file, pathbuf, PATH_MAX);
 	if (IS_ERR_OR_NULL(fullname) || !in_white_list(fullname, QTFS_WHITELIST_READ)) {
 		qtfs_err("read iter path not in whitelist.\n");
 		__putname(pathbuf);
@@ -493,7 +493,7 @@ early_end:
 static int handle_write(struct qtserver_arg *arg)
 {
 	struct file *file = NULL;
-    char *pathbuf, *fullname;
+	char *pathbuf, *fullname;
 	int block_size;
 	struct qtreq_write *req = (struct qtreq_write *)REQ(arg);
 	struct qtrsp_write *rsp = (struct qtrsp_write *)RSP(arg);
