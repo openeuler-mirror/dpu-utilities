@@ -20,22 +20,22 @@
 #include <stdbool.h>
 
 enum {
-    PIPE_READ = 0,
-    PIPE_WRITE,
+	PIPE_READ = 0,
+	PIPE_WRITE,
 };
 
 enum {
-    REXEC_EVENT_OK,
-    REXEC_EVENT_DEL, // del this event
-    REXEC_EVENT_EXIT, // exit process
-    REXEC_EVENT_ERR,
+	REXEC_EVENT_OK,
+	REXEC_EVENT_DEL, // del this event
+	REXEC_EVENT_EXIT, // exit process
+	REXEC_EVENT_ERR,
 };
 
 enum {
-    REXEC_STDIN = 0x5a,
-    REXEC_STDOUT,
-    REXEC_STDERR,
-    REXEC_NONE,
+	REXEC_STDIN = 0x5a,
+	REXEC_STDOUT,
+	REXEC_STDERR,
+	REXEC_NONE,
 };
 
 #define REXEC_MSG_1K 1024
@@ -48,78 +48,78 @@ enum {
 #define REXEC_RUN_PATH    "/var/run/rexec/"
 
 enum rexec_msgtype {
-    REXEC_EXEC = 0x5a5a,    // exec process
-    REXEC_KILL,             // kill process
-    REXEC_PIPE,             // client send a pipefd as stdin/out/err to server
-    REXEC_PIDMAP,           // server send remote process's pid to client
-    REXEC_HANDSHAKE,
+	REXEC_EXEC = 0x5a5a,    // exec process
+	REXEC_KILL,             // kill process
+	REXEC_PIPE,             // client send a pipefd as stdin/out/err to server
+	REXEC_PIDMAP,           // server send remote process's pid to client
+	REXEC_HANDSHAKE,
 };
 
 struct rexec_msg {
-    int msgtype;
-    // client to server
-    int argc;
-    int stdno;
-    int msglen;
-    // server to client
-    int exit_status;
-    int pid; // for pidmap
-    char msg[0];
+	int msgtype;
+	// client to server
+	int argc;
+	int stdno;
+	int msglen;
+	// server to client
+	int exit_status;
+	int pid; // for pidmap
+	char msg[0];
 };
 
 extern FILE *rexec_logfile;
 static inline void rexec_log_init()
 {
-    char deflog[REXEC_LOG_PATH_LEN] = "/dev/null";
-    char *logfile = getenv("REXEC_LOG_FILE");
-    if (logfile == NULL) {
-        logfile = deflog;
-    } else if (strcmp(logfile, "std") == 0) {
-        rexec_logfile = stderr;
-        return;
-    } else {
-        printf("REXEC_LOG_FILE cannot be set to any value other than std\n");
-    }
+	char deflog[REXEC_LOG_PATH_LEN] = "/dev/null";
+	char *logfile = getenv("REXEC_LOG_FILE");
+	if (logfile == NULL) {
+		logfile = deflog;
+	} else if (strcmp(logfile, "std") == 0) {
+		rexec_logfile = stderr;
+		return;
+	} else {
+		printf("REXEC_LOG_FILE cannot be set to any value other than std\n");
+	}
 retry:
-    rexec_logfile = fopen(logfile, "a");
-    if (rexec_logfile == NULL) {
-        if (strcmp(logfile, "/dev/null") == 0) {
-            return;
-        }
-        // 输入的文件打开失败则回退到无日志模式
-        logfile = deflog;
-        goto retry;
-    }
-    return;
+	rexec_logfile = fopen(logfile, "a");
+	if (rexec_logfile == NULL) {
+		if (strcmp(logfile, "/dev/null") == 0) {
+			return;
+		}
+		// 输入的文件打开失败则回退到无日志模式
+		logfile = deflog;
+		goto retry;
+	}
+	return;
 }
 
 // flag: 1--nonblock; 0--block
 static inline int rexec_set_nonblock(int fd, int block)
 {
-    int fflags;
-    if ((fflags = fcntl(fd, F_GETFL)) < 0)
-        return -1;
-    if (block == 0)
-        fflags &= ~O_NONBLOCK;
-    else
-        fflags |= O_NONBLOCK;
-    if ((fcntl(fd, F_SETFL, fflags)) < 0)
-        return -1;
-    return 0;
+	int fflags;
+	if ((fflags = fcntl(fd, F_GETFL)) < 0)
+		return -1;
+	if (block == 0)
+		fflags &= ~O_NONBLOCK;
+	else
+		fflags |= O_NONBLOCK;
+	if ((fcntl(fd, F_SETFL, fflags)) < 0)
+		return -1;
+	return 0;
 }
 
 static inline int rexec_set_inherit(int fd, bool inherit)
 {
-    int fflags;
-    if ((fflags = fcntl(fd, F_GETFD)) < 0)
-        return -1;
-    if (inherit)
-        fflags &= ~FD_CLOEXEC;
-    else
-        fflags |= FD_CLOEXEC;
-    if ((fcntl(fd, F_SETFD, fflags)) < 0)
-        return -1;
-    return 0;
+	int fflags;
+	if ((fflags = fcntl(fd, F_GETFD)) < 0)
+		return -1;
+	if (inherit)
+		fflags &= ~FD_CLOEXEC;
+	else
+		fflags |= FD_CLOEXEC;
+	if ((fcntl(fd, F_SETFD, fflags)) < 0)
+		return -1;
+	return 0;
 }
 
 #define rexec_log(info, ...) \
