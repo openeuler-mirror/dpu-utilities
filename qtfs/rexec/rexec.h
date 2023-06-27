@@ -18,6 +18,7 @@
 
 #include <time.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 
 enum {
 	PIPE_READ = 0,
@@ -32,7 +33,7 @@ enum {
 };
 
 enum {
-	REXEC_STDIN = 0x5a,
+	REXEC_STDIN = 0,
 	REXEC_STDOUT,
 	REXEC_STDERR,
 	REXEC_NONE,
@@ -59,7 +60,7 @@ struct rexec_msg {
 	int msgtype;
 	// client to server
 	int argc;
-	int stdno;
+	int pipefd;
 	int msglen;
 	// server to client
 	int exit_status;
@@ -154,6 +155,16 @@ static inline int rexec_set_inherit(int fd, bool inherit)
 				p.tm_year + 1900, p.tm_mon+1, p.tm_mday, \
 				p.tm_hour, p.tm_min, p.tm_sec, __func__, __LINE__, ##__VA_ARGS__); \
 	}
+
+static inline unsigned int rexec_fd_mode(int fd)
+{
+	struct stat st;
+	if (fstat(fd, &st) != 0) {
+		rexec_err("get fd:%d fstat failed, errno:%d", fd, errno);
+		return 0;
+	}
+	return st.st_mode;
+}
 
 #endif
 
