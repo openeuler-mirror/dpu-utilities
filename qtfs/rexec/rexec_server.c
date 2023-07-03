@@ -109,8 +109,8 @@ static int rexec_event_process_manage(struct rexec_event *event)
 		kill(event->pid, SIGKILL);
 		return REXEC_EVENT_DEL;
 	}
-	rexec_err("Recv msg from client, msgtype:%d msglen:%d argc:%d stdno:%d",
-				head.msgtype, head.msglen, head.argc, head.stdno);
+	rexec_err("Recv msg from client, msgtype:%d msglen:%d argc:%d pipefd:%d",
+				head.msgtype, head.msglen, head.argc, head.pipefd);
 	return REXEC_EVENT_OK;
 }
 
@@ -137,14 +137,18 @@ static int rexec_event_handshake(struct rexec_event *event)
 	return REXEC_EVENT_DEL;
 }
 
-static void rexec_dup_std(int fd, int stdno)
+static int rexec_dup_pipefd(int fd, int pipefd)
 {
-	if (stdno < REXEC_STDIN || stdno > REXEC_STDERR) {
-		return;
+	int dupfd;
+	if (fd == -1)
+		return 0;
+	dupfd = dup2(fd, pipefd);
+	if (dupfd != pipefd) {
+		rexec_err("failed to dup pipefd:%d", pipefd);
+		return -1;
 	}
-	dup2(fd, stdno - REXEC_STDIN);
 	close(fd);
-	return;
+	return 0;
 }
 
 // argv list: [0]binary,[1]-f,[2]*json_str,[3]arg1,[4]arg2,...
@@ -312,15 +316,19 @@ static int rexec_start_new_process(int newconnfd)
 		int scmfd = -1;
 		int len = sizeof(struct rexec_msg);
 		memset(&head, 0, sizeof(struct rexec_msg));
+		scmfd = -1;
 		ret = rexec_recvmsg(newconnfd, (char *)&head, len, &scmfd, MSG_WAITALL);
 		if (ret <= 0) {
 			rexec_log("recvmsg ret:%d, errno:%d", ret, errno);
 			goto err_to_parent;
 		}
 		// 将管道与自己的标准输入输出关联
-		rexec_dup_std(scmfd, head.stdno);
-		if (head.stdno >= REXEC_STDIN && head.stdno <= REXEC_STDERR) {
-			msg_bit |= (1 << (head.stdno - REXEC_STDIN));
+		if (rexec_dup_pipefd(scmfd, head.pipefd) != 0) {
+			rexec_err("dup scm:%d pipefd:%d failed", scmfd, head.pipefd);
+			goto err_to_parent;
+		}
+		if (head.pipefd >= REXEC_STDIN && head.pipefd <= REXEC_STDERR) {
+			msg_bit |= (1 << (head.pipefd - REXEC_STDIN));
 		}
 		if (head.msglen == 0)
 			continue;
@@ -332,7 +340,7 @@ static int rexec_start_new_process(int newconnfd)
 		msg_bit |= REXEC_MSG_NORMAL;
 		// exec msg
 		rexec_log("Exec msgtype:0x%x msglen:%d argc:%d stdno:%d",
-					head.msgtype, head.msglen, head.argc, head.stdno);
+					head.msgtype, head.msglen, head.argc, head.pipefd);
 		argc = head.argc;
 		if (head.msglen > REXEC_MSG_MAX || argc > REXEC_MSG_MAX / sizeof(uintptr_t) ||
 			head.msglen <= 0 || argc < 0) {
@@ -512,7 +520,9 @@ static void rexec_server_mainloop()
 
 end:
 	close(main_epoll_fd);
+	main_epoll_fd = -1;
 	close(ser.sockfd);
+	ser.sockfd = -1;
 	return;
 }
 

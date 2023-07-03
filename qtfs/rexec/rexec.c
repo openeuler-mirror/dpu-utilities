@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pthread.h>
 #include <sys/epoll.h>
 #include <netinet/ip.h>
 #include <netinet/in.h>
@@ -44,6 +45,12 @@ FILE *rexec_logfile = NULL;
 
 struct rexec_global_var {
 	int rexec_hs_fd[2];
+};
+
+struct rexec_thread_arg {
+	int efd;
+	int connfd;
+	char **argv;
 };
 
 struct rexec_global_var g_rexec;
@@ -192,8 +199,8 @@ static int rexec_conn_msg(struct rexec_client_event *evt)
 			break;
 	}
 
-	rexec_log("Rexec conn recv msgtype:%d argc:%d stdno:%d msglen:%d",
-					head.msgtype, head.argc, head.stdno, head.msglen);
+	rexec_log("Rexec conn recv msgtype:%d argc:%d pipefd:%d msglen:%d",
+					head.msgtype, head.argc, head.pipefd, head.msglen);
 	return REXEC_EVENT_OK;
 }
 
@@ -252,27 +259,13 @@ static int rexec_std_event(int efd, int rstdin, int rstdout, int rstderr)
 	return 0;
 }
 
-static int rexec_run(int efd, int connfd, char *argv[])
+static void rexec_event_run(int efd)
 {
-	int pidfd = -1;
-	int exit_status = EXIT_FAILURE;
-
-	struct rexec_client_event *connevt = rexec_add_event(efd, connfd, -1, rexec_conn_msg);
-	if (NULL == connevt || rexec_set_nonblock(connfd, 1) != 0) {
-		// process will exit, fd or mem resource will free by kernel soon
-		rexec_err("rexec add connfd event failed");
-		return exit_status;
-	}
-	// 这两个指针只能在当前函数上下文使用，是当前函数栈指针
-	connevt->exit_status = &exit_status;
-	connevt->pidfd = &pidfd;
-
 	struct epoll_event *evts = calloc(REXEC_MAX_EVENTS, sizeof(struct epoll_event));
 	if (evts == NULL) {
 		rexec_err("init calloc evts failed.");
-		goto end;
+		return;
 	}
-	rexec_log("Rexec process start run, as proxy of remote %s", argv[1]);
 	while (1) {
 		int n = epoll_wait(efd, evts, REXEC_MAX_EVENTS, 1000);
 		int process_exit = 0;
@@ -294,10 +287,31 @@ static int rexec_run(int efd, int connfd, char *argv[])
 		}
 		// process will exit, and free all resource and exit
 		if (process_exit) {
-			rexec_log("Rexec process %s exit.", argv[1]);
 			break;
 		}
 	}
+	free(evts);
+	return;
+}
+
+static int rexec_run(int efd, int connfd, char *argv[])
+{
+	int pidfd = -1;
+	int exit_status = EXIT_FAILURE;
+
+	struct rexec_client_event *connevt = rexec_add_event(efd, connfd, -1, rexec_conn_msg);
+	if (NULL == connevt || rexec_set_nonblock(connfd, 1) != 0) {
+		// process will exit, fd or mem resource will free by kernel soon
+		rexec_err("rexec add connfd event failed");
+		return exit_status;
+	}
+	// 这两个指针只能在当前函数上下文使用，是当前函数栈指针
+	connevt->exit_status = &exit_status;
+	connevt->pidfd = &pidfd;
+
+	rexec_log("Rexec process start run, as proxy of remote %s", argv[1]);
+	rexec_event_run(efd);
+	rexec_log("Rexec process %s exit.", argv[1]);
 
 	// clear pidmap file
 	if (pidfd > 0) {
@@ -306,9 +320,6 @@ static int rexec_run(int efd, int connfd, char *argv[])
 		close(pidfd);
 		remove(path);
 	}
-
-free_end:
-	free(evts);
 
 end:
 	close(efd);
@@ -374,17 +385,6 @@ struct rexec_fdinfo {
 	int offset;
 };
 
-static inline unsigned int rexec_fd_mode(int fd)
-{
-	struct stat st;
-	char path[32] = {0};
-	if (fstat(fd, &st) != 0) {
-		rexec_err("get fd:%d fstat failed, errno:%d", fd, errno);
-		return 0;
-	}
-	return st.st_mode;
-}
-
 static inline int rexec_is_reg_file(int fd)
 {
 	if (S_ISREG(rexec_fd_mode(fd)))
@@ -441,7 +441,7 @@ static char *rexec_get_fds_jsonstr()
 	fddir = opendir("/proc/self/fd");
 	if (fddir == NULL) {
 		free(fdinfo);
-		rexec_err("open path:%s failed", REXEC_PIDMAP_PATH);
+		rexec_err("open path:/proc/self/fd failed");
 		goto err_end;
 	}
 
@@ -486,6 +486,73 @@ json_err:
 err_end:
 	json_object_put(root);
 	return NULL;
+}
+
+// 将rexec进程从parent继承到的匿名pipe继承给远端进程
+static int rexec_pipe_remote_inherit(int efd, int connfd)
+{
+#define SELF_FD_PATH "/proc/self/fd"
+	DIR *fddir = NULL;
+	struct dirent *fdentry;
+	struct rexec_msg msg;
+	mode_t mode;
+	int pfd[2];
+
+	fddir = opendir(SELF_FD_PATH);
+	if (fddir == NULL) {
+		rexec_err("open path:%s failed", SELF_FD_PATH);
+		return -1;
+	}
+	memset(&msg, 0, sizeof(struct rexec_msg));
+	msg.msglen = 0;
+	msg.pipefd = -1;
+	msg.msgtype = REXEC_PIPE;
+	while (fdentry = readdir(fddir)) {
+		int fd = atoi(fdentry->d_name);
+		if (fd <= STDERR_FILENO)
+			continue;
+		mode = rexec_fd_mode(fd);
+		if (!S_ISFIFO(mode))
+			continue;
+		rexec_log("inherit pipe fd:%d mode:%o is %s pipe", fd, mode, (!!(mode & S_IRUSR)) ? "read" : "write");
+		if (pipe(pfd) == -1) {
+			rexec_err("failed to create pipe for:%d", fd);
+			goto err_end;
+		}
+		msg.pipefd = fd;
+		if (!!(mode & S_IRUSR)) {
+			// inherit read pipe
+			if (rexec_sendmsg(connfd, (char *)&msg, sizeof(struct rexec_msg), pfd[PIPE_READ]) < 0) {
+				rexec_err("send read pipe failed, inherit fd:%d", fd);
+				goto pipe_end;
+			}
+			if (rexec_add_event(efd, fd, pfd[PIPE_WRITE], rexec_io) == NULL) {
+				rexec_err("add read pipe event failed:%d", fd);
+				goto pipe_end;
+			}
+			close(pfd[PIPE_READ]);
+		} else if (!!(mode & S_IWUSR)) {
+			if (rexec_sendmsg(connfd, (char *)&msg, sizeof(struct rexec_msg), pfd[PIPE_WRITE]) < 0) {
+				rexec_err("send write pipe failed, inherit fd:%d", fd);
+				goto pipe_end;
+			}
+			if (rexec_add_event(efd, pfd[PIPE_READ], fd, rexec_io) == NULL) {
+				rexec_err("add write pipe event failed:%d", fd);
+				goto pipe_end;
+			}
+			close(pfd[PIPE_WRITE]);
+		}
+		rexec_log("successed to add pipe fd:%d to remote inherit", fd);
+	}
+	closedir(fddir);
+	return 0;
+
+pipe_end:
+	close(pfd[0]);
+	close(pfd[1]);
+err_end:
+	closedir(fddir);
+	return -1;
 }
 
 static int rexec_handshake_proc(struct rexec_client_event *evt)
@@ -543,57 +610,8 @@ err_end:
 	return -1;
 }
 
-static void rexec_global_var_init()
+static int rexec_send_binary_msg(int efd, int argc, char *argv[], int arglen, char *fds_json, int connfd)
 {
-	memset(&g_rexec, 0, sizeof(g_rexec));
-	g_rexec.rexec_hs_fd[PIPE_READ] = -1;
-	g_rexec.rexec_hs_fd[PIPE_WRITE] = -1;
-	return;
-}
-
-int main(int argc, char *argv[])
-{
-	rexec_log_init();
-	rexec_clear_pids();
-
-	int efd = epoll_create1(0);
-	if (efd == -1) {
-		rexec_err("epoll create1 failed, errno:%d.", errno);
-		return -1;
-	}
-	rexec_global_var_init();
-
-	int connfd = rexec_conn_to_server();
-	if (connfd < 0) {
-		rexec_err("Rexec connect to server failed, errno:%d", errno);
-		return -1;
-	}
-
-	if (rexec_handshake_init(efd, connfd) != 0) {
-		rexec_err("Rexec handshake environment set but get error.");
-		return -1;
-	}
-	rexec_log("Remote exec binary:%s", argv[1]);
-
-	int arglen = rexec_calc_argv_len(argc - 1, &argv[1]);
-	if (arglen <= 0) {
-		rexec_err("argv is invalid.");
-		return -1;
-	}
-	char *fds_json = rexec_get_fds_jsonstr();
-	if (fds_json == NULL) {
-		rexec_err("Get fds info json string failed.");
-		return -1;
-	}
-	arglen += sizeof(struct rexec_msg);
-	arglen += strlen(fds_json);
-	arglen = ((arglen / REXEC_MSG_LEN) + 1) * REXEC_MSG_LEN;
-	if (arglen <= 0) {
-		rexec_err("invalid arguments length:%d.", arglen);
-	free(fds_json);
-		return -1;
-	}
-
 	struct rexec_msg *pmsg = (struct rexec_msg *)malloc(arglen);
 	if (pmsg == NULL) {
 		rexec_err("malloc failed");
@@ -622,7 +640,7 @@ int main(int argc, char *argv[])
 		rexec_err("Rexec create pipe failed.");
 		goto err_end;
 	}
-	pmsg->stdno = REXEC_STDIN;
+	pmsg->pipefd = REXEC_STDIN;
 	if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg) + pmsg->msglen, rstdin[0]) < 0) {
 		rexec_err("Rexec send exec msg failed, errno:%d", errno);
 		goto err_end;
@@ -631,35 +649,125 @@ int main(int argc, char *argv[])
 	pmsg->msgtype = REXEC_PIPE;
 	pmsg->argc = 0;
 	pmsg->msglen = 0;
-	pmsg->stdno = REXEC_STDOUT;
+	pmsg->pipefd = REXEC_STDOUT;
 	if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg), rstdout[1]) < 0) {
 		rexec_err("Rexec send exec msg failed, errno:%d", errno);
 		goto err_end;
 	}
-	pmsg->stdno = REXEC_STDERR;
+	pmsg->pipefd = REXEC_STDERR;
 	if (rexec_sendmsg(connfd, (char *)pmsg, sizeof(struct rexec_msg), rstderr[1]) < 0) {
 		rexec_err("Rexec send exec msg failed, errno:%d", errno);
 		goto err_end;
 	}
-	free(pmsg);
 
-	int exit_status;
-	close(rstdin[0]);
-	close(rstdout[1]);
-	close(rstderr[1]);
 	if (rexec_std_event(efd, rstdin[1], rstdout[0], rstderr[0]) != 0) {
 		rexec_err("add std event failed");
 		goto err_end;
 	}
-	exit_status = rexec_run(efd, connfd, argv);
-	close(rstdin[1]);
-	close(rstdout[0]);
-	close(rstderr[0]);
-	fclose(rexec_logfile);
+	free(pmsg);
+	close(rstdin[0]);
+	close(rstdout[1]);
+	close(rstderr[1]);
+	return 0;
+err_end:
+	free(pmsg);
+	return -1;
+}
 
-	exit(exit_status);
+static void *rexec_pipe_proxy_thread(void *arg)
+{
+	struct rexec_thread_arg *parg = (struct rexec_thread_arg *)arg;
+	rexec_log("pipe proxy thread run.");
+	rexec_event_run(parg->efd);
+	rexec_log("pipe proxy thread run over");
+	return NULL;
+}
+
+static void *rexec_conn_thread(void *arg)
+{
+	struct rexec_thread_arg *parg = (struct rexec_thread_arg *)arg;
+
+	return (void *)rexec_run(parg->efd, parg->connfd, parg->argv);
+}
+
+static void rexec_global_var_init()
+{
+	memset(&g_rexec, 0, sizeof(g_rexec));
+	g_rexec.rexec_hs_fd[PIPE_READ] = -1;
+	g_rexec.rexec_hs_fd[PIPE_WRITE] = -1;
+	return;
+}
+
+int main(int argc, char *argv[])
+{
+	rexec_log_init();
+	rexec_clear_pids();
+
+	int pipeefd = epoll_create1(0);
+	int efd = epoll_create1(0);
+	if (efd == -1 || pipeefd == -1) {
+		rexec_err("epoll create1 failed, errno:%d.", errno);
+		return -1;
+	}
+	rexec_global_var_init();
+
+	int connfd = rexec_conn_to_server();
+	if (connfd < 0) {
+		rexec_err("Rexec connect to server failed, errno:%d", errno);
+		return -1;
+	}
+
+	if (rexec_handshake_init(efd, connfd) != 0) {
+		rexec_err("Rexec handshake environment set but get error.");
+		return -1;
+	}
+	rexec_log("Remote exec binary:%s", argv[1]);
+	if (rexec_pipe_remote_inherit(pipeefd, connfd) != 0) {
+		rexec_err("Rexec pipe remote inherit failed.");
+		goto err_end;
+	}
+
+	int arglen = rexec_calc_argv_len(argc - 1, &argv[1]);
+	if (arglen <= 0) {
+		rexec_err("argv is invalid.");
+		return -1;
+	}
+	char *fds_json = rexec_get_fds_jsonstr();
+	if (fds_json == NULL) {
+		rexec_err("Get fds info json string failed.");
+		return -1;
+	}
+	arglen += sizeof(struct rexec_msg);
+	arglen += strlen(fds_json);
+	arglen = ((arglen / REXEC_MSG_LEN) + 1) * REXEC_MSG_LEN;
+	if (arglen <= 0) {
+		rexec_err("invalid arguments length:%d.", arglen);
+		free(fds_json);
+		return -1;
+	}
+
+	if (rexec_send_binary_msg(efd, argc, argv, arglen, fds_json, connfd) != 0) {
+		rexec_err("send binary information message failed.");
+		goto err_end;
+	}
+
+	pthread_t thrd;
+	pthread_t thrd_conn;
+	struct rexec_thread_arg targ;
+	struct rexec_thread_arg connarg;
+	void *exit_status;
+	targ.efd = pipeefd;
+	(void)pthread_create(&thrd, NULL, rexec_pipe_proxy_thread, &targ);
+
+	connarg.efd = efd;
+	connarg.connfd = connfd;
+	connarg.argv = argv;
+	(void)pthread_create(&thrd_conn, NULL, rexec_conn_thread, &connarg);
+	pthread_join(thrd_conn, (void *)&exit_status);
+	fclose(rexec_logfile);
+	exit((int)exit_status);
 err_end:
 	fclose(rexec_logfile);
-	free(pmsg);
+	rexec_logfile = NULL;
 	return -1;
 }

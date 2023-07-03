@@ -41,7 +41,7 @@ void rshim_close_all_fd()
 	}
 	while (entry = readdir(dir)) {
 		int fd = atoi(entry->d_name);
-		if (fd <= 2)
+		if (fd <= 2 || S_ISFIFO(rexec_fd_mode(fd)))
 			continue;
 		close(fd);
 	}
