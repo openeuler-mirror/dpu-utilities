@@ -6,7 +6,6 @@ CFLAGS += -D_FORTIFY_SOURCE=2
 ifdef UDS_TEST_MODE
 CFLAGS += -DUDS_TEST_MODE
 endif
-LDFLAGS += -s
 LDFLAGS += -Wl,-z,now
 LDFLAGS += -Wl,-z,noexecstack
 LDFLAGS += -fPIE -pie
