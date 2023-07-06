@@ -632,13 +632,20 @@ static void uds_rlimit()
 
 // port invalid range 1024~65536
 #define UDS_PORT_VALID(port) (port >= 1024 && port < 65536)
-static int uds_glob_var_init(char *argv[])
+#define ARG_NUM 6
+static int uds_arg_check_and_init(int argc, char *argv[])
 {
-	int myport = atoi(argv[3]);
-	int peerport = atoi(argv[5]);
+	int myport;
+	int peerport;
 	memset(p_uds_var, 0, sizeof(struct uds_global_var));
 	p_uds_var->loglevel = UDS_LOG_INFO;
 	p_uds_var->logstr = uds_log_str;
+	if (argc != ARG_NUM) {
+		uds_helpinfo(argv);
+		return -1;
+	}
+	myport = atoi(argv[3]);
+	peerport = atoi(argv[5]);
 	p_uds_var->work_thread_num = atoi(argv[1]);
 	if (p_uds_var->work_thread_num <= 0 || p_uds_var->work_thread_num > UDS_WORK_THREAD_MAX) {
 		uds_err("work thread num:%d is invalid.(must be 1~%d)", p_uds_var->work_thread_num, UDS_WORK_THREAD_MAX);
@@ -723,13 +730,8 @@ int main(int argc, char *argv[])
 	mode_t newmask = 0077;
 	uds_log("change uds umask from:%o to %o", umask(newmask), newmask);
 #endif
-	if (uds_glob_var_init(argv) < 0) {
+	if (uds_arg_check_and_init(argc, argv) < 0) {
 		uds_err("global var init failed.");
-		return -1;
-	}
-#define ARG_NUM 6
-	if (argc != ARG_NUM) {
-		uds_helpinfo(argv);
 		return -1;
 	}
 	if (uds_env_prepare() != EVENT_OK) {
