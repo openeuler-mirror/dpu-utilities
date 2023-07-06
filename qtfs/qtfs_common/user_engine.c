@@ -259,9 +259,9 @@ int qtfs_epoll_init(int fd)
 	return epfd;
 }
 
-static void qtfs_whitelist_free_items(char **items, int64_t count)
+static void qtfs_whitelist_free_items(char **items, gsize count)
 {
-	for (int j = 0; j < count; j++) {
+	for (gsize j = 0; j < count; j++) {
 		if (items[j])
 			free(items[j]);
 	}
@@ -272,7 +272,7 @@ static void qtfs_whitelist_free_items(char **items, int64_t count)
 
 static int qtfs_whitelist_transfer(int fd, GKeyFile *config, int type)
 {
-	int64_t i, wl_count;
+	gsize i, wl_count;
 	int ret;
 	char **items;
 	struct qtfs_wl_item head;
