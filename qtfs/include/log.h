@@ -15,6 +15,7 @@
 #define __QTFS_LOG_H__
 
 #include <linux/string.h>
+#include "comm.h"
 
 enum level {
 	LOG_NONE,

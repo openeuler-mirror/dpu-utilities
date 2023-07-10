@@ -177,12 +177,14 @@ struct qtinfo_client {
 	unsigned long send_err[QTINFO_MAX_EVENT_TYPE];
 	unsigned long i_events[QTINFO_MAX_EVENT_TYPE];
 	unsigned long o_events[QTINFO_MAX_EVENT_TYPE];
+	unsigned long rsp_check[QTINFO_MAX_EVENT_TYPE]; // rsp check err cnts
 };
 
 struct qtinfo_server {
 	unsigned long cnts[QTINF_NUM];
 	unsigned long i_events[QTINFO_MAX_EVENT_TYPE];
 	unsigned long o_events[QTINFO_MAX_EVENT_TYPE];
+	unsigned long req_check[QTINFO_MAX_EVENT_TYPE]; // req check err cnts
 };
 
 struct qtinfo {
@@ -233,32 +235,39 @@ static inline void qtinfo_cntdec(enum qtinfo_cnts idx)
 	qtfs_diag_info->c.cnts[idx]--;
 	return;
 }
-static inline void qtinfo_recvinc(int idx)
+static inline void qtinfo_recvinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->c.i_events[idx]++;
 	return;
 }
-static inline void qtinfo_sendinc(int idx)
+static inline void qtinfo_sendinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->c.o_events[idx]++;
 	return;
 }
-static inline void qtinfo_recverrinc(int idx)
+static inline void qtinfo_recverrinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->c.recv_err[idx]++;
 	return;
 }
-static inline void qtinfo_senderrinc(int idx)
+static inline void qtinfo_senderrinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->c.send_err[idx]++;
+	return;
+}
+static inline void qtinfo_rspcheckinc(size_t idx)
+{
+	if (idx >= QTINFO_MAX_EVENT_TYPE)
+		return;
+	qtfs_diag_info->c.rsp_check[idx]++;
 	return;
 }
 #endif
@@ -285,18 +294,25 @@ static inline void qtinfo_cntdec(enum qtinfo_cnts idx)
 	qtfs_diag_info->s.cnts[idx]--;
 	return;
 }
-static inline void qtinfo_recvinc(int idx)
+static inline void qtinfo_recvinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->s.i_events[idx]++;
 	return;
 }
-static inline void qtinfo_sendinc(int idx)
+static inline void qtinfo_sendinc(size_t idx)
 {
 	if (idx >= QTINFO_MAX_EVENT_TYPE)
 		return;
 	qtfs_diag_info->s.o_events[idx]++;
+	return;
+}
+static inline void qtinfo_reqcheckinc(size_t idx)
+{
+	if (idx >= QTINFO_MAX_EVENT_TYPE)
+		return;
+	qtfs_diag_info->s.req_check[idx]++;
 	return;
 }
 #endif

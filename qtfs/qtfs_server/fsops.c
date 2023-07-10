@@ -41,6 +41,7 @@
 #include "fsops.h"
 #include "comm.h"
 #include "symbol_wrapper.h"
+#include "qtfs_check.h"
 
 #define REQ(arg) (arg->data)
 #define RSP(arg) (arg->out)
@@ -1031,7 +1032,7 @@ int handle_symlink(struct qtserver_arg *arg)
 	unsigned int lookup_flags = 0;
 
 	if (req->d.newlen >= sizeof(req->path) || req->d.newlen + req->d.oldlen > sizeof(req->path)) {
-		qtfs_err("newlen:%d oldlen:%d is too big", req->d.newlen, req->d.oldlen);
+		qtfs_err("newlen:%lu oldlen:%lu is too big", req->d.newlen, req->d.oldlen);
 		rsp->ret = QTFS_ERR;
 		return sizeof(struct qtrsp_symlink);
 	}
@@ -1182,19 +1183,19 @@ int handle_xattrset(struct qtserver_arg *arg)
 		goto err_handle;
 	}
 	if (req->d.pathlen + req->d.namelen + req->d.valuelen > sizeof(req->buf) - 3) {
-		qtfs_err("invalid len:%d %d %d", req->d.pathlen, req->d.namelen, req->d.valuelen);
+		qtfs_err("invalid len:%lu %lu %lu", req->d.pathlen, req->d.namelen, req->d.valuelen);
 		rsp->errno = -EFAULT;
 		path_put(&path);
 		goto err_handle;
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
-	rsp->errno = vfs_setxattr(&init_user_ns, path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.size, req->d.flags);
+	rsp->errno = vfs_setxattr(&init_user_ns, path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.valuelen, req->d.flags);
 #else
-	rsp->errno = vfs_setxattr(path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.size, req->d.flags);
+	rsp->errno = vfs_setxattr(path.dentry, &req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], req->d.valuelen, req->d.flags);
 #endif
 	qtfs_info("handle xattrset path:%s name:%s value:%s ret:%d size:%lu flags:%d", req->buf,
 					&req->buf[req->d.pathlen], &req->buf[req->d.pathlen + req->d.namelen], rsp->errno,
-					req->d.size, req->d.flags);
+					req->d.valuelen, req->d.flags);
 	path_put(&path);
 	return sizeof(struct qtrsp_xattrset);
 
@@ -1286,7 +1287,7 @@ int handle_syscall_mount(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s *)USERP(arg);
 
 	if (req->d.dev_len + req->d.dir_len + req->d.type_len + req->d.data_len > sizeof(req->buf) - 4) {
-		qtfs_err("invalid msglen:%d %d %d %d", req->d.dev_len, req->d.dir_len, req->d.type_len, req->d.data_len);
+		qtfs_err("invalid msglen:%lu %lu %lu %lu", req->d.dev_len, req->d.dir_len, req->d.type_len, req->d.data_len);
 		rsp->errno = -EINVAL;
 		goto end;
 	}
@@ -1541,7 +1542,7 @@ int remotesc_sched_getaffinity(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
 
 	if (req->len > AFFINITY_MAX_LEN) {
-		qtfs_err("invalid len:%u", req->len);
+		qtfs_err("invalid len:%lu", req->len);
 		rsp->ret = -EINVAL;
 		rsp->len = 0;
 		goto end;
@@ -1573,20 +1574,20 @@ int remotesc_sched_setaffinity(struct qtserver_arg *arg)
 	struct qtfs_server_userp_s *userp = (struct qtfs_server_userp_s*)USERP(arg);
 
 	if (req->len > AFFINITY_MAX_LEN || req->len < 0) {
-		qtfs_err("invalid len:%u", req->len);
+		qtfs_err("invalid len:%lu", req->len);
 		rsp->ret = -EINVAL;
 		rsp->len = 0;
 		goto end;
 	}
 	if (copy_to_user(userp->userp, req->user_mask_ptr, req->len)) {
-		qtfs_err("copy to user failed len:%u", req->len);
+		qtfs_err("copy to user failed len:%lu", req->len);
 		rsp->ret = -EFAULT;
 		rsp->len = 0;
 		goto end;
 	}
 	rsp->ret = qtfs_syscall_sched_setaffinity(req->pid, req->len, userp->userp);
 	if (rsp->ret < 0) {
-		qtfs_err("set affinity failed, ret:%ld pid:%d len:%u", rsp->ret, req->pid, req->len);
+		qtfs_err("set affinity failed, ret:%ld pid:%d len:%lu", rsp->ret, req->pid, req->len);
 		goto end;
 	}
 	qtfs_info("set affinity successed mask:%lx%lx", req->user_mask_ptr[0], req->user_mask_ptr[1]);
@@ -1595,50 +1596,50 @@ end:
 }
 
 static struct qtserver_ops qtfs_server_handles[] = {
-	{QTFS_REQ_NULL,			handle_null,		"null"},
-	{QTFS_REQ_MOUNT,		handle_mount,		"mount"},
-	{QTFS_REQ_OPEN,			handle_open,		"open"},
-	{QTFS_REQ_CLOSE,		handle_close,		"close"},
-	{QTFS_REQ_READ,			handle_null,		"read"},
-	{QTFS_REQ_READITER,		handle_readiter,	"readiter"},
-	{QTFS_REQ_WRITE,		handle_write,		"write"},
-	{QTFS_REQ_LOOKUP,		handle_lookup,		"lookup"},
-	{QTFS_REQ_READDIR,		handle_readdir,		"readdir"},
-	{QTFS_REQ_MKDIR,		handle_mkdir,		"mkdir"},
-	{QTFS_REQ_RMDIR,		handle_rmdir,		"rmdir"},
-	{QTFS_REQ_GETATTR,		handle_getattr,		"getattr"},
-	{QTFS_REQ_SETATTR,		handle_setattr,		"setattr"},
-	{QTFS_REQ_ICREATE,		handle_icreate,		"icreate"},
-	{QTFS_REQ_MKNOD,		handle_mknod,		"mknod"},
-	{QTFS_REQ_UNLINK,		handle_unlink,		"unlink"},
-	{QTFS_REQ_SYMLINK,		handle_symlink,		"symlink"},
-	{QTFS_REQ_LINK,			handle_link,		"link"},
-	{QTFS_REQ_GETLINK,		handle_getlink,		"getlink"},
-	{QTFS_REQ_READLINK,		handle_null,		"readlink"},
-	{QTFS_REQ_RENAME,		handle_rename,		"rename"},
+	{QTFS_REQ_NULL,			req_check_none,		handle_null,		"null"},
+	{QTFS_REQ_MOUNT,		req_check_mount,	handle_mount,		"mount"},
+	{QTFS_REQ_OPEN,			req_check_open,		handle_open,		"open"},
+	{QTFS_REQ_CLOSE,		req_check_close,	handle_close,		"close"},
+	{QTFS_REQ_READ,			req_check_none,		handle_null,		"read"},
+	{QTFS_REQ_READITER,		req_check_readiter,	handle_readiter,	"readiter"},
+	{QTFS_REQ_WRITE,		req_check_write,	handle_write,		"write"},
+	{QTFS_REQ_LOOKUP,		req_check_lookup,	handle_lookup,		"lookup"},
+	{QTFS_REQ_READDIR,		req_check_readdir,	handle_readdir,		"readdir"},
+	{QTFS_REQ_MKDIR,		req_check_mkdir,	handle_mkdir,		"mkdir"},
+	{QTFS_REQ_RMDIR,		req_check_rmdir,	handle_rmdir,		"rmdir"},
+	{QTFS_REQ_GETATTR,		req_check_getattr,	handle_getattr,		"getattr"},
+	{QTFS_REQ_SETATTR,		req_check_setattr,	handle_setattr,		"setattr"},
+	{QTFS_REQ_ICREATE,		req_check_icreate,	handle_icreate,		"icreate"},
+	{QTFS_REQ_MKNOD,		req_check_mknod,	handle_mknod,		"mknod"},
+	{QTFS_REQ_UNLINK,		req_check_unlink,	handle_unlink,		"unlink"},
+	{QTFS_REQ_SYMLINK,		req_check_symlink,	handle_symlink,		"symlink"},
+	{QTFS_REQ_LINK,			req_check_link,		handle_link,		"link"},
+	{QTFS_REQ_GETLINK,		req_check_getlink,	handle_getlink,		"getlink"},
+	{QTFS_REQ_READLINK,		req_check_readlink,	handle_null,		"readlink"},
+	{QTFS_REQ_RENAME,		req_check_rename,	handle_rename,		"rename"},
 
-	{QTFS_REQ_XATTRLIST,	handle_xattrlist,	"xattrlist"},
-	{QTFS_REQ_XATTRGET,		handle_xattrget,	"xattrget"},
-	{QTFS_REQ_XATTRSET,		handle_xattrset,	"xattrset"},
+	{QTFS_REQ_XATTRLIST,	req_check_xattrlist,	handle_xattrlist,	"xattrlist"},
+	{QTFS_REQ_XATTRGET,		req_check_xattrget,		handle_xattrget,	"xattrget"},
+	{QTFS_REQ_XATTRSET,		req_check_xattrset,		handle_xattrset,	"xattrset"},
 
-	{QTFS_REQ_SYSMOUNT,		handle_syscall_mount,	"sysmount"},
-	{QTFS_REQ_SYSUMOUNT,	handle_syscall_umount,	"sysumount"},
-	{QTFS_REQ_FIFOPOLL,		handle_fifopoll,		"fifo_poll"},
+	{QTFS_REQ_SYSMOUNT,		req_check_sysmount,		handle_syscall_mount,	"sysmount"},
+	{QTFS_REQ_SYSUMOUNT,	req_check_sysumount,	handle_syscall_umount,	"sysumount"},
+	{QTFS_REQ_FIFOPOLL,		req_check_fifopoll,		handle_fifopoll,		"fifo_poll"},
 
-	{QTFS_REQ_STATFS,		handle_statfs,		"statfs"},
-	{QTFS_REQ_IOCTL,		handle_ioctl,		"ioctl"},
+	{QTFS_REQ_STATFS,		req_check_statfs,		handle_statfs,		"statfs"},
+	{QTFS_REQ_IOCTL,		req_check_ioctl,		handle_ioctl,		"ioctl"},
 
-	{QTFS_REQ_EPOLL_CTL,	handle_epollctl,	"epollctl"},
-	{QTFS_REQ_EPOLL_EVENT,	NULL,			"epollevent"},
+	{QTFS_REQ_EPOLL_CTL,	req_check_epoll_ctl,	handle_epollctl,	"epollctl"},
+	{QTFS_REQ_EPOLL_EVENT,	req_check_none,			NULL,			"epollevent"},
 
-	{QTFS_REQ_LLSEEK,		handle_llseek,		"llseek"},
+	{QTFS_REQ_LLSEEK,		req_check_llseek,		handle_llseek,		"llseek"},
 
 	// remote syscall or capability
-	{QTFS_SC_KILL,			remotesc_kill,		"remotesc_kill"},
-	{QTFS_SC_SCHED_GETAFFINITY,	remotesc_sched_getaffinity,	"sched_getaffinity"},
-	{QTFS_SC_SCHED_SETAFFINITY, remotesc_sched_setaffinity, "sched_setaffinity"},
+	{QTFS_SC_KILL,			req_check_sc_kill,		remotesc_kill,		"remotesc_kill"},
+	{QTFS_SC_SCHED_GETAFFINITY,	req_check_sc_sched_getaffinity,	remotesc_sched_getaffinity,	"sched_getaffinity"},
+	{QTFS_SC_SCHED_SETAFFINITY,	req_check_sc_sched_setaffinity,	remotesc_sched_setaffinity, "sched_setaffinity"},
 
-	{QTFS_REQ_EXIT,			handle_exit,	"exit"}, // keep this handle at the end
+	{QTFS_REQ_EXIT,			req_check_none,			handle_exit,	"exit"}, // keep this handle at the end
 };
 
 int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
@@ -1668,6 +1669,14 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 			struct qtserver_arg arg;
 			arg.data = req->data;
 			arg.out = rsp->data;
+			if (qtfs_server_handles[req->type].precheck((void *)req->data) == QTFS_CHECK_ERR) {
+				rsp->type = req->type;
+				rsp->len = 0;
+				rsp->err = QTFS_ERR;
+				qtinfo_reqcheckinc(req->type);
+				qtfs_err("qtfs server req type:%u precheck failed.", req->type);
+				goto out;
+			}
 			read_lock(&g_userp_rwlock);
 			arg.userp = &qtfs_userps[pvar->cur_threadidx];
 			if (arg.userp->userp == NULL || arg.userp->userp2 == NULL)
@@ -1685,6 +1694,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 			rsp->len = QTFS_REQ_MAX_LEN - 1;
 			rsp->err = QTFS_ERR;
 		}
+out:
 		rsp->seq_num = req->seq_num;
 		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + rsp->len;
 		qtfs_debug("Server thread:%d count:%lu recv len:%d type:%d(%s) seq_num:%lu, reqlen:%lu, resp len:%lu, rsp threadidx:%d.\n",
