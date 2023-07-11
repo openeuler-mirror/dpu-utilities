@@ -148,23 +148,25 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}
-	req->d.size = size;
+	req->d.valuelen = size;
 	req->d.flags = flags;
 	req->d.pathlen = strlen(req->buf) + 1;
 	req->d.namelen = strlen(name) + strlen(handler->prefix) + 1;
 	qtfs_info("xattr set path:%s name:%s size:%lu", req->buf, name, size);
 	totallen = req->d.pathlen + req->d.namelen + size;
-	if (totallen > sizeof(req->buf)) {
+	if (totallen >= sizeof(req->buf)) {
 		qtfs_err("xattr set namelen:%d size:%lu is too long", req->d.namelen, size);
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}
 	strlcpy(&req->buf[req->d.pathlen], handler->prefix, strlen(handler->prefix) + 1);
 	strcat(&req->buf[req->d.pathlen], name);
-	if (size > 0)
+	if (size > 0) {
 		memcpy(&req->buf[req->d.pathlen + req->d.namelen], value, size);
+		req->d.valuelen = size + 1;
+	}
 
-	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRSET, sizeof(struct qtreq_xattrset) - sizeof(req->buf) + req->d.pathlen + req->d.namelen + req->d.size);
+	rsp = qtfs_remote_run(pvar, QTFS_REQ_XATTRSET, sizeof(struct qtreq_xattrset) - sizeof(req->buf) + req->d.pathlen + req->d.namelen + req->d.valuelen);
 	if (IS_ERR_OR_NULL(rsp)) {
 		qtfs_conn_put_param(pvar);
 		return QTFS_PTR_ERR(rsp);

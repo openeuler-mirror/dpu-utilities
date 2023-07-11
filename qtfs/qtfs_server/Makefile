@@ -15,7 +15,7 @@ LDFLAGS += -fPIE -pie
 
 KBUILD=/lib/modules/$(shell uname -r)/build/
 COMM=../qtfs_common/
-COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o $(COMM)/socket.o
+COMMO=$(COMM)/conn.o $(COMM)/misc.o $(COMM)/symbol_wrapper.o $(COMM)/socket.o $(COMM)/qtfs_check.o
 
 obj-m:=qtfs_server.o
 qtfs_server-objs:=fsops.o qtfs-server.o $(COMMO)

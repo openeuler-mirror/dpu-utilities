@@ -17,6 +17,7 @@
 #include <linux/fs.h>
 #include <linux/statfs.h>
 #include <uapi/linux/limits.h>
+#include "comm.h"
 #include "log.h"
 
 enum qtreq_type {
@@ -55,7 +56,7 @@ enum qtreq_type {
 
 	QTFS_REQ_EPOLL_CTL,
 
-	QTFS_REQ_EPOLL_EVENT,
+	QTFS_REQ_EPOLL_EVENT, // 30
 
 	QTFS_REQ_LLSEEK,
 
@@ -358,8 +359,8 @@ struct qtrsp_unlink {
 
 struct qtreq_symlink {
 	struct qtreq_symlink_len {
-		int newlen;
-		int oldlen;
+		size_t newlen;
+		size_t oldlen;
 	} d;
 	char path[QTFS_TAIL_LEN(struct qtreq_symlink_len)];
 };
@@ -372,8 +373,8 @@ struct qtrsp_symlink {
 
 struct qtreq_link {
 	struct qtreq_link_len {
-		int newlen;
-		int oldlen;
+		size_t newlen;
+		size_t oldlen;
 	} d;
 	char path[QTFS_TAIL_LEN(struct qtreq_link_len)];
 };
@@ -407,9 +408,9 @@ struct qtrsp_readlink {
 
 struct qtreq_rename {
 	struct qtreq_rename_len {
-		int oldlen;
-		int newlen;
-		unsigned int flags;
+		size_t oldlen;
+		size_t newlen;
+		size_t flags;
 	}d;
 	char path[QTFS_TAIL_LEN(struct qtreq_rename_len)];
 };
@@ -455,11 +456,10 @@ struct qtrsp_xattrget {
 
 struct qtreq_xattrset {
 	struct qtreq_xattrset_len {
-		size_t size;
 		int flags;
-		int pathlen;
-		int namelen;
-		int valuelen;
+		size_t pathlen;
+		size_t namelen;
+		size_t valuelen;
 	} d;
 	/* buf: file path + name + value */
 	char buf[QTFS_TAIL_LEN(struct qtreq_xattrset_len)];
@@ -473,10 +473,10 @@ struct qtrsp_xattrset {
 
 struct qtreq_sysmount {
 	struct qtreq_sysmount_len {
-		int dev_len;
-		int dir_len;
-		int type_len;
-		int data_len;
+		size_t dev_len;
+		size_t dir_len;
+		size_t type_len;
+		size_t data_len;
 		unsigned long flags;
 	} d;
 	char buf[QTFS_TAIL_LEN(struct qtreq_sysmount_len)];
@@ -497,7 +497,6 @@ struct qtrsp_sysumount {
 
 struct qtreq_poll {
 	int fd;
-	int qproc;
 };
 
 struct qtrsp_poll {
@@ -556,7 +555,7 @@ enum {
 struct qtreq_sc_sched_affinity {
 	int type; // 0-get or 1-set
 	int pid;
-	unsigned int len;
+	size_t len;
 	unsigned long user_mask_ptr[0];
 };
 

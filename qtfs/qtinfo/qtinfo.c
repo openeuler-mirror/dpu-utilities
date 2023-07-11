@@ -85,7 +85,11 @@ struct qtinfo_type_str qtinfo_all_events[] = {
 	{QTFS_REQ_IOCTL,			"ioctl"},
 	{QTFS_REQ_EPOLL_CTL,		"epollctl"},
 
-	{QTFS_REQ_EPOLL_EVENT,		"epollevent"},
+	{QTFS_REQ_EPOLL_EVENT,		"epollevent"}, // 30
+	{QTFS_REQ_LLSEEK,			"llseek"},
+	{QTFS_SC_KILL,				"sc_kill"},
+	{QTFS_SC_SCHED_GETAFFINITY,	"sc_getaffi"},
+	{QTFS_SC_SCHED_SETAFFINITY,	"sc_setaffi"},
 };
 
 static void qtinfo_events_count(struct qtinfo *evts)
@@ -187,7 +191,18 @@ static void qtinfo_events_count(struct qtinfo *evts)
 	}
 	qtinfo_out2("\n");
 	qtinfo_out("Recv events total: %lu", total);
-	total=0;
+
+	qtinfo_out("++++++++++++++++++++++++++req check err+++++++++++++++++++++++++++++++");
+	for (i = 0; i < (sizeof(qtinfo_all_events)/sizeof(struct qtinfo_type_str)) - 3; i+=3) {
+		qtinfo_out("%-10s: %-10lu %-10s: %-10lu %-10s: %-10lu",
+				qtinfo_all_events[i].str, evts->s.req_check[i],
+				qtinfo_all_events[i+1].str, evts->s.req_check[i+1],
+				qtinfo_all_events[i+2].str, evts->s.req_check[i+2]);
+	}
+	for(; i < sizeof(qtinfo_all_events)/sizeof(struct qtinfo_type_str); i++) {
+		qtinfo_out2("%-10s: %-10lu ", qtinfo_all_events[i].str, evts->s.req_check[i]);
+	}
+	qtinfo_out("\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
 #endif
 }
 

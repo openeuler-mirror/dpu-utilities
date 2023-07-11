@@ -28,6 +28,7 @@ struct qtserver_arg {
 
 struct qtserver_ops {
 	int type;
+	int (*precheck) (void *); // check req from socket recv
 	// return int is output len.
 	int (*handle) (struct qtserver_arg *);
 	char str[32];
