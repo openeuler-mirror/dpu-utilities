@@ -60,7 +60,8 @@ ssize_t qtfs_xattr_list(struct dentry *dentry, char *buffer, size_t buffer_size)
 	}
 	ret = rsp->d.size;
 	if (buffer != NULL) {
-		memcpy(buffer, rsp->name, buffer_size);
+		ret = (rsp->d.size > buffer_size) ? buffer_size : rsp->d.size;
+		memcpy(buffer, rsp->name, ret);
 	}
 	qtfs_conn_put_param(pvar);
 	return ret;
@@ -155,7 +156,7 @@ static int qtfs_xattr_set(const struct xattr_handler *handler,
 	qtfs_info("xattr set path:%s name:%s size:%lu", req->buf, name, size);
 	totallen = req->d.pathlen + req->d.namelen + size;
 	if (totallen >= sizeof(req->buf)) {
-		qtfs_err("xattr set namelen:%d size:%lu is too long", req->d.namelen, size);
+		qtfs_err("xattr set namelen:%lu size:%lu is too long", req->d.namelen, size);
 		qtfs_conn_put_param(pvar);
 		return -EFAULT;
 	}

@@ -422,6 +422,10 @@ ssize_t qtfs_writeiter(struct kiocb *kio, struct iov_iter *iov)
 			qtfs_conn_put_param(pvar);
 			return QTFS_PTR_ERR(rsp);
 		}
+		if (rsp->len > wrbuflen) {
+			qtfs_err("qtfs write recv error packet, len:%ld writelen:%d", rsp->len, wrbuflen);
+			break;
+		}
 		if (rsp->ret == QTFS_ERR || rsp->len <= 0) {
 			qtfs_err("qtfs write remote error, errno:%ld, leftlen:%lu.", rsp->len, leftlen);
 			if (rsp->len > 0) {
@@ -617,7 +621,8 @@ long qtfs_do_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, unsig
 
 	qtfs_info("qtfs do ioctl cmd:0x%x success, path: %s size:%u, rsp size:%u", cmd, req->path, size, rsp->size);
 	ret = rsp->errno;
-	if (rsp->size > 0 && copy_to_user((char __user *)arg, rsp->buf, size)) {
+	if (rsp->size > sizeof(rsp->buf) || 
+		(rsp->size > 0 && copy_to_user((char __user *)arg, rsp->buf, size))) {
 		qtfs_err("copy to user failed");
 		ret = -EFAULT;
 	}

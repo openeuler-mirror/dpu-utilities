@@ -1615,7 +1615,7 @@ static struct qtserver_ops qtfs_server_handles[] = {
 	{QTFS_REQ_SYMLINK,		req_check_symlink,	handle_symlink,		"symlink"},
 	{QTFS_REQ_LINK,			req_check_link,		handle_link,		"link"},
 	{QTFS_REQ_GETLINK,		req_check_getlink,	handle_getlink,		"getlink"},
-	{QTFS_REQ_READLINK,		req_check_readlink,	handle_null,		"readlink"},
+	{QTFS_REQ_READLINK,		req_check_none,		handle_null,		"readlink"},
 	{QTFS_REQ_RENAME,		req_check_rename,	handle_rename,		"rename"},
 
 	{QTFS_REQ_XATTRLIST,	req_check_xattrlist,	handle_xattrlist,	"xattrlist"},
