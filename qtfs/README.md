@@ -50,7 +50,6 @@ qtfs的特性：
 ```
 	2. 要求内核版本在5.10或更高版本。
     3. 安装内核开发包：yum install kernel-devel。
-	4. 假设host服务器ip为192.168.10.10，dpu为192.168.10.11
 
 服务端安装：
 
@@ -58,7 +57,7 @@ qtfs的特性：
     2. make clean && make -j
     3. insmod qtfs_server.ko qtfs_server_vsock_cid=2 qtfs_server_vsock_port=12345 qtfs_log_level=WARN
 	4. 配置白名单，将qtfs/config/qtfs/whitelist文件拷贝至/etc/qtfs/下，请手动配置需要的白名单选项，至少需要配置一个Mount白名单才能启动后续服务。
-	5. nohup ./engine 16 1 192.168.10.10 12121 192.168.10.11 12121 2>&1 &
+	5. nohup ./engine 16 1 2 12121 10 12121 2>&1 &
 	Tips: 这里的cid需要根据配置决定，如果host作为server端，则cid固定配置为2，如果vm作为server端，则需要配置为前面xml中的cid字段，本例中为10。
 
 客户端安装：
@@ -68,12 +67,13 @@ qtfs的特性：
     3. insmod qtfs.ko qtfs_server_vsock_cid=2 qtfs_server_vsock_port=12345 qtfs_log_level=WARN
 	4. cd ../ipc/
 	5. make clean && make && make install
-	6. nohup udsproxyd 1 192.168.10.11 12121 192.168.10.10 12121 2>&1 &
-	Tips：这里的cid和port配置为与server端一致即可。
+	6. nohup udsproxyd 1 10 12121 2 12121 2>&1 &
+	Tips：这里插入ko的cid和port配置为与server端一致即可，udsproxyd的cid+port与server端交换位置。
 
 其他注意事项：
 	
-	1. 如果vsock不通，需要检查host是否插入了vhost_vsock内核模块：modprobe vhost_vsock。
+	1. udsproxyd目前也支持vsock和测试模式两种，使用vsock模式时，不能带UDS_TEST_MODE=1进行编译。
+	2. 如果vsock不通，需要检查host是否插入了vhost_vsock内核模块：modprobe vhost_vsock。
 
 ### 测试模式，仅用于测试环境：
 
