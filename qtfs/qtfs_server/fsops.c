@@ -1518,6 +1518,8 @@ int remotesc_kill(struct qtserver_arg *arg)
 	struct qtrsp_sc_kill *rsp = (struct qtrsp_sc_kill *)RSP(arg);
 	char tskcomm[TASK_COMM_LEN] = {0};
 	struct task_struct *t = qtfs_kern_syms.find_get_task_by_vpid((pid_t)req->pid);
+	if (req->signum == 0)
+		goto result;
 	if (!t) {
 		qtfs_err("Failed to get task by pid:%d", req->pid);
 		rsp->ret = -EINVAL;
@@ -1529,6 +1531,7 @@ int remotesc_kill(struct qtserver_arg *arg)
 		rsp->ret = -EPERM;
 		goto end;
 	}
+result:
 	rsp->ret = qtfs_syscall_kill(req->pid, req->signum);
 	qtfs_info("Recv remote kill request, pid:%d signum:%d ret:%ld", req->pid, req->signum, rsp->ret);
 end:
