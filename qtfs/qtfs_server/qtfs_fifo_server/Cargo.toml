@@ -1,0 +1,8 @@
+[package]
+name = "qtfs_fifo_server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.29.1", features = ["full"]}
+libc = "0.2"
