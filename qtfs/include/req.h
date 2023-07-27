@@ -395,17 +395,6 @@ struct qtrsp_getlink {
 	char path[MAX_PATH_LEN];
 };
 
-struct qtreq_readlink {
-	char path[MAX_PATH_LEN];
-};
-
-struct qtrsp_readlink {
-	int ret;
-	int errno;
-	int len;
-	char path[MAX_PATH_LEN];
-};
-
 struct qtreq_rename {
 	struct qtreq_rename_len {
 		size_t oldlen;

@@ -93,7 +93,6 @@ void qtfs_req_size(void)
 	qtfs_diag_info->req_size[QTFS_REQ_SYMLINK] = sizeof(struct qtreq_symlink);
 	qtfs_diag_info->req_size[QTFS_REQ_LINK] = sizeof(struct qtreq_link);
 	qtfs_diag_info->req_size[QTFS_REQ_GETLINK] = sizeof(struct qtreq_getlink);
-	qtfs_diag_info->req_size[QTFS_REQ_READLINK] = sizeof(struct qtreq_readlink);
 	qtfs_diag_info->req_size[QTFS_REQ_RENAME] = sizeof(struct qtreq_rename);
 	qtfs_diag_info->req_size[QTFS_REQ_XATTRLIST] = sizeof(struct qtreq_xattrlist);
 	qtfs_diag_info->req_size[QTFS_REQ_XATTRGET] = sizeof(struct qtreq_xattrget);
@@ -123,7 +122,6 @@ void qtfs_req_size(void)
 	qtfs_diag_info->rsp_size[QTFS_REQ_SYMLINK] = sizeof(struct qtrsp_symlink);
 	qtfs_diag_info->rsp_size[QTFS_REQ_LINK] = sizeof(struct qtrsp_link);
 	qtfs_diag_info->rsp_size[QTFS_REQ_GETLINK] = sizeof(struct qtrsp_getlink);
-	qtfs_diag_info->rsp_size[QTFS_REQ_READLINK] = sizeof(struct qtrsp_readlink);
 	qtfs_diag_info->rsp_size[QTFS_REQ_RENAME] = sizeof(struct qtrsp_rename);
 	qtfs_diag_info->rsp_size[QTFS_REQ_XATTRLIST] = sizeof(struct qtrsp_xattrlist);
 	qtfs_diag_info->rsp_size[QTFS_REQ_XATTRGET] = sizeof(struct qtrsp_xattrget);

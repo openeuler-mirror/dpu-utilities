@@ -198,14 +198,6 @@ int req_check_getlink(void *in)
 	return QTFS_CHECK_OK;
 }
 
-int req_check_readlink(void *in)
-{
-	struct qtreq_readlink *req = TOREQ;
-	if (check_string(req->path, sizeof(req->path)))
-		return QTFS_CHECK_ERR;
-	return QTFS_CHECK_OK;
-}
-
 int req_check_rename(void *in)
 {
 	struct qtreq_rename *req = TOREQ;
@@ -338,5 +330,3 @@ int req_check_sc_sched_setaffinity(void *in)
 {
 	return req_check_sc_sched_getaffinity(in);
 }
-
-
