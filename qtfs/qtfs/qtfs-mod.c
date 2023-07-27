@@ -152,7 +152,7 @@ connecting:
 		ret = qtfs_conn_recv(pvar);
 		if (ret == -EPIPE || pvar->conn_ops->conn_connected(pvar) == false)
 			goto connecting;
-		if (ret < 0 || req->event_nums <= 0 || req->event_nums > QTFS_MAX_EPEVENTS_NUM) {
+		if (ret < 0 || req->event_nums <= 0 || req->event_nums >= QTFS_MAX_EPEVENTS_NUM) {
 			continue;
 		}
 		qtfs_debug("epoll thread recv %d events.", req->event_nums);
