@@ -36,7 +36,6 @@ extern unsigned int qtfs_server_vsock_port;
 extern unsigned int qtfs_server_vsock_cid;
 extern int qtfs_conn_max_conn;
 
-extern struct socket *qtfs_server_main_sock;
 extern struct qtfs_conn_var_s *qtfs_thread_var[QTFS_MAX_THREADS];
 extern struct qtfs_conn_var_s *qtfs_epoll_var;
 extern char qtfs_log_level[QTFS_LOGLEVEL_STRLEN];
@@ -91,6 +90,15 @@ typedef enum {
 	QTFS_CONN_SOCK_CLIENT,
 } qtfs_conn_cs_e;
 
+// 使用pvar的主题类型，为了更好区分类型，socket下server有主socket下建立多个链接
+// 的需求，通过类型告知socket模块，且解藕conn层和下面的不同消息通道类型
+typedef enum {
+	QTFS_CONN_TYPE_QTFS,		// QTFS tunnel type
+	QTFS_CONN_TYPE_EPOLL,		// EPOLL thread type
+	QTFS_CONN_TYPE_FIFO,		// FIFO type
+	QTFS_CONN_TYPE_INV,
+} qtfs_conn_type_e;
+
 struct qtfs_pcie_var_s {
 	int srcid;
 	int dstid;
@@ -126,13 +134,13 @@ struct qtfs_conn_ops_s {
 	void *(*get_conn_msg_buf)(struct qtfs_conn_var_s *pvar, int dir);
 
 	// connection related ops
-	int (*conn_init)(struct qtfs_conn_var_s *pvar);
+	int (*conn_init)(void *connvar, qtfs_conn_type_e type);
 	void (*conn_fini)(struct qtfs_conn_var_s *pvar);
 	int (*conn_send)(struct qtfs_conn_var_s *pvar);
 	int (*conn_recv)(struct qtfs_conn_var_s *pvar, bool block);
-	int (*conn_server_accept)(struct qtfs_conn_var_s *pvar);
-	int (*conn_client_connect)(struct qtfs_conn_var_s *pvar);
-	bool (*conn_inited)(struct qtfs_conn_var_s *pvar);
+	int (*conn_server_accept)(void *connvar, qtfs_conn_type_e type);
+	int (*conn_client_connect)(void *connvar);
+	bool (*conn_inited)(void *connvar, qtfs_conn_type_e type);
 	bool (*conn_connected)(struct qtfs_conn_var_s *pvar);
 	void (*conn_recv_buff_drop)(struct qtfs_conn_var_s *pvar);
 };
@@ -144,7 +152,8 @@ struct qtfs_conn_var_s {
 	int cur_threadidx;
 	int miss_proc;
 	unsigned long seq_num;
-	qtfs_conn_type_e state;
+	qtfs_conn_state_e state;
+	qtfs_conn_type_e user_type; // type of pvar's user: qtfs/epoll deamon/fifo
 	char who_using[QTFS_FUNCTION_LEN];
 	union {
 		struct qtfs_sock_var_s sock_var;

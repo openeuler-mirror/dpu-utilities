@@ -169,7 +169,7 @@ typedef enum {
 	QTCONN_INIT,
 	QTCONN_CONNECTING,
 	QTCONN_ACTIVE,
-} qtfs_conn_type_e;
+} qtfs_conn_state_e;
 
 struct qtinfo_client {
 	unsigned long cnts[QTINF_NUM];
