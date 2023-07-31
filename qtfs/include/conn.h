@@ -34,7 +34,6 @@ extern char qtfs_server_ip[20];
 extern int qtfs_server_port;
 extern unsigned int qtfs_server_vsock_port;
 extern unsigned int qtfs_server_vsock_cid;
-extern int qtfs_conn_max_conn;
 
 extern struct qtfs_conn_var_s *qtfs_thread_var[QTFS_MAX_THREADS];
 extern struct qtfs_conn_var_s *qtfs_epoll_var;
@@ -107,24 +106,17 @@ struct qtfs_pcie_var_s {
 struct qtfs_sock_var_s {
 	struct socket *sock;
 	struct socket *client_sock;
+#ifdef QTFS_TEST_MODE
 	char addr[20];
 	unsigned short port;
-
+#else
 	// for vsock
 	unsigned int vm_port;
 	unsigned int vm_cid;
+#endif
+	struct msghdr msg_recv;
+	struct msghdr msg_send;
 };
-
-struct qtfs_pvar_ops_s {
-	//  channel-specific parameter parsing function
-	int (*parse_param)(void);
-	// channel-specific global param init
-	int (*param_init)(void);
-	int (*param_fini)(void);
-	// init pvar with channel specific ops
-	int (*pvar_init)(struct qtfs_conn_var_s *pvar);
-};
-extern struct qtfs_pvar_ops_s *g_pvar_ops;
 
 struct qtfs_conn_ops_s {
 	// conn message buffer initialization and releasement.
@@ -135,15 +127,26 @@ struct qtfs_conn_ops_s {
 
 	// connection related ops
 	int (*conn_init)(void *connvar, qtfs_conn_type_e type);
-	void (*conn_fini)(struct qtfs_conn_var_s *pvar);
-	int (*conn_send)(struct qtfs_conn_var_s *pvar);
-	int (*conn_recv)(struct qtfs_conn_var_s *pvar, bool block);
+	void (*conn_fini)(void *connvar, qtfs_conn_type_e type);
+	int (*conn_send)(void *connvar, void *buf, size_t len);
+	int (*conn_recv)(void *connvar, void *buf, size_t len, bool block);
 	int (*conn_server_accept)(void *connvar, qtfs_conn_type_e type);
 	int (*conn_client_connect)(void *connvar);
 	bool (*conn_inited)(void *connvar, qtfs_conn_type_e type);
-	bool (*conn_connected)(struct qtfs_conn_var_s *pvar);
-	void (*conn_recv_buff_drop)(struct qtfs_conn_var_s *pvar);
+	bool (*conn_connected)(void *connvar);
+	void (*conn_recv_buff_drop)(void *connvar);
 };
+
+struct qtfs_pvar_ops_s {
+	//  channel-specific parameter parsing function
+	int (*parse_param)(void);
+	// channel-specific global param init
+	int (*param_init)(void);
+	int (*param_fini)(void);
+	// init pvar with channel specific ops
+	int (*pvar_init)(void *connvar, struct qtfs_conn_ops_s **conn_ops, qtfs_conn_type_e type);
+};
+extern struct qtfs_pvar_ops_s *g_pvar_ops;
 
 struct qtfs_conn_var_s {
 	struct list_head lst;
@@ -166,8 +169,6 @@ struct qtfs_conn_var_s {
 	unsigned long send_valid;
 	struct kvec vec_recv;
 	struct kvec vec_send;
-	struct msghdr msg_recv;
-	struct msghdr msg_send;
 };
 
 struct qtfs_wl_cap {

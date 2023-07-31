@@ -55,7 +55,7 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 	req->len = len;
 	req->seq_num = pvar->seq_num;
 
-	pvar->conn_ops->conn_recv_buff_drop(pvar);
+	pvar->conn_ops->conn_recv_buff_drop(&pvar->conn_var);
 	// 调用qtfs_remote_run之前，调用者应该先把消息在iov_base里面封装好
 	// 如果不是socket通信，则是在其他通信模式定义的buf里，消息协议统一
 	// 都是struct qtreq *xx
@@ -150,7 +150,7 @@ connecting:
 
 	while (!kthread_should_stop()) {
 		ret = qtfs_conn_recv(pvar);
-		if (ret == -EPIPE || pvar->conn_ops->conn_connected(pvar) == false)
+		if (ret == -EPIPE || pvar->conn_ops->conn_connected(&pvar->conn_var) == false)
 			goto connecting;
 		if (ret < 0 || req->event_nums <= 0 || req->event_nums >= QTFS_MAX_EPEVENTS_NUM) {
 			continue;
@@ -304,19 +304,6 @@ static void __exit qtfs_exit(void)
 	qtfs_info("QTFS file system unregister success!\n");
 	return;
 }
-
-#ifdef QTFS_TEST_MODE
-module_param_string(qtfs_server_ip, qtfs_server_ip, sizeof(qtfs_server_ip), 0600);
-MODULE_PARM_DESC(qtfs_server_ip, "qtfs server ip");
-module_param(qtfs_server_port, int, 0600);
-#else
-module_param(qtfs_server_vsock_port, uint, 0600);
-module_param(qtfs_server_vsock_cid, uint, 0600);
-#endif
-
-module_param(qtfs_conn_max_conn, int, 0600);
-module_param_string(qtfs_log_level, qtfs_log_level, sizeof(qtfs_log_level), 0600);
-module_param_string(qtfs_conn_type, qtfs_conn_type, sizeof(qtfs_conn_type), 0600);
 
 module_init(qtfs_init);
 module_exit(qtfs_exit);
