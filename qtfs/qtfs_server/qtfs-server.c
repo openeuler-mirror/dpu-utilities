@@ -60,7 +60,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 		qtfs_err("qtfs epoll wait error, epfd is invalid.");
 		return QTERROR;
 	}
-	if (false == pvar->conn_ops->conn_connected(pvar)) {
+	if (false == pvar->conn_ops->conn_connected(&pvar->conn_var)) {
 		qtfs_warn("qtfs epoll thread disconnected, now try to reconnect.");
 		ret = qtfs_sm_reconnect(pvar);
 	} else {
@@ -418,19 +418,6 @@ static void __exit qtfs_server_exit(void)
 	qtfs_info("qtfs server exit done.\n");
 	return;
 }
-
-#ifdef QTFS_TEST_MODE
-module_param_string(qtfs_server_ip, qtfs_server_ip, sizeof(qtfs_server_ip), 0600);
-MODULE_PARM_DESC(qtfs_server_ip, "qtfs server ip");
-module_param(qtfs_server_port, int, 0600);
-#else
-module_param(qtfs_server_vsock_port, uint, 0600);
-module_param(qtfs_server_vsock_cid, uint, 0600);
-#endif
-
-module_param(qtfs_conn_max_conn, int, 0600);
-module_param_string(qtfs_log_level, qtfs_log_level, sizeof(qtfs_log_level), 0600);
-module_param_string(qtfs_conn_type, qtfs_conn_type, sizeof(qtfs_conn_type), 0600);
 
 module_init(qtfs_server_init);
 module_exit(qtfs_server_exit);

@@ -28,7 +28,7 @@ struct qtfs_pvar_ops_s *g_pvar_ops = NULL;
 char qtfs_log_level[QTFS_LOGLEVEL_STRLEN] = {0};
 char qtfs_conn_type[20] = QTFS_CONN_SOCK_TYPE;
 int log_level = LOG_ERROR;
-int qtfs_conn_max_conn = QTFS_MAX_THREADS;
+static int qtfs_conn_max_conn = QTFS_MAX_THREADS;
 struct qtinfo *qtfs_diag_info = NULL;
 bool qtfs_epoll_mode = false; // true: support any mode; false: only support fifo
 
@@ -196,12 +196,12 @@ end:
 
 int qtfs_conn_init(struct qtfs_conn_var_s *pvar)
 {
-	return pvar->conn_ops->conn_init(pvar);
+	return pvar->conn_ops->conn_init(&pvar->conn_var, pvar->user_type);
 }
 
 void qtfs_conn_fini(struct qtfs_conn_var_s *pvar)
 {
-	return pvar->conn_ops->conn_fini(pvar);
+	return pvar->conn_ops->conn_fini(&pvar->conn_var, pvar->user_type);
 }
 
 int qtfs_conn_send(struct qtfs_conn_var_s *pvar)
@@ -209,16 +209,69 @@ int qtfs_conn_send(struct qtfs_conn_var_s *pvar)
 	if (pvar->vec_send.iov_len > QTFS_MSG_LEN)
 		return -EMSGSIZE;
 	pvar->send_valid = pvar->vec_send.iov_len;
-	return pvar->conn_ops->conn_send(pvar);
+	return pvar->conn_ops->conn_send(&pvar->conn_var, pvar->vec_send.iov_base, pvar->vec_send.iov_len);
 }
 
 int do_qtfs_conn_recv(struct qtfs_conn_var_s *pvar, bool block)
 {
-	int ret = pvar->conn_ops->conn_recv(pvar, block);
-	if (ret > 0) {
-		pvar->recv_valid = ret;
+	int ret;
+	int headlen = 0;
+	int total = 0;
+	struct qtreq *rsp = NULL;
+	struct kvec load;
+	unsigned long retrytimes = 0;
+
+	headlen = pvar->conn_ops->conn_recv(&pvar->conn_var, pvar->vec_recv.iov_base, QTFS_MSG_HEAD_LEN, block);
+
+	if (headlen <= 0) {
+		return headlen;
 	}
-	return ret;
+
+	load.iov_base = pvar->vec_recv.iov_base + QTFS_MSG_HEAD_LEN;
+	load.iov_len = pvar->vec_recv.iov_len - QTFS_MSG_HEAD_LEN;
+	total = 0;
+	rsp = pvar->vec_recv.iov_base;
+	if (rsp->len > load.iov_len) {
+		qtfs_err("qtfs recv head invalid len is:%lu", rsp->len);
+		return -EINVAL;
+	}
+	while (total < rsp->len) {
+retry:
+		ret = pvar->conn_ops->conn_recv(&pvar->conn_var, load.iov_base, rsp->len - total, block);
+		if (ret == 0) break;
+		if (ret == -EAGAIN)
+			goto retry;
+		if (ret == -ERESTARTSYS || ret == -EINTR) {
+#ifdef QTFS_CLIENT
+			if (retrytimes == 0) {
+				qtinfo_cntinc(QTINF_RESTART_SYS);
+				qtinfo_recverrinc(rsp->type);
+			}
+#endif
+			retrytimes++;
+			msleep(1);
+			goto retry;
+		}
+		if (ret < 0) {
+			qtfs_err("qtfs recv get invalidelen is :%d", ret);
+			return ret;
+		}
+		total += ret;
+		load.iov_base += ret;
+		load.iov_len -= ret;
+		if (load.iov_base > (pvar->vec_recv.iov_base + pvar->vec_recv.iov_len)) {
+			qtfs_err("qtfs recv error, total:%d iovlen:%lu ret:%d rsplen:%lu", total,
+							pvar->vec_recv.iov_len, ret, rsp->len);
+			WARN_ON(1);
+			break;
+		}
+	}
+	if (total > rsp->len) {
+		qtfs_crit("recv total:%d msg len:%lu\n", total, rsp->len);
+		WARN_ON(1);
+	}
+	pvar->recv_valid = total + headlen;
+	return pvar->recv_valid;
 }
 
 int qtfs_conn_recv_block(struct qtfs_conn_var_s *pvar)
@@ -301,7 +354,7 @@ static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 	int ret = QTERROR;
 
 #ifdef QTFS_SERVER
-	ret = pvar->conn_ops->conn_server_accept(pvar);
+	ret = pvar->conn_ops->conn_server_accept(&pvar->conn_var, pvar->user_type);
 	if (ret == 0) {
 		qtfs_info("qtfs sm connecting accept a new connection");
 	} else {
@@ -313,7 +366,7 @@ static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 	qtfs_info("qtfs sm connecting wait for server thread:%d", pvar->cur_threadidx);
 	retry = 3;
 	while (qtfs_mod_exiting == false && retry-- > 0) {
-		ret = pvar->conn_ops->conn_client_connect(pvar);
+		ret = pvar->conn_ops->conn_client_connect(&pvar->conn_var);
 		if (ret == 0) {
 			qtfs_info("qtfs sm connecting connect to a new connection.");
 			break;
@@ -542,7 +595,7 @@ retry:
 
 	if (pvar != NULL) {
 		int ret;
-		if (pvar->state == QTCONN_ACTIVE && pvar->conn_ops->conn_connected(pvar) == false) {
+		if (pvar->state == QTCONN_ACTIVE && pvar->conn_ops->conn_connected(&pvar->conn_var) == false) {
 			qtfs_warn("qtfs get param thread:%d disconnected, try to reconnect.", pvar->cur_threadidx);
 			ret = qtfs_sm_reconnect(pvar);
 		} else {
@@ -578,7 +631,8 @@ retry:
 	}
 	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	// initialize conn_pvar here
-	g_pvar_ops->pvar_init(pvar);
+	pvar->user_type = QTFS_CONN_TYPE_QTFS;
+	g_pvar_ops->pvar_init(&pvar->conn_var, &pvar->conn_ops, pvar->user_type);
 	if (QTFS_OK != pvar->conn_ops->conn_var_init(pvar)) {
 		qtfs_err("qtfs sock var init failed.\n");
 		kfree(pvar);
@@ -611,7 +665,7 @@ retry:
 	qtfs_thread_var[pvar->cur_threadidx] = pvar;
 #else
 	pvar->cs = QTFS_CONN_SOCK_SERVER;
-	if (!pvar->conn_ops->conn_inited(pvar)) {
+	if (!pvar->conn_ops->conn_inited(pvar, pvar->user_type)) {
 		if ((ret = qtfs_sm_active(pvar)) != 0) {
 			qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
 			// put to vld list
@@ -643,7 +697,7 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 
 	pvar = qtfs_epoll_var;
 	if (pvar) {
-		if (pvar->state == QTCONN_ACTIVE && pvar->conn_ops->conn_connected(pvar) == false) {
+		if (pvar->state == QTCONN_ACTIVE && pvar->conn_ops->conn_connected(&pvar->conn_var) == false) {
 			qtfs_warn("qtfs epoll get param thread:%d disconnected, try to reconnect.", pvar->cur_threadidx);
 			ret = qtfs_sm_reconnect(pvar);
 		} else {
@@ -662,8 +716,9 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 	}
 	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	qtfs_epoll_var = pvar;
+	pvar->user_type = QTFS_CONN_TYPE_EPOLL;
 	pvar->cur_threadidx = QTFS_EPOLL_THREADIDX;
-	g_pvar_ops->pvar_init(pvar);
+	g_pvar_ops->pvar_init(&pvar->conn_var, &pvar->conn_ops, pvar->user_type);
 	if (QTFS_OK != pvar->conn_ops->conn_var_init(pvar)) {
 		qtfs_err("qtfs sock var init failed.\n");
 		kfree(pvar);
@@ -750,3 +805,6 @@ void qtfs_conn_list_cnt(void)
 #endif
 }
 
+module_param(qtfs_conn_max_conn, int, 0600);
+module_param_string(qtfs_log_level, qtfs_log_level, sizeof(qtfs_log_level), 0600);
+module_param_string(qtfs_conn_type, qtfs_conn_type, sizeof(qtfs_conn_type), 0600);

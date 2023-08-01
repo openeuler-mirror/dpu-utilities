@@ -21,7 +21,7 @@ unsigned int qtfs_server_vsock_cid = 2; // host cid in vm is always 2
 #endif
 
 #ifdef QTFS_SERVER
-struct socket *qtfs_server_main_sock = NULL;
+struct socket *qtfs_server_main_sock[QTFS_CONN_TYPE_INV] = {NULL};
 #endif
 
 #ifdef KVER_4_19
@@ -108,9 +108,9 @@ void sock_set_reuseaddr(struct sock *sk)
 #define QTSOCK_SET_KEEPX(sock, val) sock_set_keepalive(sock->sk); tcp_sock_set_keepcnt(sock->sk, val);\
 		tcp_sock_set_keepidle(sock->sk, val); tcp_sock_set_keepintvl(sock->sk, val);
 
-static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block);
-static int qtfs_conn_sock_send(struct qtfs_conn_var_s *pvar);
-static void qtfs_conn_sock_fini(struct qtfs_conn_var_s *pvar);
+static int qtfs_conn_sock_recv(void *connvar, void *buf, size_t len, bool block);
+static int qtfs_conn_sock_send(void *connvar, void *buf, size_t len);
+static void qtfs_conn_sock_fini(void *connvar, qtfs_conn_type_e type);
 
 void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 {
@@ -142,23 +142,23 @@ void qtfs_sock_recvtimeo_set(struct socket *sock, __s64 sec, __s64 usec)
 }
 
 #ifdef QTFS_SERVER
-static int qtfs_conn_sock_server_accept(struct qtfs_conn_var_s *pvar)
+static int qtfs_conn_sock_server_accept(void *connvar, qtfs_conn_type_e type)
 {
-	struct socket *sock = NULL;
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
 	int ret;
-
-	if (!QTCONN_IS_EPOLL_CONN(pvar)) {
-		sock = qtfs_server_main_sock;
-	} else {
-		sock = pvar->conn_var.sock_var.sock;
+	struct socket *sock = NULL;
+	if (type >= QTFS_CONN_TYPE_INV || qtfs_server_main_sock[type] == NULL) {
+		qtfs_err("invalid type:%u or main sock is invalid.", type);
+		return -EFAULT;
 	}
+	sock = qtfs_server_main_sock[type];
 
 	if (sock == NULL) {
 		WARN_ON(1);
-		qtfs_err("qtfs server accept failed, main sock is NULL, threadidx:%d.", pvar->cur_threadidx);
+		qtfs_err("qtfs server accept failed, main sock is NULL.");
 		return -EINVAL;
 	}
-	ret = kernel_accept(sock, &pvar->conn_var.sock_var.client_sock, SOCK_NONBLOCK);
+	ret = kernel_accept(sock, &sockvar->client_sock, SOCK_NONBLOCK);
 	if (ret < 0) {
 		return ret;
 	}
@@ -169,12 +169,13 @@ static int qtfs_conn_sock_server_accept(struct qtfs_conn_var_s *pvar)
 #endif
 
 	qtfs_info("qtfs accept a client connection.\n");
-	qtfs_sock_recvtimeo_set(pvar->conn_var.sock_var.client_sock, QTFS_SOCK_RCVTIMEO, 0);
+	qtfs_sock_recvtimeo_set(sockvar->client_sock, QTFS_SOCK_RCVTIMEO, 0);
 	return 0;
 }
 
-static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
+static int qtfs_conn_sock_init(void *connvar, qtfs_conn_type_e type)
 {
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
 	struct socket *sock;
 	int ret;
 	int sock_family = AF_VSOCK;
@@ -182,25 +183,21 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	struct sockaddr_in saddr;
 	sock_family = AF_INET;
 	saddr.sin_family = sock_family;
-	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
-	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
+	saddr.sin_port = htons(sockvar->port);
+	saddr.sin_addr.s_addr = in_aton(sockvar->addr);
 #else
 	struct sockaddr_vm saddr;
 	sock_family = AF_VSOCK;
 	saddr.svm_family = sock_family;
-	saddr.svm_port = pvar->conn_var.sock_var.vm_port;
-	saddr.svm_cid = pvar->conn_var.sock_var.vm_cid;
+	saddr.svm_port = sockvar->vm_port;
+	saddr.svm_cid = sockvar->vm_cid;
 #endif
+	if (type >= QTFS_CONN_TYPE_INV || qtfs_server_main_sock[type] != NULL) {
+		qtfs_info("qtfs conn type:%u main sock is set, valid or out-of-date?", type);
+		return 0;
+	}
 
-	if (!QTCONN_IS_EPOLL_CONN(pvar) && qtfs_server_main_sock != NULL) {
-		qtfs_info("qtfs server main sock is set, valid or out-of-date?");
-		return 0;
-	}
-	if (QTCONN_IS_EPOLL_CONN(pvar) && pvar->conn_var.sock_var.sock != NULL) {
-		qtfs_info("qtfs server epoll sock is set, valid or out-of-date?");
-		return 0;
-	}
-	qtfs_info("qtfs sock server init enter threadidx:%d", pvar->cur_threadidx);
+	qtfs_info("qtfs sock server init enter");
 
 	ret = sock_create_kern(&init_net, sock_family, SOCK_STREAM, 0, &sock);
 	if (ret) {
@@ -215,7 +212,6 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 	sock_set_keepalive(sock->sk);
 #endif
 
-
 	ret = sock->ops->bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
 	if (ret < 0) {
 		qtfs_err("qtfs sock server bind error: %d.\n", ret);
@@ -228,14 +224,8 @@ static int qtfs_conn_sockserver_init(struct qtfs_conn_var_s *pvar)
 		goto err_end;
 	}
 
-	if (!QTCONN_IS_EPOLL_CONN(pvar)) {
-		qtfs_server_main_sock = sock;
-		qtfs_info("qtfs thread main sock get, threadidx:%d.", pvar->cur_threadidx);
-	} else {
-		pvar->conn_var.sock_var.sock = sock;
-		qtfs_info("qtfs epoll main sock get, threadidx:%d.", pvar->cur_threadidx);
-	}
-
+	qtfs_info("qtfs socket init sock OK!");
+	qtfs_server_main_sock[type] = sock;
 	return 0;
 
 err_end:
@@ -244,20 +234,21 @@ err_end:
 }
 #endif
 #ifdef QTFS_CLIENT
-static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
+static int qtfs_conn_sock_client_connect(void *connvar)
 {
-	struct socket *sock = pvar->conn_var.sock_var.client_sock;
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	struct socket *sock = sockvar->client_sock;
 	int ret;
 #ifdef QTFS_TEST_MODE
 	struct sockaddr_in saddr;
 	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(pvar->conn_var.sock_var.port);
-	saddr.sin_addr.s_addr = in_aton(pvar->conn_var.sock_var.addr);
+	saddr.sin_port = htons(sockvar->port);
+	saddr.sin_addr.s_addr = in_aton(sockvar->addr);
 #else
 	struct sockaddr_vm saddr;
 	saddr.svm_family = AF_VSOCK;
-	saddr.svm_port = pvar->conn_var.sock_var.vm_port;
-	saddr.svm_cid = pvar->conn_var.sock_var.vm_cid;
+	saddr.svm_port = sockvar->vm_port;
+	saddr.svm_cid = sockvar->vm_cid;
 #endif
 	if (!sock) {
 		qtfs_err("Invalid client sock, which is null\n");
@@ -266,7 +257,11 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 
 	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), 0);
 	if (ret < 0) {
-		qtfs_err("sock addr(%s): connect get ret: %d\n", pvar->conn_var.sock_var.addr, ret);
+#ifdef QTFS_TEST_MODE
+		qtfs_err("sock addr(%s): connect get ret: %d\n", sockvar->addr, ret);
+#else
+		qtfs_err("vsock cid:%u: connect get ret: %d\n", sockvar->vm_cid, ret);
+#endif
 		return ret;
 	}
 #ifdef QTFS_TEST_MODE
@@ -275,11 +270,13 @@ static int qtfs_conn_sock_client_connect(struct qtfs_conn_var_s *pvar)
 	sock_set_keepalive(sock->sk);
 #endif
 
-	qtfs_sock_recvtimeo_set(pvar->conn_var.sock_var.client_sock, QTFS_SOCK_RCVTIMEO, 0);
+	qtfs_sock_recvtimeo_set(sockvar->client_sock, QTFS_SOCK_RCVTIMEO, 0);
 	return 0;
 }
-static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
+//client侧type用不上
+static int qtfs_conn_sock_init(void *connvar, qtfs_conn_type_e type)
 {
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
 	struct socket *sock;
 	int ret;
 
@@ -297,140 +294,81 @@ static int qtfs_conn_sockclient_init(struct qtfs_conn_var_s *pvar)
 #else
 	sock_set_keepalive(sock->sk);
 #endif
-	pvar->conn_var.sock_var.client_sock = sock;
+	sockvar->client_sock = sock;
 
 	return 0;
 }
 #endif
 
-int qtfs_conn_sock_init(struct qtfs_conn_var_s *pvar)
+static int qtfs_conn_sock_recv(void *connvar, void *buf, size_t len, bool block)
 {
-	int ret = -EINVAL;
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	struct kvec v;
+	memset(&sockvar->msg_recv, 0, sizeof(sockvar->msg_recv));
+	v.iov_base = buf;
+	v.iov_len = len;
 
-	if (pvar->conn_var.sock_var.client_sock != NULL) {
-		WARN_ON(1);
-		qtfs_err("qtfs connection socket init client_sock not NULL!");
-	}
-#ifdef QTFS_SERVER
-	ret = qtfs_conn_sockserver_init(pvar);
-#endif
-#ifdef QTFS_CLIENT
-	ret = qtfs_conn_sockclient_init(pvar);
-#endif
-	return ret;
+	return kernel_recvmsg(sockvar->client_sock, &sockvar->msg_recv, &v, 1,
+							len, (block == true) ? 0 : MSG_DONTWAIT);
 }
 
-static int qtfs_conn_sock_recv(struct qtfs_conn_var_s *pvar, bool block)
+static int qtfs_conn_sock_send(void *connvar, void *buf, size_t len)
 {
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	struct kvec v;
 	int ret;
-	int headlen = 0;
-	int total = 0;
-	struct qtreq *rsp = NULL;
-	struct kvec load;
-	unsigned long retrytimes = 0;
+	
+	v.iov_base = buf;
+	v.iov_len = len;
 
-	memset(&pvar->msg_recv, 0, sizeof(pvar->msg_recv));
-
-	headlen = kernel_recvmsg(pvar->conn_var.sock_var.client_sock, &pvar->msg_recv, &pvar->vec_recv, 1,
-							QTFS_MSG_HEAD_LEN, (block == true) ? 0 : MSG_DONTWAIT);
-	if (headlen <= 0) {
-		return headlen;
-	}
-
-	load.iov_base = pvar->vec_recv.iov_base + QTFS_MSG_HEAD_LEN;
-	load.iov_len = pvar->vec_recv.iov_len - QTFS_MSG_HEAD_LEN;
-	total = 0;
-	rsp = pvar->vec_recv.iov_base;
-	if (rsp->len > load.iov_len) {
-		qtfs_err("qtfs recv head invalid len is:%lu", rsp->len);
-		return -EINVAL;
-	}
-	while (total < rsp->len) {
-retry:
-		ret = kernel_recvmsg(pvar->conn_var.sock_var.client_sock, &pvar->msg_recv, &load, 1,
-						rsp->len - total, (block == true) ? 0 : MSG_DONTWAIT);
-		if (ret == 0) break;
-		if (ret == -EAGAIN)
-			goto retry;
-		if (ret == -ERESTARTSYS || ret == -EINTR) {
-#ifdef QTFS_CLIENT
-			if (retrytimes == 0) {
-				qtinfo_cntinc(QTINF_RESTART_SYS);
-				qtinfo_recverrinc(rsp->type);
-			}
-#endif
-			retrytimes++;
-			msleep(1);
-			goto retry;
-		}
-		if (ret < 0) {
-			qtfs_err("qtfs recv get invalidelen is:%d", ret);
-			return ret;
-		}
-		total += ret;
-		load.iov_base += ret;
-		load.iov_len -= ret;
-		if (load.iov_base > (pvar->vec_recv.iov_base + pvar->vec_recv.iov_len)) {
-			qtfs_err("qtfs recv error, total:%d iovlen:%lu ret:%d rsplen:%lu", total,
-							pvar->vec_recv.iov_len, ret, rsp->len);
-			WARN_ON(1);
-			break;
-		}
-	}
-	if (total > rsp->len) {
-		qtfs_crit("recv total:%d msg len:%lu\n", total, rsp->len);
-		WARN_ON(1);
-	}
-
-	return total + headlen;
-}
-
-static int qtfs_conn_sock_send(struct qtfs_conn_var_s *pvar)
-{
-	int ret = kernel_sendmsg(pvar->conn_var.sock_var.client_sock, &pvar->msg_send, &pvar->vec_send, 1,
-							pvar->vec_send.iov_len);
+	ret = kernel_sendmsg(sockvar->client_sock, &sockvar->msg_send, &v, 1, len);
 	if (ret < 0) {
 		qtfs_err("qtfs sock send error, ret:%d.\n", ret);
 	}
 	return ret;
 }
 
-static void qtfs_conn_sock_fini(struct qtfs_conn_var_s *pvar)
+static void qtfs_conn_sock_fini(void *connvar, qtfs_conn_type_e type)
 {
-	if (pvar->conn_var.sock_var.client_sock == NULL) {
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	if (sockvar->client_sock == NULL) {
 		qtfs_err("qtfs client sock is NULL during sock_fini");
 	}
 
-	if (pvar->conn_var.sock_var.client_sock != NULL) {
-		qtfs_err("qtfs conn sock finish threadidx:%d.", pvar->cur_threadidx);
-		sock_release(pvar->conn_var.sock_var.client_sock);
-		pvar->conn_var.sock_var.client_sock = NULL;
+	if (sockvar->client_sock != NULL) {
+		qtfs_err("qtfs conn sock finish.");
+		sock_release(sockvar->client_sock);
+		sockvar->client_sock = NULL;
 	}
 
-	if (pvar->conn_var.sock_var.sock != NULL) {
-		sock_release(pvar->conn_var.sock_var.sock);
-		pvar->conn_var.sock_var.sock = NULL;
+#ifdef QTFS_SERVER
+	if (type < QTFS_CONN_TYPE_INV && qtfs_server_main_sock[type] != NULL) {
+		sock_release(qtfs_server_main_sock[type]);
+		qtfs_server_main_sock[type] = NULL;
 	}
+#endif
 	return;
 }
 
-static bool qtfs_conn_sock_connected(struct qtfs_conn_var_s *pvar)
+static bool qtfs_conn_sock_connected(void *connvar)
 {
-	struct socket *sock = pvar->conn_var.sock_var.client_sock;
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	struct socket *sock = sockvar->client_sock;
 	__u8 tcpi_state;
 	if (sock == NULL)
 		return false;
 	tcpi_state = inet_sk_state_load(sock->sk);
 	if (tcpi_state == TCP_ESTABLISHED)
 		return true;
-	qtfs_warn("qtfs threadidx:%d tcpi state:%u(define:TCP_ESTABLISHED=1 is connected) disconnect!", pvar->cur_threadidx, tcpi_state);
+	qtfs_warn("qtfs tcpi state:%u(define:TCP_ESTABLISHED=1 is connected) disconnect!", tcpi_state);
 
 	return false;
 }
 #ifdef QTFS_CLIENT
-void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
+void qtfs_sock_drop_recv_buf(void *connvar)
 {
 #define TMP_STACK_LEN 64
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
 	int ret = 0;
 	char buf[TMP_STACK_LEN];
 	struct kvec vec_recv;
@@ -438,7 +376,7 @@ void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
 	vec_recv.iov_base = buf;
 	vec_recv.iov_len = TMP_STACK_LEN;
 	do {
-		ret = kernel_recvmsg(pvar->conn_var.sock_var.client_sock, &msg_recv, &vec_recv, 1,
+		ret = kernel_recvmsg(sockvar->client_sock, &msg_recv, &vec_recv, 1,
 					vec_recv.iov_len, MSG_DONTWAIT);
 		if (ret > 0) {
 			qtfs_err("drop invalid data len:%d", ret);
@@ -449,9 +387,13 @@ void qtfs_sock_drop_recv_buf(struct qtfs_conn_var_s *pvar)
 #endif
 
 #ifdef QTFS_SERVER
-static bool qtfs_conn_sock_inited(struct qtfs_conn_var_s *pvar)
+static bool qtfs_conn_sock_inited(void *connvar, qtfs_conn_type_e type)
 {
-	return qtfs_server_main_sock != NULL;
+	if (type >= QTFS_CONN_TYPE_INV) {
+		qtfs_err("invalid type:%u", type);
+		return false;
+	}
+	return qtfs_server_main_sock[type] != NULL;
 }
 #endif
 
@@ -463,9 +405,13 @@ int qtfs_sock_param_init(void)
 int qtfs_sock_param_fini(void)
 {
 #ifdef QTFS_SERVER
-	if (qtfs_server_main_sock != NULL) {
-		sock_release(qtfs_server_main_sock);
-		qtfs_server_main_sock = NULL;
+	if (qtfs_server_main_sock[QTFS_CONN_TYPE_QTFS] != NULL) {
+		sock_release(qtfs_server_main_sock[QTFS_CONN_TYPE_QTFS]);
+		qtfs_server_main_sock[QTFS_CONN_TYPE_QTFS] = NULL;
+	}
+	if (qtfs_server_main_sock[QTFS_CONN_TYPE_FIFO] != NULL) {
+		sock_release(qtfs_server_main_sock[QTFS_CONN_TYPE_FIFO]);
+		qtfs_server_main_sock[QTFS_CONN_TYPE_FIFO] = NULL;
 	}
 #endif
 	return 0;
@@ -491,26 +437,25 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 	.conn_connected = qtfs_conn_sock_connected,
 };
 
-int qtfs_sock_pvar_init(struct qtfs_conn_var_s *pvar)
+int qtfs_sock_pvar_init(void *connvar, struct qtfs_conn_ops_s **conn_ops, qtfs_conn_type_e type)
 {
+	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
+	
+	if (type >= QTFS_CONN_TYPE_INV) {
+		qtfs_err("invalid type:%u", type);
+		return -1;
+	}
+
 #ifdef QTFS_TEST_MODE
 	// fill conn_pvar struct here
-	strlcpy(pvar->conn_var.sock_var.addr, qtfs_server_ip, sizeof(pvar->conn_var.sock_var.addr));
-	if (QTCONN_IS_EPOLL_CONN(pvar)) {
-		pvar->conn_var.sock_var.port = qtfs_server_port + 1;
-	} else {
-		pvar->conn_var.sock_var.port = qtfs_server_port;
-	}
+	strlcpy(sockvar->addr, qtfs_server_ip, sizeof(sockvar->addr));
+	sockvar->port = qtfs_server_port + type;
 #else
 	// vsock
-	if (QTCONN_IS_EPOLL_CONN(pvar)) {
-		pvar->conn_var.sock_var.vm_port = qtfs_server_vsock_port + 1;
-	} else {
-		pvar->conn_var.sock_var.vm_port = qtfs_server_vsock_port;
-	}
-	pvar->conn_var.sock_var.vm_cid = qtfs_server_vsock_cid;
+	sockvar->vm_cid = qtfs_server_vsock_cid;
+	sockvar->vm_port = qtfs_server_vsock_port + type;
 #endif
-	pvar->conn_ops = &qtfs_conn_sock_ops;
+	*conn_ops = &qtfs_conn_sock_ops;
 	return 0;
 }
 
@@ -526,3 +471,12 @@ struct qtfs_pvar_ops_s qtfs_conn_sock_pvar_ops = {
 	.param_fini = qtfs_sock_param_fini,
 	.pvar_init = qtfs_sock_pvar_init
 };
+
+#ifdef QTFS_TEST_MODE
+module_param_string(qtfs_server_ip, qtfs_server_ip, sizeof(qtfs_server_ip), 0600);
+MODULE_PARM_DESC(qtfs_server_ip, "qtfs server ip");
+module_param(qtfs_server_port, int, 0600);
+#else
+module_param(qtfs_server_vsock_port, uint, 0600);
+module_param(qtfs_server_vsock_cid, uint, 0600);
+#endif
