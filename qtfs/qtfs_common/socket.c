@@ -234,7 +234,7 @@ err_end:
 }
 #endif
 #ifdef QTFS_CLIENT
-static int qtfs_conn_sock_client_connect(void *connvar)
+static int qtfs_conn_sock_client_connect(void *connvar, qtfs_conn_type_e type)
 {
 	struct qtfs_sock_var_s *sockvar = (struct qtfs_sock_var_s *)connvar;
 	struct socket *sock = sockvar->client_sock;
@@ -427,11 +427,11 @@ struct qtfs_conn_ops_s qtfs_conn_sock_ops = {
 	.conn_send = qtfs_conn_sock_send,
 	.conn_recv = qtfs_conn_sock_recv,
 #ifdef QTFS_SERVER
-	.conn_server_accept = qtfs_conn_sock_server_accept,
+	.conn_new_connection = qtfs_conn_sock_server_accept,
 	.conn_inited = qtfs_conn_sock_inited,
 #endif
 #ifdef QTFS_CLIENT
-	.conn_client_connect = qtfs_conn_sock_client_connect,
+	.conn_new_connection = qtfs_conn_sock_client_connect,
 	.conn_recv_buff_drop = qtfs_sock_drop_recv_buf,
 #endif
 	.conn_connected = qtfs_conn_sock_connected,

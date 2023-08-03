@@ -352,28 +352,16 @@ void *qtfs_conn_msg_buf(struct qtfs_conn_var_s *pvar, int dir)
 static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 {
 	int ret = QTERROR;
-
-#ifdef QTFS_SERVER
-	ret = pvar->conn_ops->conn_server_accept(&pvar->conn_var, pvar->user_type);
-	if (ret == 0) {
-		qtfs_info("qtfs sm connecting accept a new connection");
-	} else {
-		msleep(500);
-	}
-#endif
-#ifdef QTFS_CLIENT
-	int retry;
-	qtfs_info("qtfs sm connecting wait for server thread:%d", pvar->cur_threadidx);
-	retry = 3;
+	int retry = 3;
+	qtfs_info("qtfs sm connecting thread:%d", pvar->cur_threadidx);
 	while (qtfs_mod_exiting == false && retry-- > 0) {
-		ret = pvar->conn_ops->conn_client_connect(&pvar->conn_var);
+		ret = pvar->conn_ops->conn_new_connection(&pvar->conn_var, pvar->user_type);
 		if (ret == 0) {
 			qtfs_info("qtfs sm connecting connect to a new connection.");
 			break;
 		}
-		msleep(1);
+		msleep(10);
 	}
-#endif
 
 	return ret;
 }
