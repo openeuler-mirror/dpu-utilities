@@ -353,7 +353,6 @@ static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 {
 	int ret = QTERROR;
 	int retry = 3;
-	qtfs_info("qtfs sm connecting thread:%d", pvar->cur_threadidx);
 	while (qtfs_mod_exiting == false && retry-- > 0) {
 		ret = pvar->conn_ops->conn_new_connection(&pvar->conn_var, pvar->user_type);
 		if (ret == 0) {
@@ -642,7 +641,6 @@ retry:
 
 #ifdef QTFS_CLIENT
 	mutex_unlock(&g_param_mutex);
-	pvar->cs = QTFS_CONN_SOCK_CLIENT;
 	ret = qtfs_sm_active(pvar);
 	if (ret) {
 		qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
@@ -652,7 +650,6 @@ retry:
 	}
 	qtfs_thread_var[pvar->cur_threadidx] = pvar;
 #else
-	pvar->cs = QTFS_CONN_SOCK_SERVER;
 	if (!pvar->conn_ops->conn_inited(pvar, pvar->user_type)) {
 		if ((ret = qtfs_sm_active(pvar)) != 0) {
 			qtfs_err("qtfs get param active connection failed, ret:%d, curstate:%s", ret, QTCONN_CUR_STATE(pvar));
@@ -714,11 +711,6 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 	}
 	pvar->state = QTCONN_INIT;
 
-#ifdef QTFS_CLIENT
-	pvar->cs = QTFS_CONN_SOCK_CLIENT;
-#else
-	pvar->cs = QTFS_CONN_SOCK_SERVER;
-#endif
 	ret = qtfs_sm_active(pvar);
 	if (ret) {
 		qtfs_err("qtfs epoll get param active new param failed, ret:%d state:%s", ret, QTCONN_CUR_STATE(pvar));

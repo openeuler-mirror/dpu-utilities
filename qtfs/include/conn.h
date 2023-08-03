@@ -150,7 +150,6 @@ extern struct qtfs_pvar_ops_s *g_pvar_ops;
 struct qtfs_conn_var_s {
 	struct list_head lst;
 	struct llist_node lazy_put;
-	int cs;
 	int cur_threadidx;
 	int miss_proc;
 	unsigned long seq_num;
