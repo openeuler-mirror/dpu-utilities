@@ -103,7 +103,7 @@ long qtfs_server_epoll_thread(struct qtfs_conn_var_s *pvar)
 			WARN_ON(1);
 			break;
 		}
-		pvar->vec_send.iov_len = QTFS_MSG_LEN - (QTFS_REQ_MAX_LEN - sendlen);
+		pvar->vec_send.iov_len = QTFS_MSG_HEAD_LEN + sendlen;
 		head->len = sendlen;
 		head->type = QTFS_REQ_EPOLL_EVENT;
 		ret = qtfs_conn_send(pvar);

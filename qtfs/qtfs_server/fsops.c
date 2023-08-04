@@ -1699,7 +1699,7 @@ int qtfs_conn_server_run(struct qtfs_conn_var_s *pvar)
 		}
 out:
 		rsp->seq_num = req->seq_num;
-		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + rsp->len;
+		pvar->vec_send.iov_len = QTFS_MSG_HEAD_LEN + rsp->len;
 		qtfs_debug("Server thread:%d count:%lu recv len:%d type:%d(%s) seq_num:%lu, reqlen:%lu, resp len:%lu, rsp threadidx:%d.\n",
 				pvar->cur_threadidx, totalproc, ret, req->type, (req->type >= QTFS_REQ_INV) ? "null" : qtfs_server_handles[req->type].str,
 				req->seq_num, req->len, pvar->vec_send.iov_len, pvar->cur_threadidx);

@@ -257,11 +257,6 @@ static int qtfs_conn_sock_client_connect(void *connvar, qtfs_conn_type_e type)
 
 	ret = sock->ops->connect(sock, (struct sockaddr *)&saddr, sizeof(saddr), 0);
 	if (ret < 0) {
-#ifdef QTFS_TEST_MODE
-		qtfs_err("sock addr(%s): connect get ret: %d\n", sockvar->addr, ret);
-#else
-		qtfs_err("vsock cid:%u: connect get ret: %d\n", sockvar->vm_cid, ret);
-#endif
 		return ret;
 	}
 #ifdef QTFS_TEST_MODE
@@ -309,7 +304,7 @@ static int qtfs_conn_sock_recv(void *connvar, void *buf, size_t len, bool block)
 	v.iov_len = len;
 
 	return kernel_recvmsg(sockvar->client_sock, &sockvar->msg_recv, &v, 1,
-							len, (block == true) ? 0 : MSG_DONTWAIT);
+							len, (block == true) ? MSG_WAITALL : MSG_DONTWAIT);
 }
 
 static int qtfs_conn_sock_send(void *connvar, void *buf, size_t len)

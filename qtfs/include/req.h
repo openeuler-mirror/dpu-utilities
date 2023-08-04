@@ -125,11 +125,11 @@ struct qtreq {
 	unsigned int err;
 	unsigned long seq_num; // check code
 	size_t len;
-	char data[QTFS_REQ_MAX_LEN]; // operation's private data
+	char data[0]; // operation's private data
 };
 
-#define QTFS_MSG_LEN sizeof(struct qtreq)
-#define QTFS_MSG_HEAD_LEN (QTFS_MSG_LEN - QTFS_REQ_MAX_LEN)
+#define QTFS_MSG_LEN sizeof(struct qtreq) + QTFS_REQ_MAX_LEN
+#define QTFS_MSG_HEAD_LEN sizeof(struct qtreq)
 
 struct qtreq_ioctl {
 	struct qtreq_ioctl_len {
@@ -511,6 +511,7 @@ struct qtreq_epollevt {
 	unsigned int event_nums;
 	struct qtreq_epoll_event events[QTFS_EPOLL_MAX_EVENTS];
 };
+#define QTFS_EPOLL_MSG_LEN (QTFS_MSG_HEAD_LEN + sizeof(struct qtreq_epollevt))
 
 struct qtrsp_epollevt {
 	int ret;

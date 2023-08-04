@@ -60,7 +60,7 @@ void *qtfs_remote_run(struct qtfs_conn_var_s *pvar, unsigned int type, unsigned 
 	// 如果不是socket通信，则是在其他通信模式定义的buf里，消息协议统一
 	// 都是struct qtreq *xx
 	// 给server发一个消息
-	pvar->vec_send.iov_len = QTFS_MSG_LEN - (QTFS_REQ_MAX_LEN - len);
+	pvar->vec_send.iov_len = QTFS_MSG_HEAD_LEN + len;
 	ret = qtfs_conn_send(pvar);
 	if (ret == -EPIPE) {
 		qtfs_err("qtfs remote run thread:%d send get EPIPE, try reconnect.", pvar->cur_threadidx);
@@ -89,7 +89,7 @@ retry:
 		}
 		goto retry;
 	}
-	if (ret == -ERESTARTSYS || ret == -EINTR) {
+	if (ret == -ERESTARTSYS) {
 		if (retrytimes == 0) {
 			qtinfo_cntinc(QTINF_RESTART_SYS);
 			qtinfo_recverrinc(req->type);
@@ -142,7 +142,7 @@ connecting:
 	// init ack head only once
 	do {
 		head = pvar->vec_send.iov_base;
-		pvar->vec_send.iov_len = QTFS_MSG_LEN - QTFS_REQ_MAX_LEN + sizeof(struct qtrsp_epollevt);
+		pvar->vec_send.iov_len = QTFS_MSG_HEAD_LEN + sizeof(struct qtrsp_epollevt);
 		head->type = QTFS_REQ_EPOLL_EVENT;
 		head->len = sizeof(struct qtrsp_epollevt);
 		rsp->ret = QTFS_OK;
