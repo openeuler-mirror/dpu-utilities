@@ -128,10 +128,9 @@ struct qtfs_conn_ops_s {
 	// connection related ops
 	int (*conn_init)(void *connvar, qtfs_conn_type_e type);
 	void (*conn_fini)(void *connvar, qtfs_conn_type_e type);
+	int (*conn_new_connection)(void *connvar, qtfs_conn_type_e type);
 	int (*conn_send)(void *connvar, void *buf, size_t len);
 	int (*conn_recv)(void *connvar, void *buf, size_t len, bool block);
-	int (*conn_server_accept)(void *connvar, qtfs_conn_type_e type);
-	int (*conn_client_connect)(void *connvar);
 	bool (*conn_inited)(void *connvar, qtfs_conn_type_e type);
 	bool (*conn_connected)(void *connvar);
 	void (*conn_recv_buff_drop)(void *connvar);
@@ -151,7 +150,6 @@ extern struct qtfs_pvar_ops_s *g_pvar_ops;
 struct qtfs_conn_var_s {
 	struct list_head lst;
 	struct llist_node lazy_put;
-	int cs;
 	int cur_threadidx;
 	int miss_proc;
 	unsigned long seq_num;
