@@ -163,8 +163,10 @@ struct qtfs_conn_var_s {
 	struct qtfs_conn_ops_s *conn_ops;
 
 	// use to memset buf
-	unsigned long recv_valid;
-	unsigned long send_valid;
+	unsigned int recv_valid;
+	unsigned int send_valid;
+	unsigned int recv_max;
+	unsigned int send_max;
 	struct kvec vec_recv;
 	struct kvec vec_send;
 };

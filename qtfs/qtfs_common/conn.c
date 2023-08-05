@@ -206,7 +206,7 @@ void qtfs_conn_fini(struct qtfs_conn_var_s *pvar)
 
 int qtfs_conn_send(struct qtfs_conn_var_s *pvar)
 {
-	if (pvar->vec_send.iov_len > QTFS_MSG_LEN)
+	if (pvar->vec_send.iov_len > pvar->send_max)
 		return -EMSGSIZE;
 	pvar->send_valid = pvar->vec_send.iov_len;
 	return pvar->conn_ops->conn_send(&pvar->conn_var, pvar->vec_send.iov_base, pvar->vec_send.iov_len);
@@ -216,7 +216,6 @@ int do_qtfs_conn_recv(struct qtfs_conn_var_s *pvar, bool block)
 {
 	int ret;
 	int headlen = 0;
-	int total = 0;
 	struct qtreq *rsp = NULL;
 	struct kvec load;
 	unsigned long retrytimes = 0;
@@ -229,86 +228,87 @@ int do_qtfs_conn_recv(struct qtfs_conn_var_s *pvar, bool block)
 
 	load.iov_base = pvar->vec_recv.iov_base + QTFS_MSG_HEAD_LEN;
 	load.iov_len = pvar->vec_recv.iov_len - QTFS_MSG_HEAD_LEN;
-	total = 0;
 	rsp = pvar->vec_recv.iov_base;
 	if (rsp->len > load.iov_len) {
 		qtfs_err("qtfs recv head invalid len is:%lu", rsp->len);
 		return -EINVAL;
 	}
-	while (total < rsp->len) {
+
 retry:
-		ret = pvar->conn_ops->conn_recv(&pvar->conn_var, load.iov_base, rsp->len - total, block);
-		if (ret == 0) break;
-		if (ret == -EAGAIN)
-			goto retry;
-		if (ret == -ERESTARTSYS || ret == -EINTR) {
+	ret = pvar->conn_ops->conn_recv(&pvar->conn_var, load.iov_base, rsp->len, true);
+	if (ret == -EAGAIN)
+		goto retry;
+	if (ret == -ERESTARTSYS) {
 #ifdef QTFS_CLIENT
-			if (retrytimes == 0) {
-				qtinfo_cntinc(QTINF_RESTART_SYS);
-				qtinfo_recverrinc(rsp->type);
-			}
+		if (retrytimes == 0) {
+			qtinfo_cntinc(QTINF_RESTART_SYS);
+			qtinfo_recverrinc(rsp->type);
+		}
 #endif
-			retrytimes++;
-			msleep(1);
-			goto retry;
-		}
-		if (ret < 0) {
-			qtfs_err("qtfs recv get invalidelen is :%d", ret);
-			return ret;
-		}
-		total += ret;
-		load.iov_base += ret;
-		load.iov_len -= ret;
-		if (load.iov_base > (pvar->vec_recv.iov_base + pvar->vec_recv.iov_len)) {
-			qtfs_err("qtfs recv error, total:%d iovlen:%lu ret:%d rsplen:%lu", total,
-							pvar->vec_recv.iov_len, ret, rsp->len);
-			WARN_ON(1);
-			break;
-		}
+		retrytimes++;
+		msleep(1);
+		goto retry;
 	}
-	if (total > rsp->len) {
-		qtfs_crit("recv total:%d msg len:%lu\n", total, rsp->len);
+	if (ret < 0) {
+		qtfs_err("qtfs recv get invalidelen is :%d", ret);
+		return ret;
+	}
+
+	if (ret > rsp->len) {
+		qtfs_crit("recv total:%d msg len:%lu\n", ret, rsp->len);
 		WARN_ON(1);
 	}
-	pvar->recv_valid = total + headlen;
-	return pvar->recv_valid;
+	return ret + headlen;
 }
 
 int qtfs_conn_recv_block(struct qtfs_conn_var_s *pvar)
 {
-	return do_qtfs_conn_recv(pvar, true);
+	int ret = do_qtfs_conn_recv(pvar, true);
+	if (ret > 0) {
+		pvar->recv_valid = (ret > pvar->recv_max) ? pvar->recv_max : ret;
+	}
+	return ret;
 }
 
 int qtfs_conn_recv(struct qtfs_conn_var_s *pvar)
 {
 	int ret = do_qtfs_conn_recv(pvar, false);
-	if (ret <= 0)
+	if (ret <= 0) {
 		msleep(1);
-
+	} else {
+		pvar->recv_valid = (ret > pvar->recv_max) ? pvar->recv_max : ret;
+	}
 	return ret;
 }
 
 int qtfs_conn_var_init(struct qtfs_conn_var_s *pvar)
 {
-	pvar->vec_recv.iov_base = kmalloc(QTFS_MSG_LEN, GFP_KERNEL);
-	if (pvar->vec_recv.iov_base == NULL) {
-		qtfs_err("qtfs recv kmalloc failed, len:%lu.\n", QTFS_MSG_LEN);
+	// qtfs消息为130多k，当作最大值作为合法性判断
+	if (pvar->recv_max > QTFS_MSG_LEN || pvar->send_max > QTFS_MSG_LEN ||
+		pvar->recv_max == 0 || pvar->recv_max == 0) {
+		qtfs_err("invalid recv max:%u or invalid send max:%u", pvar->recv_max, pvar->send_max);
 		return QTFS_ERR;
 	}
-	pvar->vec_send.iov_base = kmalloc(QTFS_MSG_LEN, GFP_KERNEL);
+	pvar->vec_recv.iov_base = kmalloc(pvar->recv_max, GFP_KERNEL);
+	if (pvar->vec_recv.iov_base == NULL) {
+		qtfs_err("qtfs recv kmalloc failed, len:%u.\n", pvar->recv_max);
+		return QTFS_ERR;
+	}
+	pvar->vec_send.iov_base = kmalloc(pvar->send_max, GFP_KERNEL);
 	if (pvar->vec_send.iov_base == NULL) {
-		qtfs_err("qtfs send kmalloc failed, len:%lu.\n", QTFS_MSG_LEN);
+		qtfs_err("qtfs send kmalloc failed, len:%u.\n", pvar->send_max);
 		kfree(pvar->vec_recv.iov_base);
 		pvar->vec_recv.iov_base = NULL;
 		return QTFS_ERR;
 	}
-	pvar->vec_recv.iov_len = QTFS_MSG_LEN;
+	pvar->vec_recv.iov_len = pvar->recv_max;
 	pvar->vec_send.iov_len = 0;
-	memset(pvar->vec_recv.iov_base, 0, QTFS_MSG_LEN);
-	memset(pvar->vec_send.iov_base, 0, QTFS_MSG_LEN);
+	memset(pvar->vec_recv.iov_base, 0, pvar->recv_max);
+	memset(pvar->vec_send.iov_base, 0, pvar->send_max);
 	pvar->recv_valid = 0;
 	pvar->send_valid = 0;
 	INIT_LIST_HEAD(&pvar->lst);
+	qtfs_info("init pvar thread:%d recv max:%u, send max:%u", pvar->cur_threadidx, pvar->recv_max, pvar->send_max);
 	return QTFS_OK;
 }
 
@@ -317,10 +317,12 @@ void qtfs_conn_var_fini(struct qtfs_conn_var_s *pvar)
 	if (pvar->vec_recv.iov_base != NULL) {
 		kfree(pvar->vec_recv.iov_base);
 		pvar->vec_recv.iov_base = NULL;
+		pvar->vec_recv.iov_len = 0;
 	}
 	if (pvar->vec_send.iov_base != NULL) {
 		kfree(pvar->vec_send.iov_base);
 		pvar->vec_send.iov_base = NULL;
+		pvar->vec_send.iov_len = 0;
 	}
 
 	return;
@@ -359,7 +361,7 @@ static int qtfs_sm_connecting(struct qtfs_conn_var_s *pvar)
 			qtfs_info("qtfs sm connecting connect to a new connection.");
 			break;
 		}
-		msleep(10);
+		msleep(100);
 	}
 
 	return ret;
@@ -618,6 +620,8 @@ retry:
 	}
 	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	// initialize conn_pvar here
+	pvar->recv_max = QTFS_MSG_LEN;
+	pvar->send_max = QTFS_MSG_LEN;
 	pvar->user_type = QTFS_CONN_TYPE_QTFS;
 	g_pvar_ops->pvar_init(&pvar->conn_var, &pvar->conn_ops, pvar->user_type);
 	if (QTFS_OK != pvar->conn_ops->conn_var_init(pvar)) {
@@ -701,6 +705,8 @@ struct qtfs_conn_var_s *qtfs_epoll_establish_conn(void)
 	}
 	memset(pvar, 0, sizeof(struct qtfs_conn_var_s));
 	qtfs_epoll_var = pvar;
+	pvar->recv_max = QTFS_EPOLL_MSG_LEN;
+	pvar->send_max = QTFS_EPOLL_MSG_LEN;
 	pvar->user_type = QTFS_CONN_TYPE_EPOLL;
 	pvar->cur_threadidx = QTFS_EPOLL_THREADIDX;
 	g_pvar_ops->pvar_init(&pvar->conn_var, &pvar->conn_ops, pvar->user_type);
