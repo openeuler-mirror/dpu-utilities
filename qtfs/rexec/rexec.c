@@ -722,10 +722,10 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	rexec_log("Remote exec binary:%s", argv[1]);
-	if (rexec_pipe_remote_inherit(pipeefd, connfd) != 0) {
+	/*if (rexec_pipe_remote_inherit(pipeefd, connfd) != 0) {
 		rexec_err("Rexec pipe remote inherit failed.");
 		goto err_end;
-	}
+	}*/
 
 	int arglen = rexec_calc_argv_len(argc - 1, &argv[1]);
 	if (arglen <= 0) {
