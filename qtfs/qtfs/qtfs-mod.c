@@ -177,7 +177,7 @@ connecting:
 				else
 					key = EPOLLIN | EPOLLRDNORM;
 				if (priv == NULL) {
-					qtfs_err("epoll epoll wake up file error, inode priv is invalid.");
+					qtfs_err("epoll wake up file error, inode priv is invalid.");
 					WARN_ON(1);
 				} else {
 					wake_up_interruptible_sync_poll(&priv->readq, key);
